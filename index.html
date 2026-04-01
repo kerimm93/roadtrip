@@ -1349,19 +1349,24 @@
         const pid = $('quickProject').value || '';
         if (!noteText) return alert('Bitte erst eine Notiz schreiben.');
         const prompt = buildFeaturePromptFromText(noteText, pid);
-        $('promptOutput').value = prompt;
         ui.importDraft.prompt = prompt;
+        if (pid) ui.importDraft.projectId = pid;
         ui.view = 'import';
         renderNav();
         renderView();
+        if ($('promptOutput')) $('promptOutput').value = prompt;
       }
 
       function buildSingleNotePrompt(noteId) {
         const note = S.notes.find(x => x.id === noteId);
         if (!note) return;
         const prompt = buildFeaturePromptFromText(note.text, note.projectId || '');
-        if ($('promptOutput')) $('promptOutput').value = prompt;
         ui.importDraft.prompt = prompt;
+        if (note.projectId) ui.importDraft.projectId = note.projectId;
+        ui.view = 'import';
+        renderNav();
+        renderView();
+        if ($('promptOutput')) $('promptOutput').value = prompt;
       }
 
       function buildFeaturePromptFromText(noteText, projectId) {
