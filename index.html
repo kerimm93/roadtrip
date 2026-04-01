@@ -1392,6 +1392,86 @@
         navigator.clipboard.writeText(text).then(() => alert('Text kopiert.'));
       }
 
+      function getImportTargetProjectId() {
+        const htmlSelect = $('htmlProjectSelect');
+        const quickSelect = $('quickProject');
+        return (htmlSelect && htmlSelect.value) || (quickSelect && quickSelect.value) || '';
+      }
+
+      function mapJsonAnalysisStatus(status) {
+        const normalized = String(status || '').trim().toLowerCase();
+        if (normalized === 'umgesetzt') return 'umgesetzt';
+        if (normalized === 'teilweise umgesetzt') return 'teilweise umgesetzt';
+        if (normalized === 'vorbereitet') return 'geprüft';
+        return 'geprüft';
+      }
+
+      function importJsonAnalysisFromPrompt(text, projectId) {
+        const parsed = JSON.parse(String(text || '{}'));
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid-analysis-json');
+        const p = S.projects.find(x => x.id === projectId);
+        if (!p) throw new Error('project-not-found');
+
+        const now = new Date().toISOString();
+        if (typeof parsed.projectSummary === 'string' && parsed.projectSummary.trim()) p.summary = parsed.projectSummary.trim();
+        if (typeof parsed.appType === 'string' && parsed.appType.trim()) p.type = parsed.appType.trim();
+        p.lastAnalyzedAt = now;
+        p.updatedAt = now;
+
+        let imported = 0;
+        let duplicates = 0;
+        const features = Array.isArray(parsed.features) ? parsed.features : [];
+        features.forEach(item => {
+          if (!item || typeof item !== 'object') return;
+          const title = String(item.title || '').trim();
+          if (!title) return;
+          const exists = S.features.some(x => x.projectId === projectId && normalizeText(x.title) === normalizeText(title));
+          if (exists) {
+            duplicates++;
+            return;
+          }
+          const description = String(item.description || '').trim() || 'Aus Analyse-JSON übernommen.';
+          const category = FEATURE_CATEGORIES.includes(item.category) ? item.category : 'Sonstiges';
+          S.features.push({
+            id: uid('f'),
+            projectId,
+            title,
+            description,
+            category,
+            status: mapJsonAnalysisStatus(item.status),
+            priority: 'mittel',
+            sourceType: 'html-analysis',
+            sourceNoteIds: [],
+            createdAt: now,
+            updatedAt: now
+          });
+          imported++;
+        });
+
+        const views = Array.isArray(parsed.views) ? parsed.views.map(x => String(x || '').trim()).filter(Boolean) : [];
+        const technicalNotes = Array.isArray(parsed.technicalNotes) ? parsed.technicalNotes.map(x => String(x || '').trim()).filter(Boolean) : [];
+        const unclearPoints = Array.isArray(parsed.unclearPoints) ? parsed.unclearPoints.map(x => String(x || '').trim()).filter(Boolean) : [];
+        const hasStructuredAnalysis = views.length || technicalNotes.length || unclearPoints.length;
+        if (hasStructuredAnalysis) {
+          S.analyses.push({
+            id: uid('a'),
+            type: 'html-project-analysis',
+            projectId,
+            createdAt: now,
+            resultRaw: text,
+            resultParsed: {
+              appType: typeof parsed.appType === 'string' ? parsed.appType : '',
+              projectSummary: typeof parsed.projectSummary === 'string' ? parsed.projectSummary : '',
+              views,
+              technicalNotes,
+              unclearPoints
+            }
+          });
+        }
+
+        return { imported, duplicates };
+      }
+
       function importFeatureLinesFromPrompt() {
         const text = $('promptOutput').value.trim();
         if (!text) return alert('Kein Text vorhanden.');
@@ -1423,8 +1503,20 @@
           return alert(imported + ' Features übernommen.');
         }
 
+        const projectId = getImportTargetProjectId();
+        if (!projectId) return alert('Bitte zuerst ein Projekt auswählen (HTML-Analyse oder Quick-Notiz).');
+        try {
+          const result = importJsonAnalysisFromPrompt(text, projectId);
+          save();
+          renderProjectSelects();
+          renderView();
+          return alert('JSON-Analyse importiert: ' + result.imported + ' Features übernommen, ' + result.duplicates + ' Duplikate übersprungen.');
+        } catch (err) {
+          alert('Kein gültiges Analyse-JSON erkannt. Fallback auf Zeilenimport.');
+        }
+
         const lines = text.split(/\n+/).map(s => s.trim()).filter(Boolean).filter(s => s.startsWith('- '));
-        const projectId = $('htmlProjectSelect').value || $('quickProject').value || '';
+        let importedLines = 0;
         lines.forEach(line => {
           const title = line.replace(/^-\s*/, '').trim();
           if (!title) return;
@@ -1443,12 +1535,12 @@
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString()
             });
-            imported++;
+            importedLines++;
           }
         });
         save();
         renderView();
-        alert(imported + ' Zeilen als Features übernommen.');
+        alert(importedLines + ' Zeilen als Features übernommen.');
       }
 
       function exportJson() {
