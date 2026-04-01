@@ -1,0 +1,1528 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Roadtrip</title>
+  <style>
+    :root {
+      --bg: #12151c;
+      --bg-mid: #171b23;
+      --surface: #1d2330;
+      --surface-2: #222a38;
+      --surface-3: #2a3445;
+      --border: #39465c;
+      --border-light: #586a87;
+      --ink: #eef2f7;
+      --ink-light: #b8c3d4;
+      --ink-dim: #7f8da3;
+      --accent: #b8a06e;
+      --accent-2: #8ea6d9;
+      --green: #7db88f;
+      --yellow: #c5ab63;
+      --red: #c57b7b;
+      --blue: #7ea2d1;
+      --radius: 14px;
+      --shadow: 0 12px 30px rgba(0,0,0,.25);
+      --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+      --font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+      --touch: 42px;
+    }
+
+    body.theme-light {
+      --bg: #f4f5f7;
+      --bg-mid: #eceef1;
+      --surface: #ffffff;
+      --surface-2: #f8f9fb;
+      --surface-3: #eef1f5;
+      --border: #d5dbe5;
+      --border-light: #bcc7d6;
+      --ink: #18202b;
+      --ink-light: #4d5c70;
+      --ink-dim: #788699;
+      --accent: #8b6c2f;
+      --accent-2: #46679f;
+      --shadow: 0 8px 22px rgba(10,15,20,.08);
+    }
+
+    body.theme-eink {
+      --bg: #f7f7f2;
+      --bg-mid: #efefe9;
+      --surface: #ffffff;
+      --surface-2: #f8f8f4;
+      --surface-3: #f1f1eb;
+      --border: #979797;
+      --border-light: #666666;
+      --ink: #111111;
+      --ink-light: #333333;
+      --ink-dim: #666666;
+      --accent: #111111;
+      --accent-2: #111111;
+      --green: #111111;
+      --yellow: #333333;
+      --red: #111111;
+      --blue: #111111;
+      --shadow: none;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--font-ui);
+      line-height: 1.4;
+    }
+    body.font-serif { font-family: var(--font-serif); }
+
+    .app {
+      max-width: 1480px;
+      margin: 0 auto;
+      padding: 14px;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: 1.25fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .hero, .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .eyebrow {
+      color: var(--ink-dim);
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: .14em;
+      font-weight: 700;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 30px;
+      line-height: 1.1;
+      letter-spacing: -.02em;
+    }
+
+    .subline {
+      color: var(--ink-light);
+      max-width: 80ch;
+    }
+
+    .hero-actions, .toolbar, .segmented, .stack-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .panel { padding: 14px; }
+    .panel-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .panel-title h2,
+    .panel-title h3,
+    .section h2,
+    .section h3 { margin: 0; font-size: 15px; }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    .stat {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+    }
+
+    .stat .label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--ink-dim);
+      margin-bottom: 6px;
+      font-weight: 700;
+    }
+
+    .stat .value {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -.03em;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 320px minmax(0,1fr);
+      gap: 12px;
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .main {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .btn, button {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--ink);
+      border-radius: 12px;
+      min-height: var(--touch);
+      padding: 10px 14px;
+      font: inherit;
+      cursor: pointer;
+      transition: .14s ease;
+    }
+
+    .btn:hover, button:hover { border-color: var(--border-light); transform: translateY(-1px); }
+    .btn:active, button:active { transform: translateY(0); }
+
+    .btn-primary { background: var(--accent); color: #111; border-color: transparent; font-weight: 700; }
+    body.theme-eink .btn-primary { color: #fff; }
+    .btn-soft { background: var(--surface-2); }
+    .btn-danger { background: var(--red); color: #fff; border-color: transparent; }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 30px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--ink-light);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .segmented .seg {
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: transparent;
+      min-height: 36px;
+      color: var(--ink-light);
+    }
+    .segmented .seg.active { background: var(--surface-3); color: var(--ink); border-color: var(--border-light); font-weight: 700; }
+
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--ink);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font: inherit;
+    }
+
+    textarea { min-height: 100px; resize: vertical; }
+    label {
+      display: block;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--ink-dim);
+      margin-bottom: 6px;
+      font-weight: 700;
+    }
+
+    .field { margin-bottom: 10px; }
+
+    .mini {
+      color: var(--ink-dim);
+      font-size: 12px;
+    }
+
+    .list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .item {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .item .row-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: flex-start;
+    }
+
+    .item-title {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.2;
+    }
+
+    .item-desc {
+      color: var(--ink-light);
+      font-size: 14px;
+      white-space: pre-wrap;
+    }
+
+    .meta {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .grid-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 10px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 12px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .kanban {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(220px, 1fr));
+      gap: 10px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+
+    .column {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 10px;
+      min-height: 300px;
+    }
+
+    .column h3 {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--ink-light);
+      margin: 0 0 10px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      background: var(--surface);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    th, td {
+      padding: 10px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+    th { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-dim); }
+
+    details {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 10px 12px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .hidden { display: none !important; }
+
+    .notice {
+      background: var(--surface-2);
+      border: 1px dashed var(--border-light);
+      border-radius: 12px;
+      padding: 10px 12px;
+      color: var(--ink-light);
+      font-size: 14px;
+    }
+
+    .dropzone {
+      border: 1px dashed var(--border-light);
+      border-radius: 14px;
+      padding: 12px;
+      background: var(--surface-2);
+    }
+
+    .footer-note { color: var(--ink-dim); font-size: 12px; }
+
+    @media (max-width: 1080px) {
+      .topbar, .layout { grid-template-columns: 1fr; }
+      .stats { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 680px) {
+      .app { padding: 10px; }
+      .stats { grid-template-columns: 1fr 1fr; }
+      .kanban { grid-template-columns: repeat(6, 260px); }
+      h1 { font-size: 24px; }
+    }
+  </style>
+</head>
+<body class="theme-dark">
+  <div class="app" id="app">
+    <div class="topbar">
+      <section class="hero">
+        <div class="eyebrow">Roadtrip · App-Roadmaps verwalten</div>
+        <h1>Roadtrip</h1>
+        <div class="subline">Single-File-Steuerzentrale für deine App-Projekte, Features, Rohnotizen und Analyse-Prompts. Optisch an die Daily-Log-Familie angelehnt, aber stärker auf Entwicklung, Status und Zuordnung gebaut.</div>
+        <div class="hero-actions">
+          <button class="btn btn-primary" id="btnSeed">Demo-Daten laden</button>
+          <button class="btn" id="btnExport">JSON exportieren</button>
+          <label class="btn" for="importJsonInput">JSON importieren</label>
+          <input id="importJsonInput" type="file" accept="application/json" class="hidden" />
+          <button class="btn" id="btnBackupRaw">Rohdaten exportieren</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">
+          <h2>Status</h2>
+          <div class="mini" id="lastSavedLabel">—</div>
+        </div>
+        <div class="stats" id="stats"></div>
+      </section>
+    </div>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <section class="panel">
+          <div class="panel-title"><h3>Ansicht</h3></div>
+          <div class="segmented" id="viewTabs"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title"><h3>Theme & Schrift</h3></div>
+          <div class="field">
+            <label for="themeSelect">Theme</label>
+            <select id="themeSelect">
+              <option value="theme-dark">Dark</option>
+              <option value="theme-light">Light</option>
+              <option value="theme-eink">E-Ink</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="fontSelect">Schrift</label>
+            <select id="fontSelect">
+              <option value="ui">System / Daily-Log-nah</option>
+              <option value="serif">Serif / ruhiger</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title"><h3>Quick Add</h3></div>
+          <div class="field">
+            <label for="quickProject">Projekt</label>
+            <select id="quickProject"></select>
+          </div>
+          <div class="field">
+            <label for="quickNote">Rohe Notiz</label>
+            <textarea id="quickNote" placeholder="Feature-Idee, Design-Gedanke, Sync-Wunsch, Bug, Prompt-Idee …"></textarea>
+          </div>
+          <div class="stack-row">
+            <button class="btn btn-primary" id="btnAddNote">Notiz speichern</button>
+            <button class="btn" id="btnAnalyzeNote">Mit Prompt verarbeiten</button>
+          </div>
+          <div class="footer-note">v0.1 baut echte Projekt-/Feature-Verwaltung. KI-Calls sind als Prompt-Builder vorbereitet. Das spart dir jetzt Komplexität und hält die erste Version stabil.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title"><h3>Filter</h3></div>
+          <div class="field">
+            <label for="filterProject">Projekt</label>
+            <select id="filterProject"></select>
+          </div>
+          <div class="field">
+            <label for="filterStatus">Status</label>
+            <select id="filterStatus"></select>
+          </div>
+          <div class="field">
+            <label for="filterSearch">Suche</label>
+            <input id="filterSearch" type="text" placeholder="Titel, Beschreibung, Tags …" />
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title"><h3>Sync & API</h3></div>
+          <div class="field">
+            <label for="gistId">Gist ID</label>
+            <input id="gistId" type="text" placeholder="optional für späteren Sync" />
+          </div>
+          <div class="field">
+            <label for="rawGistId">Backup Gist ID (Rohdaten)</label>
+            <input id="rawGistId" type="text" placeholder="optional" />
+          </div>
+          <div class="field">
+            <label for="openAiModel">OpenAI-Modell</label>
+            <input id="openAiModel" type="text" placeholder="z. B. gpt-5.4" />
+          </div>
+          <details>
+            <summary>Geplante nächste Stufe</summary>
+            <div class="mini" style="margin-top:8px">Hier sind Felder für spätere Live-API-Calls und Gist-Sync schon angelegt. In v0.1 bleiben Token bewusst außen vor. Das hält den Entwurf sicherer und besser testbar.</div>
+          </details>
+        </section>
+      </aside>
+
+      <main class="main">
+        <section class="panel">
+          <div class="panel-title">
+            <h3>Projekt anlegen / bearbeiten</h3>
+            <div class="stack-row">
+              <button class="btn" id="btnResetProjectForm">Formular leeren</button>
+            </div>
+          </div>
+          <div class="field">
+            <label for="projectTitle">Titel</label>
+            <input id="projectTitle" type="text" placeholder="z. B. Daily Log App" />
+          </div>
+          <div class="stack-row">
+            <div class="field" style="flex:1">
+              <label for="projectType">App-Typ</label>
+              <select id="projectType"></select>
+            </div>
+            <div class="field" style="flex:1">
+              <label for="projectStatus">Status</label>
+              <select id="projectStatus"></select>
+            </div>
+          </div>
+          <div class="field">
+            <label for="projectSummary">Kurzbeschreibung</label>
+            <textarea id="projectSummary" placeholder="Wofür ist die App da? Was ist der Kern? Was ist schon vorhanden?"></textarea>
+          </div>
+          <div class="field">
+            <label for="projectTags">Tags</label>
+            <input id="projectTags" type="text" placeholder="z. B. journaling, sync, prompt-forwarding" />
+          </div>
+          <div class="stack-row">
+            <button class="btn btn-primary" id="btnSaveProject">Projekt speichern</button>
+            <button class="btn" id="btnDeleteProject">Projekt löschen</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">
+            <h3>HTML importieren & analysieren</h3>
+            <div class="mini">Heuristische Erstfassung + Prompt-Builder für die KI-Analyse</div>
+          </div>
+          <div class="field">
+            <label for="htmlProjectSelect">Projekt</label>
+            <select id="htmlProjectSelect"></select>
+          </div>
+          <div class="dropzone">
+            <div class="field">
+              <label for="htmlFileInput">index.html hochladen</label>
+              <input id="htmlFileInput" type="file" accept=".html,text/html" />
+            </div>
+            <div class="field">
+              <label for="htmlTextarea">oder HTML einfügen</label>
+              <textarea id="htmlTextarea" style="min-height:180px" placeholder="Hier eine aktuelle index.html einfügen …"></textarea>
+            </div>
+            <div class="stack-row">
+              <button class="btn btn-primary" id="btnAnalyzeHtml">HTML lokal auslesen</button>
+              <button class="btn" id="btnBuildHtmlPrompt">KI-Prompt kopieren</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="viewContainer"></section>
+
+        <section class="panel">
+          <div class="panel-title"><h3>Prompt-Studio</h3></div>
+          <div class="field">
+            <label for="promptOutput">Generierter Prompt / Analyseergebnis</label>
+            <textarea id="promptOutput" style="min-height:240px" placeholder="Hier erscheinen Analyseergebnisse oder Prompt-Blöcke."></textarea>
+          </div>
+          <div class="stack-row">
+            <button class="btn" id="btnCopyPrompt">Text kopieren</button>
+            <button class="btn" id="btnFeatureFromPrompt">Als Features übernehmen</button>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const LKEY = 'roadtrip_v0_1';
+      const CONFIG_KEY = 'roadtrip_v0_1_config';
+      const VIEWS = ['dashboard', 'kanban', 'table', 'cards', 'inbox', 'projects'];
+      const APP_TYPES = ['Daily Log', 'Braindump', 'Review', 'Tracker', 'Writing', 'Learning', 'Meta-App', 'Sonstiges'];
+      const PROJECT_STATUS = ['aktiv', 'pausiert', 'archiviert'];
+      const FEATURE_STATUS = ['Idee', 'geprüft', 'geplant', 'in Arbeit', 'teilweise umgesetzt', 'umgesetzt'];
+      const FEATURE_CATEGORIES = ['UI', 'Workflow', 'Sync', 'KI', 'Import/Export', 'Darstellung', 'Datenmodell', 'Ansicht', 'Sonstiges'];
+      const PRIORITIES = ['niedrig', 'mittel', 'hoch', 'kritisch'];
+      const FEATURE_COLUMNS = FEATURE_STATUS;
+
+      let S = defaultState();
+      let C = defaultConfig();
+      let ui = { view: 'dashboard', editingProjectId: null, analysisDraftFeatures: [] };
+
+      const $ = (id) => document.getElementById(id);
+      const q = (sel, el = document) => el.querySelector(sel);
+      const qq = (sel, el = document) => Array.from(el.querySelectorAll(sel));
+
+      init();
+
+      function defaultState() {
+        return {
+          version: 1,
+          createdAt: new Date().toISOString(),
+          _lastExported: new Date().toISOString(),
+          projects: [],
+          features: [],
+          notes: [],
+          analyses: []
+        };
+      }
+
+      function defaultConfig() {
+        return {
+          theme: 'theme-dark',
+          font: 'ui',
+          gistId: '',
+          rawGistId: '',
+          openAiModel: 'gpt-5.4'
+        };
+      }
+
+      function init() {
+        load();
+        wireBasics();
+        renderAll();
+      }
+
+      function load() {
+        try {
+          const raw = localStorage.getItem(LKEY);
+          if (raw) S = Object.assign(defaultState(), JSON.parse(raw));
+        } catch (e) { console.warn('load state failed', e); }
+        try {
+          const raw = localStorage.getItem(CONFIG_KEY);
+          if (raw) C = Object.assign(defaultConfig(), JSON.parse(raw));
+        } catch (e) { console.warn('load config failed', e); }
+        ensureDefaults();
+      }
+
+      function ensureDefaults() {
+        if (!Array.isArray(S.projects)) S.projects = [];
+        if (!Array.isArray(S.features)) S.features = [];
+        if (!Array.isArray(S.notes)) S.notes = [];
+        if (!Array.isArray(S.analyses)) S.analyses = [];
+      }
+
+      function save() {
+        S._lastExported = new Date().toISOString();
+        localStorage.setItem(LKEY, JSON.stringify(S));
+        localStorage.setItem(CONFIG_KEY, JSON.stringify(C));
+        $('lastSavedLabel').textContent = 'Gespeichert: ' + formatDateTime(S._lastExported);
+        renderStats();
+      }
+
+      function wireBasics() {
+        fillSelect($('projectType'), APP_TYPES);
+        fillSelect($('projectStatus'), PROJECT_STATUS);
+        fillSelect($('filterStatus'), ['alle'].concat(FEATURE_STATUS));
+
+        $('themeSelect').value = C.theme;
+        $('fontSelect').value = C.font;
+        $('gistId').value = C.gistId || '';
+        $('rawGistId').value = C.rawGistId || '';
+        $('openAiModel').value = C.openAiModel || '';
+
+        $('themeSelect').addEventListener('change', e => { C.theme = e.target.value; applyTheme(); save(); });
+        $('fontSelect').addEventListener('change', e => { C.font = e.target.value; applyTheme(); save(); });
+        $('gistId').addEventListener('input', e => { C.gistId = e.target.value; save(); });
+        $('rawGistId').addEventListener('input', e => { C.rawGistId = e.target.value; save(); });
+        $('openAiModel').addEventListener('input', e => { C.openAiModel = e.target.value; save(); });
+
+        $('btnSeed').addEventListener('click', seedDemo);
+        $('btnExport').addEventListener('click', exportJson);
+        $('btnBackupRaw').addEventListener('click', exportRawNotes);
+        $('importJsonInput').addEventListener('change', importJson);
+
+        $('btnSaveProject').addEventListener('click', saveProjectFromForm);
+        $('btnDeleteProject').addEventListener('click', deleteProjectFromForm);
+        $('btnResetProjectForm').addEventListener('click', resetProjectForm);
+
+        $('btnAddNote').addEventListener('click', addQuickNote);
+        $('btnAnalyzeNote').addEventListener('click', buildNotePrompt);
+
+        $('filterProject').addEventListener('change', renderView);
+        $('filterStatus').addEventListener('change', renderView);
+        $('filterSearch').addEventListener('input', renderView);
+
+        $('htmlFileInput').addEventListener('change', onHtmlFilePicked);
+        $('btnAnalyzeHtml').addEventListener('click', analyzeHtmlLocal);
+        $('btnBuildHtmlPrompt').addEventListener('click', buildHtmlPrompt);
+
+        $('btnCopyPrompt').addEventListener('click', copyPrompt);
+        $('btnFeatureFromPrompt').addEventListener('click', importFeatureLinesFromPrompt);
+      }
+
+      function renderAll() {
+        applyTheme();
+        renderTabs();
+        renderProjectSelects();
+        renderStats();
+        renderView();
+        $('lastSavedLabel').textContent = 'Gespeichert: ' + formatDateTime(S._lastExported);
+      }
+
+      function applyTheme() {
+        document.body.className = C.theme + (C.font === 'serif' ? ' font-serif' : '');
+      }
+
+      function renderTabs() {
+        const wrap = $('viewTabs');
+        wrap.innerHTML = '';
+        VIEWS.forEach(v => {
+          const b = document.createElement('button');
+          b.className = 'seg' + (ui.view === v ? ' active' : '');
+          b.textContent = ({dashboard:'Dashboard',kanban:'Kanban',table:'Tabelle',cards:'Karten',inbox:'Inbox',projects:'Projekte'})[v];
+          b.addEventListener('click', () => { ui.view = v; renderTabs(); renderView(); });
+          wrap.appendChild(b);
+        });
+      }
+
+      function renderStats() {
+        const stats = {
+          Projekte: S.projects.filter(p => p.status !== 'archiviert').length,
+          Features: S.features.length,
+          Offene: S.features.filter(f => ['Idee','geprüft','geplant','in Arbeit','teilweise umgesetzt'].includes(f.status)).length,
+          Notizen: S.notes.filter(n => !n.processed).length
+        };
+        const el = $('stats');
+        el.innerHTML = Object.entries(stats).map(([k,v]) => `
+          <div class="stat">
+            <div class="label">${escapeHtml(k)}</div>
+            <div class="value">${v}</div>
+          </div>
+        `).join('');
+      }
+
+      function renderProjectSelects() {
+        const options = [{value:'', label:'— Kein Projekt —'}].concat(S.projects.map(p => ({ value:p.id, label:p.title })));
+        fillSelect($('quickProject'), options, true);
+        fillSelect($('filterProject'), [{value:'alle', label:'Alle Projekte'}].concat(S.projects.map(p => ({ value:p.id, label:p.title }))), true);
+        fillSelect($('htmlProjectSelect'), options, true);
+      }
+
+      function renderView() {
+        const c = $('viewContainer');
+        const projects = S.projects;
+        const features = getFilteredFeatures();
+        const notes = getFilteredNotes();
+
+        if (!projects.length && ui.view !== 'inbox') {
+          c.innerHTML = '<div class="notice">Noch keine Projekte. Leg zuerst ein Projekt an oder lade Demo-Daten.</div>';
+          return;
+        }
+
+        if (ui.view === 'dashboard') c.innerHTML = renderDashboard(projects, features, notes);
+        if (ui.view === 'kanban') c.innerHTML = renderKanban(features);
+        if (ui.view === 'table') c.innerHTML = renderTable(features);
+        if (ui.view === 'cards') c.innerHTML = renderCards(features);
+        if (ui.view === 'inbox') c.innerHTML = renderInbox(notes);
+        if (ui.view === 'projects') c.innerHTML = renderProjects(projects);
+
+        wireDynamicView();
+      }
+
+      function wireDynamicView() {
+        qq('[data-edit-project]').forEach(btn => btn.addEventListener('click', () => editProject(btn.dataset.editProject)));
+        qq('[data-delete-project]').forEach(btn => btn.addEventListener('click', () => deleteProject(btn.dataset.deleteProject)));
+        qq('[data-delete-note]').forEach(btn => btn.addEventListener('click', () => deleteNote(btn.dataset.deleteNote)));
+        qq('[data-mark-note]').forEach(btn => btn.addEventListener('click', () => markNoteProcessed(btn.dataset.markNote)));
+        qq('[data-status-feature]').forEach(sel => sel.addEventListener('change', e => updateFeatureStatus(sel.dataset.statusFeature, e.target.value)));
+        qq('[data-prio-feature]').forEach(sel => sel.addEventListener('change', e => updateFeaturePriority(sel.dataset.prioFeature, e.target.value)));
+        qq('[data-add-feature-from-note]').forEach(btn => btn.addEventListener('click', () => promoteNoteToFeature(btn.dataset.addFeatureFromNote)));
+        qq('[data-build-note-prompt]').forEach(btn => btn.addEventListener('click', () => buildSingleNotePrompt(btn.dataset.buildNotePrompt)));
+        qq('[data-create-feature]').forEach(btn => btn.addEventListener('click', () => quickCreateFeature(btn.dataset.createFeature)));
+      }
+
+      function renderDashboard(projects, features, notes) {
+        const recentProjects = projects.slice().sort((a,b) => (b.updatedAt||'').localeCompare(a.updatedAt||'')).slice(0,4);
+        const inProgress = features.filter(f => ['in Arbeit','teilweise umgesetzt'].includes(f.status)).slice(0,6);
+        const waiting = features.filter(f => ['Idee','geprüft','geplant'].includes(f.status)).slice(0,6);
+        return `
+          <div class="panel-title"><h3>Dashboard</h3><div class="mini">Schneller Überblick über deine aktive App-Landschaft</div></div>
+          <div class="grid-cards">
+            <div class="card">
+              <h3>Aktive Projekte</h3>
+              <div class="list">${recentProjects.map(projectCardMini).join('') || '<div class="notice">Noch nichts da.</div>'}</div>
+            </div>
+            <div class="card">
+              <h3>Gerade in Arbeit</h3>
+              <div class="list">${inProgress.map(featureCardMini).join('') || '<div class="notice">Nichts in Arbeit.</div>'}</div>
+            </div>
+            <div class="card">
+              <h3>Nächste gute Kandidaten</h3>
+              <div class="list">${waiting.map(featureCardMini).join('') || '<div class="notice">Keine offenen Ideen.</div>'}</div>
+            </div>
+            <div class="card">
+              <h3>Inbox</h3>
+              <div class="list">${notes.slice(0,6).map(noteCardMini).join('') || '<div class="notice">Inbox leer.</div>'}</div>
+            </div>
+          </div>
+        `;
+      }
+
+      function renderKanban(features) {
+        return `
+          <div class="panel-title"><h3>Kanban</h3><div class="mini">Statusorientierte Roadmap-Ansicht</div></div>
+          <div class="kanban">
+            ${FEATURE_COLUMNS.map(col => `
+              <div class="column">
+                <h3>${escapeHtml(col)} · ${features.filter(f => f.status === col).length}</h3>
+                <div class="list">
+                  ${features.filter(f => f.status === col).map(f => `
+                    <div class="item">
+                      <div class="row-top">
+                        <h4 class="item-title">${escapeHtml(f.title)}</h4>
+                        <span class="pill">${escapeHtml(f.priority)}</span>
+                      </div>
+                      <div class="item-desc">${escapeHtml(f.description || '')}</div>
+                      <div class="meta">
+                        <span class="pill">${escapeHtml(getProjectTitle(f.projectId))}</span>
+                        <span class="pill">${escapeHtml(f.category)}</span>
+                      </div>
+                      <div class="stack-row">
+                        <select data-status-feature="${f.id}">${FEATURE_STATUS.map(s => `<option value="${s}" ${s===f.status?'selected':''}>${s}</option>`).join('')}</select>
+                      </div>
+                    </div>
+                  `).join('') || '<div class="notice">Leer.</div>'}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+
+      function renderTable(features) {
+        return `
+          <div class="panel-title"><h3>Tabelle</h3><div class="mini">Filtern, sichten, Prioritäten anpassen</div></div>
+          <div style="overflow:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Feature</th>
+                  <th>Projekt</th>
+                  <th>Status</th>
+                  <th>Priorität</th>
+                  <th>Kategorie</th>
+                  <th>Quelle</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${features.map(f => `
+                  <tr>
+                    <td>
+                      <strong>${escapeHtml(f.title)}</strong><br>
+                      <span class="mini">${escapeHtml(f.description || '')}</span>
+                    </td>
+                    <td>${escapeHtml(getProjectTitle(f.projectId))}</td>
+                    <td><select data-status-feature="${f.id}">${FEATURE_STATUS.map(s => `<option value="${s}" ${s===f.status?'selected':''}>${s}</option>`).join('')}</select></td>
+                    <td><select data-prio-feature="${f.id}">${PRIORITIES.map(p => `<option value="${p}" ${p===f.priority?'selected':''}>${p}</option>`).join('')}</select></td>
+                    <td>${escapeHtml(f.category)}</td>
+                    <td>${escapeHtml(f.sourceType || 'manuell')}</td>
+                  </tr>
+                `).join('') || '<tr><td colspan="6">Keine Features passend zu deinen Filtern.</td></tr>'}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      function renderCards(features) {
+        return `
+          <div class="panel-title"><h3>Karten</h3><div class="mini">Gut für E-Ink und schnelles Durchgehen</div></div>
+          <div class="grid-cards">
+            ${features.map(f => `
+              <article class="card">
+                <div class="row-top">
+                  <h4 class="item-title">${escapeHtml(f.title)}</h4>
+                  <span class="pill">${escapeHtml(f.status)}</span>
+                </div>
+                <div class="item-desc">${escapeHtml(f.description || '')}</div>
+                <div class="meta">
+                  <span class="pill">${escapeHtml(getProjectTitle(f.projectId))}</span>
+                  <span class="pill">${escapeHtml(f.category)}</span>
+                  <span class="pill">${escapeHtml(f.priority)}</span>
+                </div>
+                <div class="stack-row">
+                  <select data-status-feature="${f.id}">${FEATURE_STATUS.map(s => `<option value="${s}" ${s===f.status?'selected':''}>${s}</option>`).join('')}</select>
+                </div>
+              </article>
+            `).join('') || '<div class="notice">Keine Features vorhanden.</div>'}
+          </div>
+        `;
+      }
+
+      function renderInbox(notes) {
+        return `
+          <div class="panel-title"><h3>Inbox</h3><div class="mini">Rohe Notizen, QuickAdd-Einträge und Weiterverarbeitung</div></div>
+          <div class="list">
+            ${notes.map(n => `
+              <div class="item">
+                <div class="row-top">
+                  <h4 class="item-title">${escapeHtml(getProjectTitle(n.projectId) || 'Ohne Projekt')}</h4>
+                  <span class="pill">${n.processed ? 'verarbeitet' : 'offen'}</span>
+                </div>
+                <div class="item-desc">${escapeHtml(n.text)}</div>
+                <div class="meta">
+                  <span class="pill">${formatDateTime(n.createdAt)}</span>
+                </div>
+                <div class="stack-row">
+                  <button class="btn" data-build-note-prompt="${n.id}">Prompt bauen</button>
+                  <button class="btn" data-add-feature-from-note="${n.id}">Als Feature anlegen</button>
+                  <button class="btn" data-mark-note="${n.id}">Als verarbeitet markieren</button>
+                  <button class="btn btn-danger" data-delete-note="${n.id}">Löschen</button>
+                </div>
+              </div>
+            `).join('') || '<div class="notice">Keine Notizen.</div>'}
+          </div>
+        `;
+      }
+
+      function renderProjects(projects) {
+        return `
+          <div class="panel-title"><h3>Projekte</h3><div class="mini">Projektbeschreibung, Status und Schnellzugriff</div></div>
+          <div class="grid-cards">
+            ${projects.map(p => `
+              <article class="card">
+                <div class="row-top">
+                  <h4 class="item-title">${escapeHtml(p.title)}</h4>
+                  <span class="pill">${escapeHtml(p.status)}</span>
+                </div>
+                <div class="item-desc">${escapeHtml(p.summary || '')}</div>
+                <div class="meta">
+                  <span class="pill">${escapeHtml(p.type || '—')}</span>
+                  <span class="pill">${S.features.filter(f => f.projectId === p.id).length} Features</span>
+                  <span class="pill">${S.notes.filter(n => n.projectId === p.id && !n.processed).length} Notizen</span>
+                </div>
+                <div class="stack-row">
+                  <button class="btn" data-edit-project="${p.id}">Bearbeiten</button>
+                  <button class="btn" data-create-feature="${p.id}">Schnell-Feature</button>
+                  <button class="btn btn-danger" data-delete-project="${p.id}">Löschen</button>
+                </div>
+              </article>
+            `).join('')}
+          </div>
+        `;
+      }
+
+      function projectCardMini(p) {
+        return `<div class="item"><div class="row-top"><strong>${escapeHtml(p.title)}</strong><span class="pill">${escapeHtml(p.status)}</span></div><div class="mini">${escapeHtml(p.summary || '')}</div></div>`;
+      }
+      function featureCardMini(f) {
+        return `<div class="item"><strong>${escapeHtml(f.title)}</strong><div class="mini">${escapeHtml(getProjectTitle(f.projectId))} · ${escapeHtml(f.status)}</div></div>`;
+      }
+      function noteCardMini(n) {
+        return `<div class="item"><strong>${escapeHtml(shorten(n.text, 70))}</strong><div class="mini">${escapeHtml(getProjectTitle(n.projectId) || 'Ohne Projekt')}</div></div>`;
+      }
+
+      function fillSelect(el, values, objectsMode) {
+        if (!el) return;
+        let items = values;
+        if (!objectsMode) items = values.map(v => ({ value:v, label:v }));
+        el.innerHTML = items.map(item => `<option value="${escapeAttr(item.value)}">${escapeHtml(item.label)}</option>`).join('');
+      }
+
+      function getFilteredFeatures() {
+        const p = $('filterProject').value || 'alle';
+        const st = $('filterStatus').value || 'alle';
+        const term = ($('filterSearch').value || '').trim().toLowerCase();
+        return S.features.filter(f => {
+          if (p !== 'alle' && f.projectId !== p) return false;
+          if (st !== 'alle' && f.status !== st) return false;
+          if (term) {
+            const blob = [f.title, f.description, f.category, f.priority, getProjectTitle(f.projectId)].join(' ').toLowerCase();
+            if (!blob.includes(term)) return false;
+          }
+          return true;
+        }).sort((a,b) => (b.updatedAt||'').localeCompare(a.updatedAt||''));
+      }
+
+      function getFilteredNotes() {
+        const p = $('filterProject').value || 'alle';
+        const term = ($('filterSearch').value || '').trim().toLowerCase();
+        return S.notes.filter(n => {
+          if (p !== 'alle' && n.projectId !== p) return false;
+          if (term) {
+            const blob = [n.text, getProjectTitle(n.projectId)].join(' ').toLowerCase();
+            if (!blob.includes(term)) return false;
+          }
+          return true;
+        }).sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
+      }
+
+      function saveProjectFromForm() {
+        const title = $('projectTitle').value.trim();
+        if (!title) return alert('Bitte einen Projekttitel eintragen.');
+        const now = new Date().toISOString();
+        const data = {
+          title,
+          type: $('projectType').value,
+          status: $('projectStatus').value,
+          summary: $('projectSummary').value.trim(),
+          tags: splitTags($('projectTags').value),
+          updatedAt: now
+        };
+        if (ui.editingProjectId) {
+          const p = S.projects.find(x => x.id === ui.editingProjectId);
+          if (!p) return;
+          Object.assign(p, data);
+        } else {
+          S.projects.push(Object.assign({ id: uid('p'), createdAt: now, lastHtmlImportedAt: '', lastAnalyzedAt: '' }, data));
+        }
+        save();
+        renderProjectSelects();
+        renderView();
+        resetProjectForm();
+      }
+
+      function editProject(id) {
+        const p = S.projects.find(x => x.id === id);
+        if (!p) return;
+        ui.editingProjectId = id;
+        $('projectTitle').value = p.title || '';
+        $('projectType').value = p.type || APP_TYPES[0];
+        $('projectStatus').value = p.status || PROJECT_STATUS[0];
+        $('projectSummary').value = p.summary || '';
+        $('projectTags').value = (p.tags || []).join(', ');
+      }
+
+      function resetProjectForm() {
+        ui.editingProjectId = null;
+        $('projectTitle').value = '';
+        $('projectType').value = APP_TYPES[0];
+        $('projectStatus').value = PROJECT_STATUS[0];
+        $('projectSummary').value = '';
+        $('projectTags').value = '';
+      }
+
+      function deleteProjectFromForm() {
+        if (!ui.editingProjectId) return alert('Kein Projekt zum Löschen ausgewählt.');
+        deleteProject(ui.editingProjectId);
+      }
+
+      function deleteProject(id) {
+        const p = S.projects.find(x => x.id === id);
+        if (!p) return;
+        if (!confirm(`Projekt "${p.title}" wirklich löschen? Zugehörige Features und Projekt-Notizen werden ebenfalls gelöscht.`)) return;
+        S.projects = S.projects.filter(x => x.id !== id);
+        S.features = S.features.filter(f => f.projectId !== id);
+        S.notes = S.notes.filter(n => n.projectId !== id);
+        if (ui.editingProjectId === id) resetProjectForm();
+        save();
+        renderProjectSelects();
+        renderView();
+      }
+
+      function addQuickNote() {
+        const text = $('quickNote').value.trim();
+        if (!text) return alert('Bitte erst eine Notiz schreiben.');
+        S.notes.push({
+          id: uid('n'),
+          projectId: $('quickProject').value || '',
+          text,
+          processed: false,
+          createdAt: new Date().toISOString()
+        });
+        $('quickNote').value = '';
+        save();
+        renderView();
+      }
+
+      function deleteNote(id) {
+        S.notes = S.notes.filter(n => n.id !== id);
+        save();
+        renderView();
+      }
+
+      function markNoteProcessed(id) {
+        const n = S.notes.find(x => x.id === id);
+        if (!n) return;
+        n.processed = true;
+        n.processedAt = new Date().toISOString();
+        save();
+        renderView();
+      }
+
+      function promoteNoteToFeature(id) {
+        const n = S.notes.find(x => x.id === id);
+        if (!n) return;
+        const title = prompt('Feature-Titel:', guessFeatureTitle(n.text));
+        if (!title) return;
+        S.features.push({
+          id: uid('f'),
+          projectId: n.projectId || '',
+          title: title.trim(),
+          description: n.text,
+          status: 'Idee',
+          priority: 'mittel',
+          category: 'Workflow',
+          sourceType: 'note-analysis',
+          sourceNoteIds: [n.id],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+        n.processed = true;
+        n.processedAt = new Date().toISOString();
+        save();
+        renderView();
+      }
+
+      function updateFeatureStatus(id, status) {
+        const f = S.features.find(x => x.id === id);
+        if (!f) return;
+        f.status = status;
+        f.updatedAt = new Date().toISOString();
+        save();
+        renderView();
+      }
+
+      function updateFeaturePriority(id, priority) {
+        const f = S.features.find(x => x.id === id);
+        if (!f) return;
+        f.priority = priority;
+        f.updatedAt = new Date().toISOString();
+        save();
+      }
+
+      function quickCreateFeature(projectId) {
+        const title = prompt('Feature-Titel:');
+        if (!title) return;
+        const description = prompt('Kurzbeschreibung:', '');
+        S.features.push({
+          id: uid('f'),
+          projectId,
+          title: title.trim(),
+          description: (description || '').trim(),
+          status: 'Idee',
+          priority: 'mittel',
+          category: 'Sonstiges',
+          sourceType: 'manual',
+          sourceNoteIds: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+        save();
+        renderView();
+      }
+
+      function onHtmlFilePicked(e) {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => { $('htmlTextarea').value = String(reader.result || ''); };
+        reader.readAsText(file, 'utf-8');
+      }
+
+      function analyzeHtmlLocal() {
+        const html = $('htmlTextarea').value.trim();
+        const projectId = $('htmlProjectSelect').value;
+        if (!projectId) return alert('Bitte ein Projekt auswählen.');
+        if (!html) return alert('Bitte HTML hochladen oder einfügen.');
+        const result = heuristicsFromHtml(html);
+        const p = S.projects.find(x => x.id === projectId);
+        if (!p) return;
+        p.summary = result.projectSummary || p.summary;
+        p.type = result.appType || p.type;
+        p.lastHtmlImportedAt = new Date().toISOString();
+        p.lastAnalyzedAt = new Date().toISOString();
+        p.updatedAt = new Date().toISOString();
+
+        ui.analysisDraftFeatures = result.features.map(title => ({
+          title,
+          description: 'Heuristisch aus aktueller HTML-Datei erkannt.',
+          category: guessCategory(title),
+          projectId
+        }));
+
+        $('promptOutput').value = [
+          'LOKALE HTML-ANALYSE',
+          '',
+          'App-Typ: ' + result.appType,
+          'Projektbeschreibung:',
+          result.projectSummary,
+          '',
+          'Erkannte Features:',
+          ...result.features.map(f => '- ' + f)
+        ].join('\n');
+
+        S.analyses.push({
+          id: uid('a'),
+          type: 'html-project-analysis',
+          projectId,
+          createdAt: new Date().toISOString(),
+          resultRaw: $('promptOutput').value,
+          resultParsed: result
+        });
+
+        save();
+        renderProjectSelects();
+        renderView();
+      }
+
+      function heuristicsFromHtml(html) {
+        const lower = html.toLowerCase();
+        const title = matchGroup(html, /<title>(.*?)<\/title>/i) || 'Unbekannte App';
+        const featureSet = new Set();
+
+        const rules = [
+          ['dark mode', 'Dark Mode'],
+          ['light mode', 'Light Mode'],
+          ['e-ink', 'E-Ink Modus'],
+          ['eink', 'E-Ink Modus'],
+          ['gist', 'GitHub Gist Synchronisation'],
+          ['localstorage', 'Lokaler Datenspeicher'],
+          ['csv', 'CSV Export/Import'],
+          ['json', 'JSON Export/Import'],
+          ['canvas', 'Canvas / Kartenansicht'],
+          ['kanban', 'Kanban-Ansicht'],
+          ['table', 'Tabellenansicht'],
+          ['card', 'Kartenansicht'],
+          ['prompt', 'Prompt-Weitergabe / Prompt-Builder'],
+          ['openai', 'OpenAI API Integration'],
+          ['fetch(', 'Externe Requests / Sync oder API'],
+          ['serviceworker', 'PWA / Offline-Komponente'],
+          ['manifest', 'PWA Manifest-Unterstützung'],
+          ['textarea', 'Freitext- / Eingabefeld'],
+          ['filereader', 'Dateiimport'],
+          ['drag', 'Drag & Drop / direkte Interaktion'],
+          ['theme', 'Theme-Umschaltung']
+        ];
+        rules.forEach(([needle, feature]) => { if (lower.includes(needle)) featureSet.add(feature); });
+
+        const appType = (() => {
+          if (lower.includes('daily') || lower.includes('journal')) return 'Daily Log';
+          if (lower.includes('brain') || lower.includes('braindump')) return 'Braindump';
+          if (lower.includes('review')) return 'Review';
+          if (lower.includes('track')) return 'Tracker';
+          if (lower.includes('story') || lower.includes('prosa')) return 'Writing';
+          return 'Meta-App';
+        })();
+
+        const projectSummary = `${title} wirkt wie eine ${appType}-App. Lokal erkannt wurden ${featureSet.size ? Array.from(featureSet).slice(0,6).join(', ') : 'noch keine klaren Module'}. Diese Erstfassung ist heuristisch und sollte mit einer KI-Analyse gegen die echte HTML-Struktur geprüft werden.`;
+        return { appType, projectSummary, features: Array.from(featureSet) };
+      }
+
+      function buildHtmlPrompt() {
+        const html = $('htmlTextarea').value.trim();
+        const projectId = $('htmlProjectSelect').value;
+        if (!projectId || !html) return alert('Bitte Projekt wählen und HTML einfügen.');
+        const p = S.projects.find(x => x.id === projectId);
+        const prompt = [
+          'AUFGABE',
+          'Analysiere die folgende Single-File-HTML-App und gib ausschließlich gültiges JSON zurück.',
+          '',
+          'ZIEL',
+          '1. App-Typ bestimmen',
+          '2. kurze Projektbeschreibung schreiben',
+          '3. vorhandene Features extrahieren',
+          '4. Ansichten und wichtige technische Module erkennen',
+          '5. einschätzen, welche Features bereits klar umgesetzt, teilweise umgesetzt oder nur angedeutet sind',
+          '',
+          'PROJEKTKONTEXT',
+          'Titel: ' + p.title,
+          'Bisherige Kurzbeschreibung: ' + (p.summary || '—'),
+          '',
+          'AUSGABEFORMAT JSON',
+          '{',
+          '  "appType": "...",',
+          '  "projectSummary": "...",',
+          '  "features": [',
+          '    {"title":"...","description":"...","category":"...","status":"umgesetzt|teilweise umgesetzt|angedeutet"}',
+          '  ],',
+          '  "views": ["..."],',
+          '  "technicalNotes": ["..."]',
+          '}',
+          '',
+          'HTML',
+          html
+        ].join('\n');
+        $('promptOutput').value = prompt;
+      }
+
+      function buildNotePrompt() {
+        const noteText = $('quickNote').value.trim();
+        const pid = $('quickProject').value || '';
+        if (!noteText) return alert('Bitte erst eine Notiz schreiben.');
+        const prompt = buildFeaturePromptFromText(noteText, pid);
+        $('promptOutput').value = prompt;
+      }
+
+      function buildSingleNotePrompt(noteId) {
+        const note = S.notes.find(x => x.id === noteId);
+        if (!note) return;
+        $('promptOutput').value = buildFeaturePromptFromText(note.text, note.projectId || '');
+      }
+
+      function buildFeaturePromptFromText(noteText, projectId) {
+        const projectSummaries = S.projects.map(p => `- ${p.title}: ${p.summary || 'keine Beschreibung'}`).join('\n');
+        const relevantFeatures = S.features.filter(f => !projectId || f.projectId === projectId).map(f => `- ${f.title} | ${getProjectTitle(f.projectId)} | ${f.status}`).join('\n') || '- keine';
+        return [
+          'AUFGABE',
+          'Analysiere die Notiz und ordne darin genannte Features den passenden Projekten zu. Gib ausschließlich gültiges JSON zurück.',
+          '',
+          'PROJEKTE',
+          projectSummaries || '- keine Projekte',
+          '',
+          'BISHERIGE FEATURES',
+          relevantFeatures,
+          '',
+          'AUSGABEFORMAT JSON',
+          '{',
+          '  "featureCandidates": [',
+          '    {',
+          '      "projectTitle": "... oder leer",',
+          '      "title": "...",',
+          '      "description": "...",',
+          '      "category": "UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges",',
+          '      "novelty": "neu|duplikat|unterfeature|unklar"',
+          '    }',
+          '  ],',
+          '  "summary": "..."',
+          '}',
+          '',
+          'NOTIZ',
+          noteText
+        ].join('\n');
+      }
+
+      function copyPrompt() {
+        const text = $('promptOutput').value;
+        if (!text.trim()) return;
+        navigator.clipboard.writeText(text).then(() => alert('Text kopiert.'));
+      }
+
+      function importFeatureLinesFromPrompt() {
+        const text = $('promptOutput').value.trim();
+        if (!text) return alert('Kein Text vorhanden.');
+
+        let imported = 0;
+        if (ui.analysisDraftFeatures.length) {
+          ui.analysisDraftFeatures.forEach(f => {
+            const exists = S.features.some(x => x.projectId === f.projectId && normalizeText(x.title) === normalizeText(f.title));
+            if (!exists) {
+              S.features.push({
+                id: uid('f'),
+                projectId: f.projectId,
+                title: f.title,
+                description: f.description,
+                category: f.category || 'Sonstiges',
+                status: 'geprüft',
+                priority: 'mittel',
+                sourceType: 'html-analysis',
+                sourceNoteIds: [],
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+              });
+              imported++;
+            }
+          });
+          ui.analysisDraftFeatures = [];
+          save();
+          renderView();
+          return alert(imported + ' Features übernommen.');
+        }
+
+        const lines = text.split(/\n+/).map(s => s.trim()).filter(Boolean).filter(s => s.startsWith('- '));
+        const projectId = $('htmlProjectSelect').value || $('quickProject').value || '';
+        lines.forEach(line => {
+          const title = line.replace(/^-\s*/, '').trim();
+          if (!title) return;
+          const exists = S.features.some(x => x.projectId === projectId && normalizeText(x.title) === normalizeText(title));
+          if (!exists) {
+            S.features.push({
+              id: uid('f'),
+              projectId,
+              title,
+              description: 'Aus Prompt-/Analyseblock übernommen.',
+              category: guessCategory(title),
+              status: 'Idee',
+              priority: 'mittel',
+              sourceType: 'manual',
+              sourceNoteIds: [],
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            });
+            imported++;
+          }
+        });
+        save();
+        renderView();
+        alert(imported + ' Zeilen als Features übernommen.');
+      }
+
+      function exportJson() {
+        downloadJson('roadtrip_export.json', S);
+      }
+
+      function exportRawNotes() {
+        downloadJson('roadtrip_raw_notes_backup.json', { exported: new Date().toISOString(), notes: S.notes });
+      }
+
+      function importJson(e) {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const data = JSON.parse(String(reader.result || '{}'));
+            if (!confirm('Import ersetzt den aktuellen Stand. Fortfahren?')) return;
+            S = Object.assign(defaultState(), data);
+            ensureDefaults();
+            save();
+            renderAll();
+          } catch (err) {
+            alert('Import fehlgeschlagen: ' + err.message);
+          }
+        };
+        reader.readAsText(file, 'utf-8');
+      }
+
+      function seedDemo() {
+        if (!confirm('Demo-Daten laden? Das überschreibt den aktuellen Stand.')) return;
+        const now = new Date().toISOString();
+        const p1 = { id: uid('p'), title:'Daily Log App', type:'Daily Log', status:'aktiv', summary:'Tägliche Logs, Karten, Prompt-Weitergabe, Sync und Backup.', tags:['journaling','sync'], createdAt:now, updatedAt:now, lastHtmlImportedAt:'', lastAnalyzedAt:'' };
+        const p2 = { id: uid('p'), title:'Roadtrip', type:'Meta-App', status:'aktiv', summary:'Meta-App zum Tracken von Features, Projekten, Notizen und Analysen.', tags:['meta','tracker'], createdAt:now, updatedAt:now, lastHtmlImportedAt:'', lastAnalyzedAt:'' };
+        S = defaultState();
+        S.projects = [p1, p2];
+        S.features = [
+          { id:uid('f'), projectId:p1.id, title:'Fokusmodus für Eingabefeld', description:'Vollbildmodus mit Exit per X oder ESC.', status:'geplant', priority:'hoch', category:'UI', sourceType:'note-analysis', sourceNoteIds:[], createdAt:now, updatedAt:now },
+          { id:uid('f'), projectId:p1.id, title:'Zweiter Gist für Rohdaten-Backup', description:'Separates Gist nur für rohe Karten und Wiederherstellung.', status:'geprüft', priority:'hoch', category:'Sync', sourceType:'note-analysis', sourceNoteIds:[], createdAt:now, updatedAt:now },
+          { id:uid('f'), projectId:p2.id, title:'HTML-Analyse für Projektstand', description:'Aktuelle index.html auslesen und Features/Status erkennen.', status:'in Arbeit', priority:'kritisch', category:'KI', sourceType:'html-analysis', sourceNoteIds:[], createdAt:now, updatedAt:now },
+          { id:uid('f'), projectId:p2.id, title:'Inbox für rohe Notizen', description:'QuickAdd ähnlich zur Daily Log App.', status:'teilweise umgesetzt', priority:'hoch', category:'Workflow', sourceType:'manual', sourceNoteIds:[], createdAt:now, updatedAt:now }
+        ];
+        S.notes = [
+          { id:uid('n'), projectId:p2.id, text:'Ansichten: Kanban, Tabelle, Karten und klare Projektansicht. E-Ink muss sauber und ruhig sein.', processed:false, createdAt:now },
+          { id:uid('n'), projectId:p1.id, text:'Beim Import der rohen Karten Auswahlmenü für einzelne Wiederherstellung bauen.', processed:false, createdAt:now }
+        ];
+        save();
+        renderAll();
+      }
+
+      function getProjectTitle(id) {
+        return (S.projects.find(p => p.id === id) || {}).title || '';
+      }
+
+      function splitTags(str) {
+        return String(str || '').split(',').map(s => s.trim()).filter(Boolean);
+      }
+
+      function guessFeatureTitle(text) {
+        const t = text.replace(/\s+/g, ' ').trim();
+        if (t.length <= 60) return t;
+        return t.slice(0,57).trim() + '…';
+      }
+
+      function guessCategory(title) {
+        const t = title.toLowerCase();
+        if (/(theme|dark|light|e-ink|font|karte|table|kanban|ansicht)/.test(t)) return 'Darstellung';
+        if (/(gist|sync|backup)/.test(t)) return 'Sync';
+        if (/(openai|prompt|analyse|ki)/.test(t)) return 'KI';
+        if (/(import|export|datei|json|csv)/.test(t)) return 'Import/Export';
+        if (/(workflow|quick|inbox|note)/.test(t)) return 'Workflow';
+        if (/(data|modell|state|localstorage)/.test(t)) return 'Datenmodell';
+        return 'Sonstiges';
+      }
+
+      function uid(prefix) {
+        return prefix + '_' + Math.random().toString(36).slice(2, 10);
+      }
+
+      function escapeHtml(s) {
+        return String(s == null ? '' : s)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      }
+      function escapeAttr(s) { return escapeHtml(s); }
+
+      function normalizeText(s) {
+        return String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      }
+
+      function matchGroup(text, re) {
+        const m = text.match(re);
+        return m && m[1] ? m[1].trim() : '';
+      }
+
+      function formatDateTime(iso) {
+        if (!iso) return '—';
+        const d = new Date(iso);
+        if (isNaN(d)) return iso;
+        return d.toLocaleString('de-DE', { dateStyle:'short', timeStyle:'short' });
+      }
+
+      function shorten(s, n) {
+        s = String(s || '');
+        return s.length > n ? s.slice(0, n - 1) + '…' : s;
+      }
+
+      function downloadJson(filename, data) {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 800);
+      }
+    })();
+  </script>
+</body>
+</html>
