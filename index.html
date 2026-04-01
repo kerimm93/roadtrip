@@ -498,19 +498,27 @@
           <div class="panel-title"><h3>Sync & API</h3></div>
           <div class="field">
             <label for="gistId">Gist ID</label>
-            <input id="gistId" type="text" placeholder="optional für späteren Sync" />
+            <input id="gistId" type="text" placeholder="Haupt-Gist für App-Daten" />
+          </div>
+          <div class="field">
+            <label for="gistToken">GitHub Token</label>
+            <input id="gistToken" type="password" autocomplete="off" spellcheck="false" placeholder="classic PAT oder fine-grained Token mit Gist-Zugriff" />
           </div>
           <div class="field">
             <label for="rawGistId">Backup Gist ID (Rohdaten)</label>
-            <input id="rawGistId" type="text" placeholder="optional" />
+            <input id="rawGistId" type="text" placeholder="separates Gist für Rohnotizen / Backup" />
+          </div>
+          <div class="field">
+            <label for="rawGistToken">Backup Token (optional)</label>
+            <input id="rawGistToken" type="password" autocomplete="off" spellcheck="false" placeholder="leer lassen = Haupt-Token auch für Backup nutzen" />
           </div>
           <div class="field">
             <label for="openAiModel">OpenAI-Modell</label>
             <input id="openAiModel" type="text" placeholder="z. B. gpt-5.4" />
           </div>
           <details>
-            <summary>Geplante nächste Stufe</summary>
-            <div class="mini" style="margin-top:8px">Hier sind Felder für spätere Live-API-Calls und Gist-Sync schon angelegt. In v0.1 bleiben Token bewusst außen vor. Das hält den Entwurf sicherer und besser testbar.</div>
+            <summary>Hinweis zu Tokens</summary>
+            <div class="mini" style="margin-top:8px">Die Token werden lokal in der Konfiguration gespeichert und nicht in JSON-Exports geschrieben. Für die meisten Fälle reicht ein GitHub-Token für beide Gists. Das zweite Token-Feld ist nur für getrennte Setups gedacht.</div>
           </details>
         </section>
       </aside>
@@ -632,7 +640,9 @@
           theme: 'theme-dark',
           font: 'ui',
           gistId: '',
+          gistToken: '',
           rawGistId: '',
+          rawGistToken: '',
           openAiModel: 'gpt-5.4'
         };
       }
@@ -678,13 +688,17 @@
         $('themeSelect').value = C.theme;
         $('fontSelect').value = C.font;
         $('gistId').value = C.gistId || '';
+        $('gistToken').value = C.gistToken || '';
         $('rawGistId').value = C.rawGistId || '';
+        $('rawGistToken').value = C.rawGistToken || '';
         $('openAiModel').value = C.openAiModel || '';
 
         $('themeSelect').addEventListener('change', e => { C.theme = e.target.value; applyTheme(); save(); });
         $('fontSelect').addEventListener('change', e => { C.font = e.target.value; applyTheme(); save(); });
         $('gistId').addEventListener('input', e => { C.gistId = e.target.value; save(); });
+        $('gistToken').addEventListener('input', e => { C.gistToken = e.target.value; save(); });
         $('rawGistId').addEventListener('input', e => { C.rawGistId = e.target.value; save(); });
+        $('rawGistToken').addEventListener('input', e => { C.rawGistToken = e.target.value; save(); });
         $('openAiModel').addEventListener('input', e => { C.openAiModel = e.target.value; save(); });
 
         $('btnSeed').addEventListener('click', seedDemo);
