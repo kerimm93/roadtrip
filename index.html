@@ -1292,7 +1292,7 @@
           'Du analysierst Single-File-HTML-Apps für eine Meta-App zur Feature- und Projektverwaltung.',
           '',
           'AUFGABE',
-          'Analysiere die folgende Single-File-HTML-App gründlich. Antworte ausschließlich mit gültigem JSON. Keine Einleitung, keine Markdown-Erklärung, kein zusätzlicher Text außerhalb des JSON.',
+          'Analysiere die folgende Single-File-HTML-App gründlich und liefere eine streng formatierte Analyse.',
           '',
           'WAS ANALYSIERT WERDEN SOLL',
           '1. Was für eine Art App ist das?',
@@ -1307,11 +1307,24 @@
           'Titel: ' + p.title,
           'Bisherige Kurzbeschreibung: ' + (p.summary || '—'),
           '',
-          'AUSGABEREGELN',
-          '- Nur gültiges JSON zurückgeben.',
-          '- Für Features nur konkret erkennbare Dinge nennen, keine wilden Spekulationen.',
-          '- Status pro Feature nur als "umgesetzt", "teilweise umgesetzt" oder "vorbereitet" angeben.',
-          '- Kategorien möglichst aus dieser Menge wählen: UI, Workflow, Sync, KI, Import/Export, Darstellung, Datenmodell, Ansicht, Sonstiges.',
+          'WICHTIG',
+          '- Gib GENAU EIN (1) gültiges JSON-Objekt zurück.',
+          '- Die Antwort MUSS mit "{" beginnen und mit "}" enden.',
+          '- Keine Ausgabe außer diesem einen JSON-Objekt.',
+          '',
+          'VERBOTEN',
+          '- Keine Markdown-Code-Fences (kein ```json, kein ```).',
+          '- Kein Fließtext, keine Einleitung, keine Erklärung, kein Nachsatz.',
+          '- Kein Text vor oder nach dem JSON-Objekt.',
+          '- Keine zusätzlichen Top-Level-Keys außerhalb der Pflichtstruktur.',
+          '',
+          'PFLICHT',
+          '- Verwende exakt diese Top-Level-Keys: appType, projectSummary, features, views, technicalNotes, unclearPoints.',
+          '- "features" muss IMMER ein Array sein (auch wenn leer).',
+          '- Jedes Feature-Objekt muss enthalten: title, description, category, status.',
+          '- category darf NUR eines sein: UI, Workflow, Sync, KI, Import/Export, Darstellung, Datenmodell, Ansicht, Sonstiges.',
+          '- status darf NUR eines sein: umgesetzt, teilweise umgesetzt, vorbereitet.',
+          '- Nenne bei Features nur klar im HTML erkennbare Hinweise, keine Spekulation.',
           '',
           'AUSGABEFORMAT JSON',
           '{',
@@ -1331,9 +1344,7 @@
           '}',
           '',
           'HTML-QUELLCODE',
-          '```html',
-          html,
-          '```'
+          html
         ].join('\n');
 
         $('promptOutput').value = prompt;
@@ -1422,9 +1433,69 @@
         return 'geprüft';
       }
 
+      function extractJsonObjectFromText(text) {
+        const source = String(text || '').trim();
+        if (!source) throw new Error('invalid-json-not-found');
+
+        const unfenced = source
+          .replace(/^```(?:json)?\s*/i, '')
+          .replace(/\s*```$/i, '')
+          .trim();
+
+        const starts = [];
+        for (let i = 0; i < unfenced.length; i++) {
+          if (unfenced[i] === '{') starts.push(i);
+        }
+        if (!starts.length) throw new Error('invalid-json-not-found');
+
+        for (const start of starts) {
+          let depth = 0;
+          let inString = false;
+          let escaped = false;
+          for (let i = start; i < unfenced.length; i++) {
+            const ch = unfenced[i];
+            if (inString) {
+              if (escaped) {
+                escaped = false;
+              } else if (ch === '\\') {
+                escaped = true;
+              } else if (ch === '"') {
+                inString = false;
+              }
+              continue;
+            }
+            if (ch === '"') {
+              inString = true;
+              continue;
+            }
+            if (ch === '{') depth++;
+            if (ch === '}') {
+              depth--;
+              if (depth === 0) {
+                const candidate = unfenced.slice(start, i + 1).trim();
+                try {
+                  JSON.parse(candidate);
+                  return candidate;
+                } catch (err) {
+                  break;
+                }
+              }
+            }
+          }
+        }
+
+        throw new Error('invalid-json-not-found');
+      }
+
       function importJsonAnalysisFromPrompt(text, projectId) {
-        const parsed = JSON.parse(String(text || '{}'));
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid-analysis-json');
+        let parsed;
+        try {
+          parsed = JSON.parse(String(text || '{}'));
+        } catch (err) {
+          throw new Error('invalid-analysis-json');
+        }
+        if (!parsed || typeof parsed !== 'object') throw new Error('unsupported-top-level-structure');
+        if (Array.isArray(parsed)) throw new Error('unsupported-top-level-structure');
         const p = S.projects.find(x => x.id === projectId);
         if (!p) throw new Error('project-not-found');
 
@@ -1436,7 +1507,16 @@
 
         let imported = 0;
         let duplicates = 0;
-        const features = Array.isArray(parsed.features) ? parsed.features : [];
+        const featureSource = Array.isArray(parsed.features) ? parsed.features
+          : Array.isArray(parsed.featureCandidates) ? parsed.featureCandidates
+          : Array.isArray(parsed.detectedFeatures) ? parsed.detectedFeatures
+          : null;
+        const hasFeatureKey = Object.prototype.hasOwnProperty.call(parsed, 'features')
+          || Object.prototype.hasOwnProperty.call(parsed, 'featureCandidates')
+          || Object.prototype.hasOwnProperty.call(parsed, 'detectedFeatures');
+        if (!hasFeatureKey || !featureSource) throw new Error('missing-features-array');
+        if (featureSource.length === 0) throw new Error('empty-features-array');
+        const features = featureSource;
         features.forEach(item => {
           if (!item || typeof item !== 'object') return;
           const title = String(item.title || '').trim();
@@ -1485,6 +1565,8 @@
           });
         }
 
+        if (imported === 0 && duplicates > 0) throw new Error('all-features-duplicates');
+
         return { imported, duplicates };
       }
 
@@ -1521,14 +1603,29 @@
 
         const projectId = getImportTargetProjectId();
         if (!projectId) return alert('Bitte zuerst ein Projekt auswählen (HTML-Analyse oder Quick-Notiz).');
+
+        let extractedJson = null;
         try {
-          const result = importJsonAnalysisFromPrompt(text, projectId);
-          save();
-          renderProjectSelects();
-          renderView();
-          return alert('JSON-Analyse importiert: ' + result.imported + ' Features übernommen, ' + result.duplicates + ' Duplikate übersprungen.');
+          extractedJson = extractJsonObjectFromText(text);
         } catch (err) {
-          alert('Kein gültiges Analyse-JSON erkannt. Fallback auf Zeilenimport.');
+          extractedJson = null;
+        }
+
+        if (extractedJson) {
+          try {
+            const result = importJsonAnalysisFromPrompt(extractedJson, projectId);
+            save();
+            renderProjectSelects();
+            renderView();
+            return alert('JSON-Analyse importiert: ' + result.imported + ' Features übernommen, ' + result.duplicates + ' Duplikate übersprungen.');
+          } catch (err) {
+            if (err && err.message === 'missing-features-array') return alert("Analyse-JSON erkannt, aber es enthält kein 'features'-Array.");
+            if (err && err.message === 'empty-features-array') return alert("Analyse-JSON erkannt, aber es wurden keine Features zurückgegeben.");
+            if (err && err.message === 'all-features-duplicates') return alert('Analyse-JSON erkannt, aber alle Features wurden als Duplikate übersprungen.');
+            if (err && err.message === 'unsupported-top-level-structure') return alert('Analyse-JSON erkannt, aber die Top-Level-Struktur wird nicht unterstützt.');
+            if (err && err.message === 'invalid-analysis-json') return alert('Kein gültiges Analyse-JSON erkannt.');
+            throw err;
+          }
         }
 
         const lines = text.split(/\n+/).map(s => s.trim()).filter(Boolean).filter(s => s.startsWith('- '));
