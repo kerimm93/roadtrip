@@ -579,7 +579,7 @@
             </div>
             <div class="stack-row">
               <button class="btn btn-primary" id="btnAnalyzeHtml">HTML lokal auslesen</button>
-              <button class="btn" id="btnBuildHtmlPrompt">KI-Prompt kopieren</button>
+              <button class="btn" id="btnBuildHtmlPrompt">KI-Prompt erzeugen &amp; kopieren</button>
             </div>
           </div>
         </section>
@@ -1274,41 +1274,70 @@
         return { appType, projectSummary, features: Array.from(featureSet) };
       }
 
-      function buildHtmlPrompt() {
-        const html = $('htmlTextarea').value.trim();
+      async function buildHtmlPrompt() {
         const projectId = $('htmlProjectSelect').value;
-        if (!projectId || !html) return alert('Bitte Projekt wählen und HTML einfügen.');
+        if (!projectId) return alert('Bitte zuerst ein Projekt wählen.');
+
+        const html = $('htmlTextarea').value.trim();
+        if (!html) return alert('Bitte HTML hochladen oder einfügen.');
+
         const p = S.projects.find(x => x.id === projectId);
+        if (!p) return alert('Projekt konnte nicht gefunden werden.');
+
         const prompt = [
-          'AUFGABE',
-          'Analysiere die folgende Single-File-HTML-App und gib ausschließlich gültiges JSON zurück.',
+          'SYSTEMROLLE',
+          'Du analysierst Single-File-HTML-Apps für eine Meta-App zur Feature- und Projektverwaltung.',
           '',
-          'ZIEL',
-          '1. App-Typ bestimmen',
-          '2. kurze Projektbeschreibung schreiben',
-          '3. vorhandene Features extrahieren',
-          '4. Ansichten und wichtige technische Module erkennen',
-          '5. einschätzen, welche Features bereits klar umgesetzt, teilweise umgesetzt oder nur angedeutet sind',
+          'AUFGABE',
+          'Analysiere die folgende Single-File-HTML-App gründlich. Antworte ausschließlich mit gültigem JSON. Keine Einleitung, keine Markdown-Erklärung, kein zusätzlicher Text außerhalb des JSON.',
+          '',
+          'WAS ANALYSIERT WERDEN SOLL',
+          '1. Was für eine Art App ist das?',
+          '2. Was ist der wahrscheinliche Hauptzweck der App?',
+          '3. Welche Features sind im Code klar erkennbar?',
+          '4. Welche Ansichten, Modi oder Bedienoberflächen gibt es?',
+          '5. Welche technischen Module oder Integrationen sind erkennbar?',
+          '6. Welche Features wirken vollständig umgesetzt, welche nur teilweise und welche nur vorbereitet?',
+          '7. Welche Punkte sind unklar und müssten manuell geprüft werden?',
           '',
           'PROJEKTKONTEXT',
           'Titel: ' + p.title,
           'Bisherige Kurzbeschreibung: ' + (p.summary || '—'),
+          '',
+          'AUSGABEREGELN',
+          '- Nur gültiges JSON zurückgeben.',
+          '- Für Features nur konkret erkennbare Dinge nennen, keine wilden Spekulationen.',
+          '- Status pro Feature nur als "umgesetzt", "teilweise umgesetzt" oder "vorbereitet" angeben.',
+          '- Kategorien möglichst aus dieser Menge wählen: UI, Workflow, Sync, KI, Import/Export, Darstellung, Datenmodell, Ansicht, Sonstiges.',
           '',
           'AUSGABEFORMAT JSON',
           '{',
           '  "appType": "...",',
           '  "projectSummary": "...",',
           '  "features": [',
-          '    {"title":"...","description":"...","category":"...","status":"umgesetzt|teilweise umgesetzt|angedeutet"}',
+          '    {',
+          '      "title": "...",',
+          '      "description": "...",',
+          '      "category": "UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges",',
+          '      "status": "umgesetzt|teilweise umgesetzt|vorbereitet"',
+          '    }',
           '  ],',
           '  "views": ["..."],',
-          '  "technicalNotes": ["..."]',
+          '  "technicalNotes": ["..."],',
+          '  "unclearPoints": ["..."]',
           '}',
           '',
-          'HTML',
-          html
+          'HTML-QUELLCODE',
+          '```html',
+          html,
+          '```'
         ].join('\n');
+
         $('promptOutput').value = prompt;
+
+        navigator.clipboard.writeText(prompt)
+          .then(() => alert('KI-Analyse-Prompt erzeugt und in die Zwischenablage kopiert.'))
+          .catch(() => alert('KI-Analyse-Prompt erzeugt, aber Kopieren in die Zwischenablage war nicht möglich.'));
       }
 
       function buildNotePrompt() {
