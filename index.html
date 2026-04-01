@@ -408,204 +408,78 @@
       .kanban { grid-template-columns: repeat(6, 260px); }
       h1 { font-size: 24px; }
     }
+
+    .workspace {
+      max-width: 100%;
+      padding: 20px;
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      gap: 16px;
+      min-height: 100vh;
+      background: var(--bg);
+    }
+    .workspace-sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 14px;
+      position: sticky;
+      top: 16px;
+      height: calc(100vh - 40px);
+    }
+    .workspace-main { display:flex; flex-direction:column; gap:16px; min-width:0; }
+    .sidebar-project {
+      border: 1px solid var(--border);
+      background: transparent;
+      border-radius: 8px;
+      padding: 8px 10px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .sidebar-project.active { background: var(--surface-3); border-color: var(--border-light); }
+    .db-toolbar { display:grid; grid-template-columns:2fr repeat(3, minmax(130px,1fr)) auto; gap:8px; margin-bottom:12px; }
+    @media (max-width: 1080px) {
+      .workspace { grid-template-columns: 1fr; }
+      .workspace-sidebar { position: static; height: auto; }
+      .db-toolbar { grid-template-columns:1fr; }
+    }
   </style>
 </head>
-<body class="theme-dark">
-  <div class="app" id="app">
-    <div class="topbar">
-      <section class="hero">
-        <div class="eyebrow">Roadtrip · App-Roadmaps verwalten</div>
-        <h1>Roadtrip</h1>
-        <div class="subline">Single-File-Steuerzentrale für deine App-Projekte, Features, Rohnotizen und Analyse-Prompts. Optisch an die Daily-Log-Familie angelehnt, aber stärker auf Entwicklung, Status und Zuordnung gebaut.</div>
-        <div class="hero-actions">
-          <button class="btn btn-primary" id="btnSeed">Demo-Daten laden</button>
-          <button class="btn" id="btnExport">JSON exportieren</button>
-          <label class="btn" for="importJsonInput">JSON importieren</label>
-          <input id="importJsonInput" type="file" accept="application/json" class="hidden" />
-          <button class="btn" id="btnBackupRaw">Rohdaten exportieren</button>
-        </div>
-      </section>
-
+<body class="theme-light">
+  <div class="app workspace" id="app">
+    <aside class="workspace-sidebar panel">
+      <h1 style="font-size:20px;margin:0 0 12px;">Roadtrip</h1>
+      <div class="segmented" id="navTabs"></div>
+      <div class="panel" style="margin-top:16px; box-shadow:none;">
+        <div class="panel-title"><h3>Projects</h3></div>
+        <div class="list" id="sidebarProjects"></div>
+      </div>
+      <div class="stack-row" style="margin-top:auto;">
+        <button class="btn" id="btnSeed">Demo</button>
+        <button class="btn" id="btnExport">Export</button>
+        <button class="btn" id="btnBackupRaw">Raw Backup</button>
+        <label class="btn" for="importJsonInput">Import</label>
+      </div>
+      <input id="importJsonInput" type="file" accept="application/json" class="hidden" />
+    </aside>
+    <main class="workspace-main">
       <section class="panel">
         <div class="panel-title">
-          <h2>Status</h2>
+          <h2 id="viewTitle">Database</h2>
           <div class="mini" id="lastSavedLabel">—</div>
         </div>
         <div class="stats" id="stats"></div>
       </section>
-    </div>
-
-    <div class="layout">
-      <aside class="sidebar">
-        <section class="panel">
-          <div class="panel-title"><h3>Ansicht</h3></div>
-          <div class="segmented" id="viewTabs"></div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-title"><h3>Theme & Schrift</h3></div>
-          <div class="field">
-            <label for="themeSelect">Theme</label>
-            <select id="themeSelect">
-              <option value="theme-dark">Dark</option>
-              <option value="theme-light">Light</option>
-              <option value="theme-eink">E-Ink</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="fontSelect">Schrift</label>
-            <select id="fontSelect">
-              <option value="ui">System / Daily-Log-nah</option>
-              <option value="serif">Serif / ruhiger</option>
-            </select>
-          </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-title"><h3>Quick Add</h3></div>
-          <div class="field">
-            <label for="quickProject">Projekt</label>
-            <select id="quickProject"></select>
-          </div>
-          <div class="field">
-            <label for="quickNote">Rohe Notiz</label>
-            <textarea id="quickNote" placeholder="Feature-Idee, Design-Gedanke, Sync-Wunsch, Bug, Prompt-Idee …"></textarea>
-          </div>
-          <div class="stack-row">
-            <button class="btn btn-primary" id="btnAddNote">Notiz speichern</button>
-            <button class="btn" id="btnAnalyzeNote">Mit Prompt verarbeiten</button>
-          </div>
-          <div class="footer-note">v0.1 baut echte Projekt-/Feature-Verwaltung. KI-Calls sind als Prompt-Builder vorbereitet. Das spart dir jetzt Komplexität und hält die erste Version stabil.</div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-title"><h3>Filter</h3></div>
-          <div class="field">
-            <label for="filterProject">Projekt</label>
-            <select id="filterProject"></select>
-          </div>
-          <div class="field">
-            <label for="filterStatus">Status</label>
-            <select id="filterStatus"></select>
-          </div>
-          <div class="field">
-            <label for="filterSearch">Suche</label>
-            <input id="filterSearch" type="text" placeholder="Titel, Beschreibung, Tags …" />
-          </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-title"><h3>Sync & API</h3></div>
-          <div class="field">
-            <label for="gistId">Gist ID</label>
-            <input id="gistId" type="text" placeholder="Haupt-Gist für App-Daten" />
-          </div>
-          <div class="field">
-            <label for="gistToken">GitHub Token</label>
-            <input id="gistToken" type="password" autocomplete="off" spellcheck="false" placeholder="classic PAT oder fine-grained Token mit Gist-Zugriff" />
-          </div>
-          <div class="field">
-            <label for="rawGistId">Backup Gist ID (Rohdaten)</label>
-            <input id="rawGistId" type="text" placeholder="separates Gist für Rohnotizen / Backup" />
-          </div>
-          <div class="field">
-            <label for="rawGistToken">Backup Token (optional)</label>
-            <input id="rawGistToken" type="password" autocomplete="off" spellcheck="false" placeholder="leer lassen = Haupt-Token auch für Backup nutzen" />
-          </div>
-          <div class="field">
-            <label for="openAiModel">OpenAI-Modell</label>
-            <input id="openAiModel" type="text" placeholder="z. B. gpt-5.4" />
-          </div>
-          <details>
-            <summary>Hinweis zu Tokens</summary>
-            <div class="mini" style="margin-top:8px">Die Token werden lokal in der Konfiguration gespeichert und nicht in JSON-Exports geschrieben. Für die meisten Fälle reicht ein GitHub-Token für beide Gists. Das zweite Token-Feld ist nur für getrennte Setups gedacht.</div>
-          </details>
-        </section>
-      </aside>
-
-      <main class="main">
-        <section class="panel">
-          <div class="panel-title">
-            <h3>Projekt anlegen / bearbeiten</h3>
-            <div class="stack-row">
-              <button class="btn" id="btnResetProjectForm">Formular leeren</button>
-            </div>
-          </div>
-          <div class="field">
-            <label for="projectTitle">Titel</label>
-            <input id="projectTitle" type="text" placeholder="z. B. Daily Log App" />
-          </div>
-          <div class="stack-row">
-            <div class="field" style="flex:1">
-              <label for="projectType">App-Typ</label>
-              <select id="projectType"></select>
-            </div>
-            <div class="field" style="flex:1">
-              <label for="projectStatus">Status</label>
-              <select id="projectStatus"></select>
-            </div>
-          </div>
-          <div class="field">
-            <label for="projectSummary">Kurzbeschreibung</label>
-            <textarea id="projectSummary" placeholder="Wofür ist die App da? Was ist der Kern? Was ist schon vorhanden?"></textarea>
-          </div>
-          <div class="field">
-            <label for="projectTags">Tags</label>
-            <input id="projectTags" type="text" placeholder="z. B. journaling, sync, prompt-forwarding" />
-          </div>
-          <div class="stack-row">
-            <button class="btn btn-primary" id="btnSaveProject">Projekt speichern</button>
-            <button class="btn" id="btnDeleteProject">Projekt löschen</button>
-          </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-title">
-            <h3>HTML importieren & analysieren</h3>
-            <div class="mini">Heuristische Erstfassung + Prompt-Builder für die KI-Analyse</div>
-          </div>
-          <div class="field">
-            <label for="htmlProjectSelect">Projekt</label>
-            <select id="htmlProjectSelect"></select>
-          </div>
-          <div class="dropzone">
-            <div class="field">
-              <label for="htmlFileInput">index.html hochladen</label>
-              <input id="htmlFileInput" type="file" accept=".html,text/html" />
-            </div>
-            <div class="field">
-              <label for="htmlTextarea">oder HTML einfügen</label>
-              <textarea id="htmlTextarea" style="min-height:180px" placeholder="Hier eine aktuelle index.html einfügen …"></textarea>
-            </div>
-            <div class="stack-row">
-              <button class="btn btn-primary" id="btnAnalyzeHtml">HTML lokal auslesen</button>
-              <button class="btn" id="btnBuildHtmlPrompt">KI-Prompt erzeugen &amp; kopieren</button>
-            </div>
-          </div>
-        </section>
-
-        <section class="panel" id="viewContainer"></section>
-
-        <section class="panel">
-          <div class="panel-title"><h3>Prompt-Studio</h3></div>
-          <div class="field">
-            <label for="promptOutput">Generierter Prompt / Analyseergebnis</label>
-            <textarea id="promptOutput" style="min-height:240px" placeholder="Hier erscheinen Analyseergebnisse oder Prompt-Blöcke."></textarea>
-          </div>
-          <div class="stack-row">
-            <button class="btn" id="btnCopyPrompt">Text kopieren</button>
-            <button class="btn" id="btnFeatureFromPrompt">Als Features übernehmen</button>
-          </div>
-        </section>
-      </main>
-    </div>
+      <section class="panel" id="viewContainer"></section>
+    </main>
   </div>
 
   <script>
     (function() {
       const LKEY = 'roadtrip_v0_1';
       const CONFIG_KEY = 'roadtrip_v0_1_config';
-      const VIEWS = ['dashboard', 'kanban', 'table', 'cards', 'inbox', 'projects'];
+      const ALL_PROJECTS_KEY = 'all';
+      const VIEWS = ['database', 'project', 'import', 'settings'];
       const APP_TYPES = ['Daily Log', 'Braindump', 'Review', 'Tracker', 'Writing', 'Learning', 'Meta-App', 'Sonstiges'];
       const PROJECT_STATUS = ['aktiv', 'pausiert', 'archiviert'];
       const FEATURE_STATUS = ['Idee', 'geprüft', 'geplant', 'in Arbeit', 'teilweise umgesetzt', 'umgesetzt'];
@@ -615,7 +489,15 @@
 
       let S = defaultState();
       let C = defaultConfig();
-      let ui = { view: 'dashboard', editingProjectId: null, analysisDraftFeatures: [] };
+      let ui = {
+        view: 'database',
+        editingProjectId: null,
+        analysisDraftFeatures: [],
+        activeProjectId: ALL_PROJECTS_KEY,
+        filters: { status: 'alle', category: 'alle', search: '' },
+        showKanban: false,
+        importDraft: { html: '', prompt: '', projectId: '' }
+      };
 
       const $ = (id) => document.getElementById(id);
       const q = (sel, el = document) => el.querySelector(sel);
@@ -678,56 +560,22 @@
         localStorage.setItem(CONFIG_KEY, JSON.stringify(C));
         $('lastSavedLabel').textContent = 'Gespeichert: ' + formatDateTime(S._lastExported);
         renderStats();
+        renderSidebarProjects();
       }
 
       function wireBasics() {
-        fillSelect($('projectType'), APP_TYPES);
-        fillSelect($('projectStatus'), PROJECT_STATUS);
-        fillSelect($('filterStatus'), ['alle'].concat(FEATURE_STATUS));
-
-        $('themeSelect').value = C.theme;
-        $('fontSelect').value = C.font;
-        $('gistId').value = C.gistId || '';
-        $('gistToken').value = C.gistToken || '';
-        $('rawGistId').value = C.rawGistId || '';
-        $('rawGistToken').value = C.rawGistToken || '';
-        $('openAiModel').value = C.openAiModel || '';
-
-        $('themeSelect').addEventListener('change', e => { C.theme = e.target.value; applyTheme(); save(); });
-        $('fontSelect').addEventListener('change', e => { C.font = e.target.value; applyTheme(); save(); });
-        $('gistId').addEventListener('input', e => { C.gistId = e.target.value; save(); });
-        $('gistToken').addEventListener('input', e => { C.gistToken = e.target.value; save(); });
-        $('rawGistId').addEventListener('input', e => { C.rawGistId = e.target.value; save(); });
-        $('rawGistToken').addEventListener('input', e => { C.rawGistToken = e.target.value; save(); });
-        $('openAiModel').addEventListener('input', e => { C.openAiModel = e.target.value; save(); });
-
+        renderNav();
         $('btnSeed').addEventListener('click', seedDemo);
         $('btnExport').addEventListener('click', exportJson);
         $('btnBackupRaw').addEventListener('click', exportRawNotes);
         $('importJsonInput').addEventListener('change', importJson);
-
-        $('btnSaveProject').addEventListener('click', saveProjectFromForm);
-        $('btnDeleteProject').addEventListener('click', deleteProjectFromForm);
-        $('btnResetProjectForm').addEventListener('click', resetProjectForm);
-
-        $('btnAddNote').addEventListener('click', addQuickNote);
-        $('btnAnalyzeNote').addEventListener('click', buildNotePrompt);
-
-        $('filterProject').addEventListener('change', renderView);
-        $('filterStatus').addEventListener('change', renderView);
-        $('filterSearch').addEventListener('input', renderView);
-
-        $('htmlFileInput').addEventListener('change', onHtmlFilePicked);
-        $('btnAnalyzeHtml').addEventListener('click', analyzeHtmlLocal);
-        $('btnBuildHtmlPrompt').addEventListener('click', buildHtmlPrompt);
-
-        $('btnCopyPrompt').addEventListener('click', copyPrompt);
-        $('btnFeatureFromPrompt').addEventListener('click', importFeatureLinesFromPrompt);
       }
 
       function renderAll() {
         applyTheme();
-        renderTabs();
+        if (!ui.activeProjectId) ui.activeProjectId = ALL_PROJECTS_KEY;
+        renderNav();
+        renderSidebarProjects();
         renderProjectSelects();
         renderStats();
         renderView();
@@ -738,14 +586,14 @@
         document.body.className = C.theme + (C.font === 'serif' ? ' font-serif' : '');
       }
 
-      function renderTabs() {
-        const wrap = $('viewTabs');
+      function renderNav() {
+        const wrap = $('navTabs');
         wrap.innerHTML = '';
         VIEWS.forEach(v => {
           const b = document.createElement('button');
           b.className = 'seg' + (ui.view === v ? ' active' : '');
-          b.textContent = ({dashboard:'Dashboard',kanban:'Kanban',table:'Tabelle',cards:'Karten',inbox:'Inbox',projects:'Projekte'})[v];
-          b.addEventListener('click', () => { ui.view = v; renderTabs(); renderView(); });
+          b.textContent = ({database:'Database',project:'Project',import:'Import',settings:'Settings'})[v];
+          b.addEventListener('click', () => { ui.view = v; renderNav(); renderView(); });
           wrap.appendChild(b);
         });
       }
@@ -768,33 +616,67 @@
 
       function renderProjectSelects() {
         const options = [{value:'', label:'— Kein Projekt —'}].concat(S.projects.map(p => ({ value:p.id, label:p.title })));
-        fillSelect($('quickProject'), options, true);
-        fillSelect($('filterProject'), [{value:'alle', label:'Alle Projekte'}].concat(S.projects.map(p => ({ value:p.id, label:p.title }))), true);
         fillSelect($('htmlProjectSelect'), options, true);
+        fillSelect($('projectType'), APP_TYPES);
+        fillSelect($('projectStatus'), PROJECT_STATUS);
+        if ($('htmlProjectSelect')) $('htmlProjectSelect').value = ui.importDraft.projectId || '';
+        const activeProject = S.projects.find(p => p.id === ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY);
+        if (activeProject) {
+          if ($('projectType')) $('projectType').value = activeProject.type || APP_TYPES[0];
+          if ($('projectStatus')) $('projectStatus').value = activeProject.status || PROJECT_STATUS[0];
+        }
       }
 
       function renderView() {
         const c = $('viewContainer');
-        const projects = S.projects;
-        const features = getFilteredFeatures();
-        const notes = getFilteredNotes();
-
-        if (!projects.length && ui.view !== 'inbox') {
-          c.innerHTML = '<div class="notice">Noch keine Projekte. Leg zuerst ein Projekt an oder lade Demo-Daten.</div>';
-          return;
-        }
-
-        if (ui.view === 'dashboard') c.innerHTML = renderDashboard(projects, features, notes);
-        if (ui.view === 'kanban') c.innerHTML = renderKanban(features);
-        if (ui.view === 'table') c.innerHTML = renderTable(features);
-        if (ui.view === 'cards') c.innerHTML = renderCards(features);
-        if (ui.view === 'inbox') c.innerHTML = renderInbox(notes);
-        if (ui.view === 'projects') c.innerHTML = renderProjects(projects);
-
+        if (ui.view === 'database') c.innerHTML = renderDatabaseView();
+        if (ui.view === 'project') c.innerHTML = renderProjectWorkspace();
+        if (ui.view === 'import') c.innerHTML = renderImportWorkspace();
+        if (ui.view === 'settings') c.innerHTML = renderSettingsWorkspace();
+        renderProjectSelects();
+        if ($('themeSelect')) $('themeSelect').value = C.theme;
+        if ($('fontSelect')) $('fontSelect').value = C.font;
+        $('viewTitle').textContent = ({database:'Database',project:'Project',import:'Import',settings:'Settings'})[ui.view];
         wireDynamicView();
       }
 
       function wireDynamicView() {
+        qq('[data-open-project]').forEach(btn => btn.addEventListener('click', () => {
+          ui.activeProjectId = btn.dataset.openProject;
+          renderSidebarProjects();
+          renderView();
+        }));
+        const statusFilter = $('filterStatus');
+        const catFilter = $('filterCategory');
+        const search = $('filterSearch');
+        const kanbanToggle = $('toggleKanban');
+        if (statusFilter) statusFilter.addEventListener('change', e => { ui.filters.status = e.target.value; renderView(); });
+        if (catFilter) catFilter.addEventListener('change', e => { ui.filters.category = e.target.value; renderView(); });
+        if (search) search.addEventListener('input', e => { ui.filters.search = e.target.value; renderView(); });
+        if (kanbanToggle) kanbanToggle.addEventListener('change', e => { ui.showKanban = e.target.checked; renderView(); });
+
+        if ($('themeSelect')) $('themeSelect').addEventListener('change', e => { C.theme = e.target.value; applyTheme(); save(); });
+        if ($('fontSelect')) $('fontSelect').addEventListener('change', e => { C.font = e.target.value; applyTheme(); save(); });
+        if ($('gistId')) $('gistId').addEventListener('input', e => { C.gistId = e.target.value; save(); });
+        if ($('gistToken')) $('gistToken').addEventListener('input', e => { C.gistToken = e.target.value; save(); });
+        if ($('rawGistId')) $('rawGistId').addEventListener('input', e => { C.rawGistId = e.target.value; save(); });
+        if ($('rawGistToken')) $('rawGistToken').addEventListener('input', e => { C.rawGistToken = e.target.value; save(); });
+        if ($('openAiModel')) $('openAiModel').addEventListener('input', e => { C.openAiModel = e.target.value; save(); });
+        if ($('btnSaveProject')) $('btnSaveProject').addEventListener('click', saveProjectFromForm);
+        if ($('btnDeleteProject')) $('btnDeleteProject').addEventListener('click', deleteProjectFromForm);
+        if ($('btnResetProjectForm')) $('btnResetProjectForm').addEventListener('click', resetProjectForm);
+        if ($('btnAddNote')) $('btnAddNote').addEventListener('click', addQuickNote);
+        if ($('btnAnalyzeNote')) $('btnAnalyzeNote').addEventListener('click', buildNotePrompt);
+        if ($('htmlFileInput')) $('htmlFileInput').addEventListener('change', onHtmlFilePicked);
+        if ($('htmlTextarea')) $('htmlTextarea').addEventListener('input', e => { ui.importDraft.html = e.target.value; });
+        if ($('promptOutput')) $('promptOutput').addEventListener('input', e => { ui.importDraft.prompt = e.target.value; });
+        if ($('htmlProjectSelect')) $('htmlProjectSelect').addEventListener('change', e => { ui.importDraft.projectId = e.target.value; });
+        if ($('btnAnalyzeHtml')) $('btnAnalyzeHtml').addEventListener('click', analyzeHtmlLocal);
+        if ($('btnBuildHtmlPrompt')) $('btnBuildHtmlPrompt').addEventListener('click', buildHtmlPrompt);
+        if ($('btnImportJsonResult')) $('btnImportJsonResult').addEventListener('click', importFeatureLinesFromPrompt);
+        if ($('btnCopyPrompt')) $('btnCopyPrompt').addEventListener('click', copyPrompt);
+        if ($('btnFeatureFromPrompt')) $('btnFeatureFromPrompt').addEventListener('click', importFeatureLinesFromPrompt);
+
         qq('[data-edit-project]').forEach(btn => btn.addEventListener('click', () => editProject(btn.dataset.editProject)));
         qq('[data-delete-project]').forEach(btn => btn.addEventListener('click', () => deleteProject(btn.dataset.deleteProject)));
         qq('[data-delete-note]').forEach(btn => btn.addEventListener('click', () => deleteNote(btn.dataset.deleteNote)));
@@ -804,6 +686,115 @@
         qq('[data-add-feature-from-note]').forEach(btn => btn.addEventListener('click', () => promoteNoteToFeature(btn.dataset.addFeatureFromNote)));
         qq('[data-build-note-prompt]').forEach(btn => btn.addEventListener('click', () => buildSingleNotePrompt(btn.dataset.buildNotePrompt)));
         qq('[data-create-feature]').forEach(btn => btn.addEventListener('click', () => quickCreateFeature(btn.dataset.createFeature)));
+      }
+
+      function renderSidebarProjects() {
+        const wrap = $('sidebarProjects');
+        const allBtn = `
+          <button class="sidebar-project ${ui.activeProjectId === ALL_PROJECTS_KEY ? 'active' : ''}" data-open-project="${ALL_PROJECTS_KEY}">All Projects</button>
+        `;
+        wrap.innerHTML = allBtn + S.projects.map(p => `
+          <button class="sidebar-project ${ui.activeProjectId === p.id ? 'active' : ''}" data-open-project="${p.id}">
+            ${escapeHtml(p.title)}
+          </button>
+        `).join('');
+      }
+
+      function renderDatabaseView() {
+        const features = getFilteredFeatures();
+        const notes = getFilteredNotes();
+        return `
+          <div class="panel-title"><h3>Feature Database</h3></div>
+          <div class="db-toolbar">
+            <input id="filterSearch" type="text" value="${escapeAttr(ui.filters.search)}" placeholder="Search features..." />
+            <select id="filterStatus">${['alle'].concat(FEATURE_STATUS).map(s => `<option ${ui.filters.status===s?'selected':''}>${s}</option>`).join('')}</select>
+            <select id="filterCategory">${['alle'].concat(FEATURE_CATEGORIES).map(s => `<option ${ui.filters.category===s?'selected':''}>${s}</option>`).join('')}</select>
+            <input disabled value="${escapeAttr(ui.activeProjectId === ALL_PROJECTS_KEY ? 'All projects' : getProjectTitle(ui.activeProjectId))}" />
+            <label class="pill"><input id="toggleKanban" type="checkbox" ${ui.showKanban?'checked':''} /> Kanban</label>
+          </div>
+          <details style="margin-bottom:12px;">
+            <summary>Quick Add / Raw Notes</summary>
+            <div class="field" style="margin-top:8px;">
+              <label for="quickProject">Projekt</label>
+              <select id="quickProject">${[{value:'',label:'— Kein Projekt —'}].concat(S.projects.map(p=>({value:p.id,label:p.title}))).map(o=>`<option value="${escapeAttr(o.value)}" ${(ui.activeProjectId===o.value || (ui.activeProjectId===ALL_PROJECTS_KEY && !o.value)) ? 'selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}</select>
+            </div>
+            <div class="field">
+              <label for="quickNote">Rohe Notiz</label>
+              <textarea id="quickNote" placeholder="Notiz, Idee, Bug, Prompt-Hinweis ..."></textarea>
+            </div>
+            <div class="stack-row">
+              <button class="btn btn-primary" id="btnAddNote">Notiz speichern</button>
+              <button class="btn" id="btnAnalyzeNote">Prompt bauen</button>
+            </div>
+          </details>
+          ${ui.showKanban ? renderKanban(features) : renderTable(features)}
+          <details style="margin-top:12px;">
+            <summary>Inbox / Notes (${notes.length})</summary>
+            <div style="margin-top:10px;">${renderInbox(notes)}</div>
+          </details>
+        `;
+      }
+
+      function renderProjectWorkspace() {
+        if (ui.activeProjectId === ALL_PROJECTS_KEY) return '<div class="notice">Bitte links ein Projekt auswählen, um die Projektansicht zu öffnen.</div>';
+        const p = S.projects.find(x => x.id === ui.activeProjectId) || S.projects[0];
+        if (!p) return '<div class="notice">Noch kein Projekt vorhanden.</div>';
+        ui.activeProjectId = p.id;
+        ui.editingProjectId = p.id;
+        const projectFeatures = S.features.filter(f => f.projectId === p.id);
+        const latestAnalysis = S.analyses.filter(a => a.projectId === p.id).sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''))[0];
+        return `
+          <div class="panel-title"><h3>${escapeHtml(p.title)}</h3><div class="mini">Project View</div></div>
+          <div class="notice">${escapeHtml(p.summary || 'Keine Zusammenfassung')}</div>
+          <div class="mini" style="margin:8px 0 14px;">Recent analysis: ${latestAnalysis ? formatDateTime(latestAnalysis.createdAt) : '—'}</div>
+          <div class="stack-row">
+            <div class="field" style="flex:2"><label for="projectTitle">Titel</label><input id="projectTitle" value="${escapeAttr(p.title)}" /></div>
+            <div class="field" style="flex:1"><label for="projectType">Typ</label><select id="projectType"></select></div>
+            <div class="field" style="flex:1"><label for="projectStatus">Status</label><select id="projectStatus"></select></div>
+          </div>
+          <div class="field"><label for="projectSummary">Summary</label><textarea id="projectSummary">${escapeHtml(p.summary || '')}</textarea></div>
+          <div class="field"><label for="projectTags">Tags</label><input id="projectTags" value="${escapeAttr((p.tags || []).join(', '))}" /></div>
+          <div class="stack-row">
+            <button class="btn btn-primary" id="btnSaveProject">Projekt speichern</button>
+            <button class="btn btn-danger" id="btnDeleteProject">Projekt löschen</button>
+          </div>
+          ${renderTable(projectFeatures)}
+        `;
+      }
+
+      function renderImportWorkspace() {
+        return `
+          <div class="panel-title"><h3>Import</h3></div>
+          <div class="field"><label for="htmlProjectSelect">Projekt</label><select id="htmlProjectSelect"></select></div>
+          <div class="field"><label for="htmlFileInput">HTML Upload</label><input id="htmlFileInput" type="file" accept=".html,text/html" /></div>
+          <div class="field"><label for="htmlTextarea">HTML Paste</label><textarea id="htmlTextarea" style="min-height:170px">${escapeHtml(ui.importDraft.html || '')}</textarea></div>
+          <div class="stack-row">
+            <button class="btn btn-primary" id="btnAnalyzeHtml">HTML lokal analysieren</button>
+            <button class="btn" id="btnBuildHtmlPrompt">KI-Prompt erzeugen</button>
+          </div>
+          <div class="field" style="margin-top:12px;">
+            <label for="promptOutput">Paste JSON Result / Prompt Output</label>
+            <textarea id="promptOutput" style="min-height:220px">${escapeHtml(ui.importDraft.prompt || '')}</textarea>
+          </div>
+          <div class="stack-row">
+            <button class="btn" id="btnCopyPrompt">Copy</button>
+            <button class="btn btn-primary" id="btnImportJsonResult">JSON-Ergebnis importieren</button>
+            <button class="btn" id="btnFeatureFromPrompt">Fallback: Zeilen importieren</button>
+          </div>
+        `;
+      }
+
+      function renderSettingsWorkspace() {
+        return `
+          <div class="panel-title"><h3>Settings</h3></div>
+          <div class="field"><label for="themeSelect">Theme</label><select id="themeSelect"><option value="theme-dark">Dark</option><option value="theme-light">Light</option><option value="theme-eink">E-Ink</option></select></div>
+          <div class="field"><label for="fontSelect">Font</label><select id="fontSelect"><option value="ui">UI</option><option value="serif">Serif</option></select></div>
+          <div class="field"><label for="gistId">Gist ID</label><input id="gistId" type="text" value="${escapeAttr(C.gistId || '')}" /></div>
+          <div class="field"><label for="gistToken">GitHub Token</label><input id="gistToken" type="password" value="${escapeAttr(C.gistToken || '')}" /></div>
+          <div class="field"><label for="rawGistId">Backup Gist ID</label><input id="rawGistId" type="text" value="${escapeAttr(C.rawGistId || '')}" /></div>
+          <div class="field"><label for="rawGistToken">Backup Token</label><input id="rawGistToken" type="password" value="${escapeAttr(C.rawGistToken || '')}" /></div>
+          <div class="field"><label for="openAiModel">OpenAI Model</label><input id="openAiModel" type="text" value="${escapeAttr(C.openAiModel || '')}" /></div>
+        `;
       }
 
       function renderDashboard(projects, features, notes) {
@@ -995,12 +986,14 @@
       }
 
       function getFilteredFeatures() {
-        const p = $('filterProject').value || 'alle';
-        const st = $('filterStatus').value || 'alle';
-        const term = ($('filterSearch').value || '').trim().toLowerCase();
+        const p = ui.activeProjectId || ALL_PROJECTS_KEY;
+        const st = ui.filters.status || 'alle';
+        const cat = ui.filters.category || 'alle';
+        const term = (ui.filters.search || '').trim().toLowerCase();
         return S.features.filter(f => {
-          if (p !== 'alle' && f.projectId !== p) return false;
+          if (p !== ALL_PROJECTS_KEY && f.projectId !== p) return false;
           if (st !== 'alle' && f.status !== st) return false;
+          if (cat !== 'alle' && f.category !== cat) return false;
           if (term) {
             const blob = [f.title, f.description, f.category, f.priority, getProjectTitle(f.projectId)].join(' ').toLowerCase();
             if (!blob.includes(term)) return false;
@@ -1010,10 +1003,10 @@
       }
 
       function getFilteredNotes() {
-        const p = $('filterProject').value || 'alle';
-        const term = ($('filterSearch').value || '').trim().toLowerCase();
+        const p = ui.activeProjectId || ALL_PROJECTS_KEY;
+        const term = (ui.filters.search || '').trim().toLowerCase();
         return S.notes.filter(n => {
-          if (p !== 'alle' && n.projectId !== p) return false;
+          if (p !== ALL_PROJECTS_KEY && n.projectId !== p) return false;
           if (term) {
             const blob = [n.text, getProjectTitle(n.projectId)].join(' ').toLowerCase();
             if (!blob.includes(term)) return false;
@@ -1181,13 +1174,19 @@
         const file = e.target.files && e.target.files[0];
         if (!file) return;
         const reader = new FileReader();
-        reader.onload = () => { $('htmlTextarea').value = String(reader.result || ''); };
+        reader.onload = () => {
+          const value = String(reader.result || '');
+          $('htmlTextarea').value = value;
+          ui.importDraft.html = value;
+        };
         reader.readAsText(file, 'utf-8');
       }
 
       function analyzeHtmlLocal() {
         const html = $('htmlTextarea').value.trim();
         const projectId = $('htmlProjectSelect').value;
+        ui.importDraft.html = $('htmlTextarea').value;
+        ui.importDraft.projectId = projectId;
         if (!projectId) return alert('Bitte ein Projekt auswählen.');
         if (!html) return alert('Bitte HTML hochladen oder einfügen.');
         const result = heuristicsFromHtml(html);
@@ -1206,7 +1205,7 @@
           projectId
         }));
 
-        $('promptOutput').value = [
+        const analysisText = [
           'LOKALE HTML-ANALYSE',
           '',
           'App-Typ: ' + result.appType,
@@ -1216,6 +1215,8 @@
           'Erkannte Features:',
           ...result.features.map(f => '- ' + f)
         ].join('\n');
+        $('promptOutput').value = analysisText;
+        ui.importDraft.prompt = analysisText;
 
         S.analyses.push({
           id: uid('a'),
@@ -1276,9 +1277,11 @@
 
       async function buildHtmlPrompt() {
         const projectId = $('htmlProjectSelect').value;
+        ui.importDraft.projectId = projectId;
         if (!projectId) return alert('Bitte zuerst ein Projekt wählen.');
 
         const html = $('htmlTextarea').value.trim();
+        ui.importDraft.html = $('htmlTextarea').value;
         if (!html) return alert('Bitte HTML hochladen oder einfügen.');
 
         const p = S.projects.find(x => x.id === projectId);
@@ -1334,6 +1337,7 @@
         ].join('\n');
 
         $('promptOutput').value = prompt;
+        ui.importDraft.prompt = prompt;
 
         navigator.clipboard.writeText(prompt)
           .then(() => alert('KI-Analyse-Prompt erzeugt und in die Zwischenablage kopiert.'))
@@ -1346,12 +1350,18 @@
         if (!noteText) return alert('Bitte erst eine Notiz schreiben.');
         const prompt = buildFeaturePromptFromText(noteText, pid);
         $('promptOutput').value = prompt;
+        ui.importDraft.prompt = prompt;
+        ui.view = 'import';
+        renderNav();
+        renderView();
       }
 
       function buildSingleNotePrompt(noteId) {
         const note = S.notes.find(x => x.id === noteId);
         if (!note) return;
-        $('promptOutput').value = buildFeaturePromptFromText(note.text, note.projectId || '');
+        const prompt = buildFeaturePromptFromText(note.text, note.projectId || '');
+        if ($('promptOutput')) $('promptOutput').value = prompt;
+        ui.importDraft.prompt = prompt;
       }
 
       function buildFeaturePromptFromText(noteText, projectId) {
@@ -1389,6 +1399,7 @@
       function copyPrompt() {
         const text = $('promptOutput').value;
         if (!text.trim()) return;
+        ui.importDraft.prompt = text;
         navigator.clipboard.writeText(text).then(() => alert('Text kopiert.'));
       }
 
