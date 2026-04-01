@@ -620,11 +620,10 @@
         fillSelect($('projectType'), APP_TYPES);
         fillSelect($('projectStatus'), PROJECT_STATUS);
         if ($('htmlProjectSelect')) $('htmlProjectSelect').value = ui.importDraft.projectId || '';
-        const activeProject = S.projects.find(p => p.id === ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY);
-        if (activeProject) {
-          if ($('projectType')) $('projectType').value = activeProject.type || APP_TYPES[0];
-          if ($('projectStatus')) $('projectStatus').value = activeProject.status || PROJECT_STATUS[0];
-        }
+        const typeCurrent = $('projectType')?.dataset.currentValue || APP_TYPES[0];
+        const statusCurrent = $('projectStatus')?.dataset.currentValue || PROJECT_STATUS[0];
+        if ($('projectType')) $('projectType').value = typeCurrent;
+        if ($('projectStatus')) $('projectStatus').value = statusCurrent;
       }
 
       function renderView() {
@@ -665,6 +664,8 @@
         if ($('btnSaveProject')) $('btnSaveProject').addEventListener('click', saveProjectFromForm);
         if ($('btnDeleteProject')) $('btnDeleteProject').addEventListener('click', deleteProjectFromForm);
         if ($('btnResetProjectForm')) $('btnResetProjectForm').addEventListener('click', resetProjectForm);
+        if ($('btnStartNewProject')) $('btnStartNewProject').addEventListener('click', startNewProjectFromProjectView);
+        if ($('btnStartNewProjectImport')) $('btnStartNewProjectImport').addEventListener('click', startNewProjectFromImportView);
         if ($('btnAddNote')) $('btnAddNote').addEventListener('click', addQuickNote);
         if ($('btnAnalyzeNote')) $('btnAnalyzeNote').addEventListener('click', buildNotePrompt);
         if ($('htmlFileInput')) $('htmlFileInput').addEventListener('change', onHtmlFilePicked);
@@ -736,27 +737,44 @@
       }
 
       function renderProjectWorkspace() {
-        if (ui.activeProjectId === ALL_PROJECTS_KEY) return '<div class="notice">Bitte links ein Projekt auswählen, um die Projektansicht zu öffnen.</div>';
-        const p = S.projects.find(x => x.id === ui.activeProjectId) || S.projects[0];
-        if (!p) return '<div class="notice">Noch kein Projekt vorhanden.</div>';
-        ui.activeProjectId = p.id;
-        ui.editingProjectId = p.id;
-        const projectFeatures = S.features.filter(f => f.projectId === p.id);
-        const latestAnalysis = S.analyses.filter(a => a.projectId === p.id).sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''))[0];
+        if (ui.activeProjectId === ALL_PROJECTS_KEY) {
+          return `
+            <div class="panel-title"><h3>Project View</h3></div>
+            <div class="notice">Bitte links ein Projekt auswählen oder ein neues Projekt anlegen.</div>
+            <div class="stack-row" style="margin-top:10px;">
+              <button class="btn" id="btnStartNewProject">+ Neues Projekt</button>
+            </div>
+          `;
+        }
+        const activeProject = S.projects.find(x => x.id === ui.activeProjectId) || S.projects[0];
+        const isCreateMode = !ui.editingProjectId;
+        const p = isCreateMode ? null : (S.projects.find(x => x.id === ui.editingProjectId) || activeProject);
+        const formTitle = p ? p.title : '';
+        const formSummary = p ? (p.summary || '') : '';
+        const formTags = (p && p.tags ? p.tags : []).join(', ');
+        const formType = p ? (p.type || APP_TYPES[0]) : APP_TYPES[0];
+        const formStatus = p ? (p.status || PROJECT_STATUS[0]) : PROJECT_STATUS[0];
+        if (!activeProject && !isCreateMode) return '<div class="notice">Noch kein Projekt vorhanden.</div>';
+        if (!isCreateMode && p) ui.activeProjectId = p.id;
+        const projectFeatures = p ? S.features.filter(f => f.projectId === p.id) : [];
+        const latestAnalysis = p ? S.analyses.filter(a => a.projectId === p.id).sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''))[0] : null;
         return `
-          <div class="panel-title"><h3>${escapeHtml(p.title)}</h3><div class="mini">Project View</div></div>
-          <div class="notice">${escapeHtml(p.summary || 'Keine Zusammenfassung')}</div>
+          <div class="panel-title"><h3>${escapeHtml(isCreateMode ? 'Neues Projekt' : p.title)}</h3><div class="mini">Project View</div></div>
+          <div class="notice">${escapeHtml(isCreateMode ? 'Lege ein neues Projekt an.' : (p.summary || 'Keine Zusammenfassung'))}</div>
           <div class="mini" style="margin:8px 0 14px;">Recent analysis: ${latestAnalysis ? formatDateTime(latestAnalysis.createdAt) : '—'}</div>
-          <div class="stack-row">
-            <div class="field" style="flex:2"><label for="projectTitle">Titel</label><input id="projectTitle" value="${escapeAttr(p.title)}" /></div>
-            <div class="field" style="flex:1"><label for="projectType">Typ</label><select id="projectType"></select></div>
-            <div class="field" style="flex:1"><label for="projectStatus">Status</label><select id="projectStatus"></select></div>
+          <div class="stack-row" style="margin-bottom:8px;">
+            <button class="btn" id="btnStartNewProject">+ Neues Projekt</button>
           </div>
-          <div class="field"><label for="projectSummary">Summary</label><textarea id="projectSummary">${escapeHtml(p.summary || '')}</textarea></div>
-          <div class="field"><label for="projectTags">Tags</label><input id="projectTags" value="${escapeAttr((p.tags || []).join(', '))}" /></div>
           <div class="stack-row">
-            <button class="btn btn-primary" id="btnSaveProject">Projekt speichern</button>
-            <button class="btn btn-danger" id="btnDeleteProject">Projekt löschen</button>
+            <div class="field" style="flex:2"><label for="projectTitle">Titel</label><input id="projectTitle" value="${escapeAttr(formTitle)}" /></div>
+            <div class="field" style="flex:1"><label for="projectType">Typ</label><select id="projectType" data-current-value="${escapeAttr(formType)}"></select></div>
+            <div class="field" style="flex:1"><label for="projectStatus">Status</label><select id="projectStatus" data-current-value="${escapeAttr(formStatus)}"></select></div>
+          </div>
+          <div class="field"><label for="projectSummary">Summary</label><textarea id="projectSummary">${escapeHtml(formSummary)}</textarea></div>
+          <div class="field"><label for="projectTags">Tags</label><input id="projectTags" value="${escapeAttr(formTags)}" /></div>
+          <div class="stack-row">
+            <button class="btn btn-primary" id="btnSaveProject">${isCreateMode ? 'Projekt erstellen' : 'Projekt speichern'}</button>
+            ${isCreateMode ? '' : '<button class="btn btn-danger" id="btnDeleteProject">Projekt löschen</button>'}
           </div>
           ${renderTable(projectFeatures)}
         `;
@@ -765,7 +783,13 @@
       function renderImportWorkspace() {
         return `
           <div class="panel-title"><h3>Import</h3></div>
-          <div class="field"><label for="htmlProjectSelect">Projekt</label><select id="htmlProjectSelect"></select></div>
+          <div class="field">
+            <label for="htmlProjectSelect">Projekt</label>
+            <div class="stack-row">
+              <select id="htmlProjectSelect"></select>
+              <button class="btn" id="btnStartNewProjectImport">Neues Projekt</button>
+            </div>
+          </div>
           <div class="field"><label for="htmlFileInput">HTML Upload</label><input id="htmlFileInput" type="file" accept=".html,text/html" /></div>
           <div class="field"><label for="htmlTextarea">HTML Paste</label><textarea id="htmlTextarea" style="min-height:170px">${escapeHtml(ui.importDraft.html || '')}</textarea></div>
           <div class="stack-row">
@@ -1018,26 +1042,37 @@
       function saveProjectFromForm() {
         const title = $('projectTitle').value.trim();
         if (!title) return alert('Bitte einen Projekttitel eintragen.');
-        const now = new Date().toISOString();
         const data = {
           title,
           type: $('projectType').value,
           status: $('projectStatus').value,
           summary: $('projectSummary').value.trim(),
-          tags: splitTags($('projectTags').value),
-          updatedAt: now
+          tags: splitTags($('projectTags').value)
         };
+        let savedProjectId = ui.editingProjectId || '';
         if (ui.editingProjectId) {
+          const now = new Date().toISOString();
           const p = S.projects.find(x => x.id === ui.editingProjectId);
           if (!p) return;
-          Object.assign(p, data);
+          Object.assign(p, data, { updatedAt: now });
         } else {
-          S.projects.push(Object.assign({ id: uid('p'), createdAt: now, lastHtmlImportedAt: '', lastAnalyzedAt: '' }, data));
+          const created = createProjectFromData(data);
+          savedProjectId = created.id;
         }
+        ui.activeProjectId = savedProjectId;
+        ui.editingProjectId = savedProjectId;
+        ui.importDraft.projectId = savedProjectId;
         save();
+        renderSidebarProjects();
         renderProjectSelects();
         renderView();
-        resetProjectForm();
+      }
+
+      function createProjectFromData(data) {
+        const now = new Date().toISOString();
+        const created = Object.assign({ id: uid('p'), createdAt: now, lastHtmlImportedAt: '', lastAnalyzedAt: '' }, data, { updatedAt: now });
+        S.projects.push(created);
+        return created;
       }
 
       function editProject(id) {
@@ -1058,6 +1093,38 @@
         $('projectStatus').value = PROJECT_STATUS[0];
         $('projectSummary').value = '';
         $('projectTags').value = '';
+      }
+
+      function startNewProjectCreation() {
+        if (ui.activeProjectId === ALL_PROJECTS_KEY) {
+          ui.activeProjectId = (S.projects[0] || {}).id || '';
+        }
+        ui.editingProjectId = null;
+        renderView();
+      }
+
+      function startNewProjectFromProjectView() {
+        startNewProjectCreation();
+      }
+
+      function startNewProjectFromImportView() {
+        const title = prompt('Titel für neues Projekt:');
+        if (title === null) return;
+        const cleanTitle = title.trim();
+        if (!cleanTitle) return alert('Bitte einen Projekttitel eintragen.');
+        const created = createProjectFromData({
+          title: cleanTitle,
+          type: APP_TYPES[0],
+          status: PROJECT_STATUS[0],
+          summary: '',
+          tags: []
+        });
+        ui.activeProjectId = created.id;
+        ui.editingProjectId = created.id;
+        ui.importDraft.projectId = created.id;
+        save();
+        renderSidebarProjects();
+        renderView();
       }
 
       function deleteProjectFromForm() {
