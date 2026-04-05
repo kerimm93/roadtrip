@@ -486,6 +486,9 @@
       const FEATURE_CATEGORIES = ['UI', 'Workflow', 'Sync', 'KI', 'Import/Export', 'Darstellung', 'Datenmodell', 'Ansicht', 'Sonstiges'];
       const PRIORITIES = ['niedrig', 'mittel', 'hoch', 'kritisch'];
       const FEATURE_COLUMNS = FEATURE_STATUS;
+      const TRELLO_LABEL_PREFIX = { project: 'P: ', category: 'C: ', priority: 'Prio: ' };
+      const TRELLO_SYNC_START = '--- ROADTRIP_SYNC ---';
+      const TRELLO_SYNC_END = '--- /ROADTRIP_SYNC ---';
 
       let S = defaultState();
       let C = defaultConfig();
@@ -525,7 +528,10 @@
           gistToken: '',
           rawGistId: '',
           rawGistToken: '',
-          openAiModel: 'gpt-5.4'
+          openAiModel: 'gpt-5.4',
+          trelloKey: '',
+          trelloToken: '',
+          trelloBoardId: ''
         };
       }
 
@@ -552,6 +558,7 @@
         if (!Array.isArray(S.features)) S.features = [];
         if (!Array.isArray(S.notes)) S.notes = [];
         if (!Array.isArray(S.analyses)) S.analyses = [];
+        S.features = S.features.map(ensureFeatureDefaults);
       }
 
       function save() {
@@ -661,6 +668,10 @@
         if ($('rawGistId')) $('rawGistId').addEventListener('input', e => { C.rawGistId = e.target.value; save(); });
         if ($('rawGistToken')) $('rawGistToken').addEventListener('input', e => { C.rawGistToken = e.target.value; save(); });
         if ($('openAiModel')) $('openAiModel').addEventListener('input', e => { C.openAiModel = e.target.value; save(); });
+        if ($('trelloKey')) $('trelloKey').addEventListener('input', e => { C.trelloKey = e.target.value; save(); });
+        if ($('trelloToken')) $('trelloToken').addEventListener('input', e => { C.trelloToken = e.target.value; save(); });
+        if ($('trelloBoardId')) $('trelloBoardId').addEventListener('input', e => { C.trelloBoardId = e.target.value; save(); });
+        if ($('btnTestTrello')) $('btnTestTrello').addEventListener('click', testTrelloConnection);
         if ($('btnSaveProject')) $('btnSaveProject').addEventListener('click', saveProjectFromForm);
         if ($('btnDeleteProject')) $('btnDeleteProject').addEventListener('click', deleteProjectFromForm);
         if ($('btnResetProjectForm')) $('btnResetProjectForm').addEventListener('click', resetProjectForm);
@@ -684,6 +695,9 @@
         qq('[data-mark-note]').forEach(btn => btn.addEventListener('click', () => markNoteProcessed(btn.dataset.markNote)));
         qq('[data-status-feature]').forEach(sel => sel.addEventListener('change', e => updateFeatureStatus(sel.dataset.statusFeature, e.target.value)));
         qq('[data-prio-feature]').forEach(sel => sel.addEventListener('change', e => updateFeaturePriority(sel.dataset.prioFeature, e.target.value)));
+        qq('[data-sync-feature]').forEach(btn => btn.addEventListener('click', () => syncFeatureToTrello(btn.dataset.syncFeature)));
+        qq('[data-open-trello-card]').forEach(btn => btn.addEventListener('click', () => openTrelloCard(btn.dataset.openTrelloCard)));
+        if ($('btnSyncProjectTrello')) $('btnSyncProjectTrello').addEventListener('click', () => syncActiveProjectToTrello());
         qq('[data-add-feature-from-note]').forEach(btn => btn.addEventListener('click', () => promoteNoteToFeature(btn.dataset.addFeatureFromNote)));
         qq('[data-build-note-prompt]').forEach(btn => btn.addEventListener('click', () => buildSingleNotePrompt(btn.dataset.buildNotePrompt)));
         qq('[data-create-feature]').forEach(btn => btn.addEventListener('click', () => quickCreateFeature(btn.dataset.createFeature)));
@@ -764,6 +778,7 @@
           <div class="mini" style="margin:8px 0 14px;">Recent analysis: ${latestAnalysis ? formatDateTime(latestAnalysis.createdAt) : '—'}</div>
           <div class="stack-row" style="margin-bottom:8px;">
             <button class="btn" id="btnStartNewProject">+ Neues Projekt</button>
+            ${isCreateMode ? '' : '<button class="btn" id="btnSyncProjectTrello">Projekt nach Trello syncen</button>'}
           </div>
           <div class="stack-row">
             <div class="field" style="flex:2"><label for="projectTitle">Titel</label><input id="projectTitle" value="${escapeAttr(formTitle)}" /></div>
@@ -818,6 +833,15 @@
           <div class="field"><label for="rawGistId">Backup Gist ID</label><input id="rawGistId" type="text" value="${escapeAttr(C.rawGistId || '')}" /></div>
           <div class="field"><label for="rawGistToken">Backup Token</label><input id="rawGistToken" type="password" value="${escapeAttr(C.rawGistToken || '')}" /></div>
           <div class="field"><label for="openAiModel">OpenAI Model</label><input id="openAiModel" type="text" value="${escapeAttr(C.openAiModel || '')}" /></div>
+          <hr style="border:none;border-top:1px solid var(--border);margin:10px 0;">
+          <div class="panel-title" style="margin-top:8px;"><h3>Trello</h3><div class="mini">V1 Push-Sync für Features</div></div>
+          <div class="field"><label for="trelloKey">Trello API Key</label><input id="trelloKey" type="text" value="${escapeAttr(C.trelloKey || '')}" /></div>
+          <div class="field"><label for="trelloToken">Trello Token</label><input id="trelloToken" type="password" value="${escapeAttr(C.trelloToken || '')}" /></div>
+          <div class="field"><label for="trelloBoardId">Trello Board ID</label><input id="trelloBoardId" type="text" value="${escapeAttr(C.trelloBoardId || '')}" /></div>
+          <div class="stack-row">
+            <button class="btn" id="btnTestTrello">Trello-Verbindung testen</button>
+          </div>
+          <div class="notice" style="margin-top:10px;">Listen werden bei Bedarf anhand deiner Statusnamen erstellt. Labels folgen der Konvention <code>P:</code>, <code>C:</code> und <code>Prio:</code>. Die Kartenbeschreibung bekommt oben einen von Roadtrip verwalteten Sync-Block.</div>
         `;
       }
 
@@ -892,6 +916,7 @@
                   <th>Priorität</th>
                   <th>Kategorie</th>
                   <th>Quelle</th>
+                  <th>Trello</th>
                 </tr>
               </thead>
               <tbody>
@@ -906,8 +931,15 @@
                     <td><select data-prio-feature="${f.id}">${PRIORITIES.map(p => `<option value="${p}" ${p===f.priority?'selected':''}>${p}</option>`).join('')}</select></td>
                     <td>${escapeHtml(f.category)}</td>
                     <td>${escapeHtml(f.sourceType || 'manuell')}</td>
+                    <td>
+                      <div class="mini">${escapeHtml(getTrelloSyncBadge(f))}</div>
+                      <div class="stack-row" style="margin-top:6px;">
+                        <button class="btn" data-sync-feature="${f.id}">${f.trello && f.trello.cardId ? 'Trello updaten' : 'Nach Trello'}</button>
+                        ${f.trello && f.trello.cardId ? `<button class="btn" data-open-trello-card="${f.id}">Öffnen</button>` : ''}
+                      </div>
+                    </td>
                   </tr>
-                `).join('') || '<tr><td colspan="6">Keine Features passend zu deinen Filtern.</td></tr>'}
+                `).join('') || '<tr><td colspan="7">Keine Features passend zu deinen Filtern.</td></tr>'}
               </tbody>
             </table>
           </div>
@@ -932,7 +964,10 @@
                 </div>
                 <div class="stack-row">
                   <select data-status-feature="${f.id}">${FEATURE_STATUS.map(s => `<option value="${s}" ${s===f.status?'selected':''}>${s}</option>`).join('')}</select>
+                  <button class="btn" data-sync-feature="${f.id}">${f.trello && f.trello.cardId ? 'Trello updaten' : 'Nach Trello'}</button>
+                  ${f.trello && f.trello.cardId ? `<button class="btn" data-open-trello-card="${f.id}">Öffnen</button>` : ''}
                 </div>
+                <div class="mini">${escapeHtml(getTrelloSyncBadge(f))}</div>
               </article>
             `).join('') || '<div class="notice">Keine Features vorhanden.</div>'}
           </div>
@@ -1180,7 +1215,7 @@
         if (!n) return;
         const title = prompt('Feature-Titel:', guessFeatureTitle(n.text));
         if (!title) return;
-        S.features.push({
+        S.features.push(ensureFeatureDefaults({
           id: uid('f'),
           projectId: n.projectId || '',
           title: title.trim(),
@@ -1192,7 +1227,7 @@
           sourceNoteIds: [n.id],
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
-        });
+        }));
         n.processed = true;
         n.processedAt = new Date().toISOString();
         save();
@@ -1202,8 +1237,10 @@
       function updateFeatureStatus(id, status) {
         const f = S.features.find(x => x.id === id);
         if (!f) return;
+        ensureFeatureDefaults(f);
         f.status = status;
         f.updatedAt = new Date().toISOString();
+        markFeatureDirtyRoadtrip(f);
         save();
         renderView();
       }
@@ -1211,8 +1248,10 @@
       function updateFeaturePriority(id, priority) {
         const f = S.features.find(x => x.id === id);
         if (!f) return;
+        ensureFeatureDefaults(f);
         f.priority = priority;
         f.updatedAt = new Date().toISOString();
+        markFeatureDirtyRoadtrip(f);
         save();
       }
 
@@ -1220,7 +1259,7 @@
         const title = prompt('Feature-Titel:');
         if (!title) return;
         const description = prompt('Kurzbeschreibung:', '');
-        S.features.push({
+        S.features.push(ensureFeatureDefaults({
           id: uid('f'),
           projectId,
           title: title.trim(),
@@ -1232,7 +1271,7 @@
           sourceNoteIds: [],
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
-        });
+        }));
         save();
         renderView();
       }
@@ -1582,7 +1621,7 @@
 
           const description = String(item.description || '').trim() || 'Aus Analyse-JSON übernommen.';
           const category = FEATURE_CATEGORIES.includes(item.category) ? item.category : 'Sonstiges';
-          const created = {
+          const created = ensureFeatureDefaults({
             id: uid('f'),
             projectId,
             title,
@@ -1594,7 +1633,7 @@
             sourceNoteIds: [],
             createdAt: nowIso,
             updatedAt: nowIso
-          };
+          });
           S.features.push(created);
           matchedFeatureIds.add(created.id);
           report.created.push({ id: created.id, title: created.title });
@@ -1846,7 +1885,7 @@
           { id:uid('f'), projectId:p1.id, title:'Zweiter Gist für Rohdaten-Backup', description:'Separates Gist nur für rohe Karten und Wiederherstellung.', status:'geprüft', priority:'hoch', category:'Sync', sourceType:'note-analysis', sourceNoteIds:[], createdAt:now, updatedAt:now },
           { id:uid('f'), projectId:p2.id, title:'HTML-Analyse für Projektstand', description:'Aktuelle index.html auslesen und Features/Status erkennen.', status:'in Arbeit', priority:'kritisch', category:'KI', sourceType:'html-analysis', sourceNoteIds:[], createdAt:now, updatedAt:now },
           { id:uid('f'), projectId:p2.id, title:'Inbox für rohe Notizen', description:'QuickAdd ähnlich zur Daily Log App.', status:'teilweise umgesetzt', priority:'hoch', category:'Workflow', sourceType:'manual', sourceNoteIds:[], createdAt:now, updatedAt:now }
-        ];
+        ].map(ensureFeatureDefaults);
         S.notes = [
           { id:uid('n'), projectId:p2.id, text:'Ansichten: Kanban, Tabelle, Karten und klare Projektansicht. E-Ink muss sauber und ruhig sein.', processed:false, createdAt:now },
           { id:uid('n'), projectId:p1.id, text:'Beim Import der rohen Karten Auswahlmenü für einzelne Wiederherstellung bauen.', processed:false, createdAt:now }
@@ -1878,6 +1917,357 @@
         if (/(workflow|quick|inbox|note)/.test(t)) return 'Workflow';
         if (/(data|modell|state|localstorage)/.test(t)) return 'Datenmodell';
         return 'Sonstiges';
+      }
+
+
+      function ensureFeatureDefaults(feature) {
+        const clone = Object.assign({
+          id: uid('f'),
+          projectId: '',
+          title: '',
+          description: '',
+          status: 'Idee',
+          priority: 'mittel',
+          category: 'Sonstiges',
+          sourceType: 'manual',
+          sourceNoteIds: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }, feature || {});
+        clone.trello = Object.assign({
+          enabled: false,
+          boardId: '',
+          cardId: '',
+          cardUrl: '',
+          listId: '',
+          projectLabelId: '',
+          categoryLabelId: '',
+          priorityLabelId: '',
+          syncState: 'unlinked',
+          lastSyncDirection: '',
+          lastSyncedAt: '',
+          lastPushedAt: '',
+          lastPulledAt: '',
+          lastSyncError: '',
+          syncBlockedReason: '',
+          lastSyncedSnapshot: {
+            title: '',
+            description: '',
+            status: '',
+            priority: '',
+            category: '',
+            projectId: '',
+            projectTitle: ''
+          }
+        }, (feature && feature.trello) || {});
+        clone.trello.lastSyncedSnapshot = Object.assign({
+          title: '',
+          description: '',
+          status: '',
+          priority: '',
+          category: '',
+          projectId: '',
+          projectTitle: ''
+        }, clone.trello.lastSyncedSnapshot || {});
+        return clone;
+      }
+
+      function getFeatureSnapshot(feature) {
+        return {
+          title: String(feature.title || ''),
+          description: String(feature.description || ''),
+          status: String(feature.status || ''),
+          priority: String(feature.priority || ''),
+          category: String(feature.category || ''),
+          projectId: String(feature.projectId || ''),
+          projectTitle: String(getProjectTitle(feature.projectId) || '')
+        };
+      }
+
+      function markFeatureDirtyRoadtrip(feature) {
+        ensureFeatureDefaults(feature);
+        feature.trello.enabled = true;
+        if (feature.trello.cardId) {
+          feature.trello.syncState = 'dirty-roadtrip';
+        } else if (feature.trello.syncState !== 'conflict') {
+          feature.trello.syncState = 'unlinked';
+        }
+      }
+
+      function getProjectLabelName(projectTitle) {
+        return TRELLO_LABEL_PREFIX.project + String(projectTitle || 'Ohne Projekt');
+      }
+
+      function getCategoryLabelName(category) {
+        return TRELLO_LABEL_PREFIX.category + String(category || 'Sonstiges');
+      }
+
+      function getPriorityLabelName(priority) {
+        return TRELLO_LABEL_PREFIX.priority + String(priority || 'mittel');
+      }
+
+      function getTrelloSyncBadge(feature) {
+        ensureFeatureDefaults(feature);
+        const state = feature.trello.syncState || 'unlinked';
+        if (state === 'linked' && feature.trello.lastSyncedAt) return 'verbunden · ' + formatDateTime(feature.trello.lastSyncedAt);
+        if (state === 'dirty-roadtrip') return 'lokal geändert';
+        if (state === 'dirty-trello') return 'Trello geändert';
+        if (state === 'conflict') return 'Konflikt';
+        if (state === 'ignored') return 'ignoriert';
+        if (feature.trello.cardId) return 'verbunden';
+        return 'nicht verknüpft';
+      }
+
+      function parseRoadtripSyncBlock(desc) {
+        const source = String(desc || '');
+        const start = source.indexOf(TRELLO_SYNC_START);
+        const end = source.indexOf(TRELLO_SYNC_END);
+        if (start === -1 || end === -1 || end < start) {
+          return { meta: null, body: source.trim() };
+        }
+        const block = source.slice(start + TRELLO_SYNC_START.length, end).trim();
+        const body = source.slice(end + TRELLO_SYNC_END.length).replace(/^\s+/, '');
+        const meta = {};
+        block.split(/\n+/).forEach(line => {
+          const idx = line.indexOf(':');
+          if (idx === -1) return;
+          const key = line.slice(0, idx).trim();
+          const value = line.slice(idx + 1).trim();
+          if (key) meta[key] = value;
+        });
+        return { meta, body };
+      }
+
+      function buildRoadtripSyncBlock(feature) {
+        ensureFeatureDefaults(feature);
+        const lines = [
+          TRELLO_SYNC_START,
+          'schemaVersion: 1',
+          'roadtripFeatureId: ' + feature.id,
+          'roadtripProjectId: ' + (feature.projectId || ''),
+          'roadtripProjectTitle: ' + (getProjectTitle(feature.projectId) || ''),
+          'syncState: ' + (feature.trello.syncState || 'linked'),
+          'lastSyncedAt: ' + (feature.trello.lastSyncedAt || ''),
+          'sourceType: ' + (feature.sourceType || 'manual'),
+          TRELLO_SYNC_END
+        ];
+        return lines.join('\n');
+      }
+
+      function buildTrelloCardDescription(feature) {
+        const body = String(feature.description || '').trim();
+        return buildRoadtripSyncBlock(feature) + '\n\n' + body;
+      }
+
+      function getTrelloCardUrl(cardId) {
+        return cardId ? 'https://trello.com/c/' + encodeURIComponent(cardId) : '';
+      }
+
+      function validateTrelloConfig() {
+        if (!C.trelloKey || !C.trelloToken || !C.trelloBoardId) {
+          throw new Error('Bitte in den Settings Trello API Key, Token und Board ID eintragen.');
+        }
+      }
+
+      async function trelloRequest(path, options) {
+        validateTrelloConfig();
+        const method = (options && options.method) || 'GET';
+        const params = new URLSearchParams({
+          key: C.trelloKey,
+          token: C.trelloToken
+        });
+        const rawQuery = options && options.query ? options.query : {};
+        Object.keys(rawQuery).forEach(key => {
+          const value = rawQuery[key];
+          if (value === undefined || value === null || value === '') return;
+          params.set(key, value);
+        });
+
+        const url = 'https://api.trello.com/1' + path + '?' + params.toString();
+        const fetchOptions = { method, headers: {} };
+        if (options && options.body) {
+          fetchOptions.headers['Content-Type'] = 'application/json';
+          fetchOptions.body = JSON.stringify(options.body);
+        }
+        const res = await fetch(url, fetchOptions);
+        const text = await res.text();
+        let data = null;
+        try { data = text ? JSON.parse(text) : null; } catch (e) { data = text; }
+        if (!res.ok) {
+          const msg = data && data.message ? data.message : (typeof data === 'string' ? data : ('HTTP ' + res.status));
+          throw new Error(msg);
+        }
+        return data;
+      }
+
+      async function testTrelloConnection() {
+        try {
+          validateTrelloConfig();
+          const board = await trelloRequest('/boards/' + encodeURIComponent(C.trelloBoardId), {
+            query: { fields: 'id,name,url' }
+          });
+          alert('Trello-Verbindung ok:\n' + board.name + '\n' + (board.url || ''));
+        } catch (err) {
+          alert('Trello-Test fehlgeschlagen: ' + err.message);
+        }
+      }
+
+      async function getBoardLists() {
+        return trelloRequest('/boards/' + encodeURIComponent(C.trelloBoardId) + '/lists', {
+          query: { fields: 'id,name,closed' }
+        });
+      }
+
+      async function getBoardLabels() {
+        return trelloRequest('/boards/' + encodeURIComponent(C.trelloBoardId) + '/labels', {
+          query: { fields: 'id,name,color' }
+        });
+      }
+
+      async function ensureTrelloListByName(name) {
+        const lists = await getBoardLists();
+        const existing = (lists || []).find(list => normalizeText(list.name) === normalizeText(name) && !list.closed);
+        if (existing) return existing;
+        return trelloRequest('/lists', {
+          method: 'POST',
+          query: { name: name, idBoard: C.trelloBoardId, pos: 'bottom' }
+        });
+      }
+
+      async function ensureTrelloLabelByName(name, color) {
+        const labels = await getBoardLabels();
+        const existing = (labels || []).find(label => normalizeText(label.name) === normalizeText(name));
+        if (existing) return existing;
+        return trelloRequest('/labels', {
+          method: 'POST',
+          query: { idBoard: C.trelloBoardId, name: name, color: color || 'black' }
+        });
+      }
+
+      async function assignLabelsToCard(cardId, labelIds) {
+        await trelloRequest('/cards/' + encodeURIComponent(cardId), {
+          method: 'PUT',
+          query: { idLabels: labelIds.filter(Boolean).join(',') }
+        });
+      }
+
+      async function fetchTrelloCard(cardId) {
+        return trelloRequest('/cards/' + encodeURIComponent(cardId), {
+          query: { fields: 'id,name,desc,idList,shortUrl,url,idLabels' }
+        });
+      }
+
+      async function syncFeatureToTrello(featureId, options) {
+        const silent = !!(options && options.silent);
+        const feature = S.features.find(x => x.id === featureId);
+        if (!feature) return;
+        ensureFeatureDefaults(feature);
+
+        try {
+          validateTrelloConfig();
+          const projectTitle = getProjectTitle(feature.projectId);
+          const [list, projectLabel, categoryLabel, priorityLabel] = await Promise.all([
+            ensureTrelloListByName(feature.status || 'Idee'),
+            ensureTrelloLabelByName(getProjectLabelName(projectTitle), 'blue'),
+            ensureTrelloLabelByName(getCategoryLabelName(feature.category), 'green'),
+            ensureTrelloLabelByName(getPriorityLabelName(feature.priority), 'red')
+          ]);
+
+          feature.trello.boardId = C.trelloBoardId;
+          feature.trello.listId = list.id;
+          feature.trello.projectLabelId = projectLabel.id;
+          feature.trello.categoryLabelId = categoryLabel.id;
+          feature.trello.priorityLabelId = priorityLabel.id;
+          feature.trello.enabled = true;
+          feature.trello.lastSyncError = '';
+          feature.trello.syncBlockedReason = '';
+          feature.trello.syncState = feature.trello.cardId ? 'dirty-roadtrip' : 'unlinked';
+
+          const desc = buildTrelloCardDescription(feature);
+          let card = null;
+
+          if (feature.trello.cardId) {
+            card = await trelloRequest('/cards/' + encodeURIComponent(feature.trello.cardId), {
+              method: 'PUT',
+              query: {
+                name: feature.title,
+                desc: desc,
+                idList: list.id,
+                pos: 'bottom'
+              }
+            });
+          } else {
+            card = await trelloRequest('/cards', {
+              method: 'POST',
+              query: {
+                idList: list.id,
+                name: feature.title,
+                desc: desc,
+                pos: 'bottom'
+              }
+            });
+          }
+
+          feature.trello.cardId = card.id;
+          feature.trello.cardUrl = card.url || card.shortUrl || feature.trello.cardUrl || '';
+          feature.trello.listId = list.id;
+
+          await assignLabelsToCard(card.id, [projectLabel.id, categoryLabel.id, priorityLabel.id]);
+          if (!feature.trello.cardUrl) {
+            const freshCard = await fetchTrelloCard(card.id);
+            feature.trello.cardUrl = freshCard && (freshCard.url || freshCard.shortUrl) || '';
+          }
+
+          const now = new Date().toISOString();
+          feature.trello.syncState = 'linked';
+          feature.trello.lastSyncDirection = 'push';
+          feature.trello.lastSyncedAt = now;
+          feature.trello.lastPushedAt = now;
+          feature.trello.lastSyncedSnapshot = getFeatureSnapshot(feature);
+          feature.updatedAt = now;
+
+          save();
+          renderView();
+          if (!silent) alert('Feature nach Trello synchronisiert: ' + feature.title);
+        } catch (err) {
+          feature.trello.syncState = 'conflict';
+          feature.trello.lastSyncError = err.message;
+          feature.trello.syncBlockedReason = 'push-failed';
+          save();
+          renderView();
+          if (!silent) alert('Trello-Sync fehlgeschlagen: ' + err.message);
+          throw err;
+        }
+      }
+
+      async function syncActiveProjectToTrello() {
+        const projectId = ui.editingProjectId || ui.activeProjectId;
+        if (!projectId || projectId === ALL_PROJECTS_KEY) return alert('Kein konkretes Projekt ausgewählt.');
+        const features = S.features.filter(f => f.projectId === projectId);
+        if (!features.length) return alert('Dieses Projekt hat keine Features.');
+        if (!confirm(features.length + ' Features nach Trello synchronisieren?')) return;
+        let ok = 0;
+        const failed = [];
+        for (const feature of features) {
+          try {
+            await syncFeatureToTrello(feature.id, { silent: true });
+            ok++;
+          } catch (err) {
+            failed.push(feature.title);
+          }
+        }
+        if (failed.length) {
+          alert('Projekt-Sync abgeschlossen. Erfolgreich: ' + ok + '\nFehlgeschlagen: ' + failed.join(', '));
+        } else {
+          alert('Projekt-Sync abgeschlossen. Erfolgreich: ' + ok);
+        }
+      }
+
+      function openTrelloCard(featureId) {
+        const feature = S.features.find(x => x.id === featureId);
+        if (!feature || !feature.trello || !feature.trello.cardId) return;
+        const url = feature.trello.cardUrl || getTrelloCardUrl(feature.trello.cardId);
+        if (url) window.open(url, '_blank', 'noopener');
       }
 
       function uid(prefix) {
