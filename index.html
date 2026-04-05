@@ -499,7 +499,8 @@
         activeProjectId: ALL_PROJECTS_KEY,
         filters: { status: 'alle', category: 'alle', search: '' },
         showKanban: false,
-        importDraft: { html: '', prompt: '', projectId: '' }
+        importDraft: { html: '', prompt: '', projectId: '' },
+        noteReview: { proposals: [], projectId: '', rawText: '', visible: false }
       };
 
       const $ = (id) => document.getElementById(id);
@@ -679,6 +680,12 @@
         if ($('btnStartNewProjectImport')) $('btnStartNewProjectImport').addEventListener('click', startNewProjectFromImportView);
         if ($('btnAddNote')) $('btnAddNote').addEventListener('click', addQuickNote);
         if ($('btnAnalyzeNote')) $('btnAnalyzeNote').addEventListener('click', buildNotePrompt);
+        if ($('btnBuildReviewPrompt')) $('btnBuildReviewPrompt').addEventListener('click', buildNoteReviewPrompt);
+        if ($('btnLoadNoteReview')) $('btnLoadNoteReview').addEventListener('click', loadNoteReviewProposals);
+        if ($('btnClearNoteReview')) $('btnClearNoteReview').addEventListener('click', clearNoteReview);
+        qq('[data-review-accept-new]').forEach(btn => btn.addEventListener('click', () => acceptNoteProposalAsNew(+btn.dataset.reviewAcceptNew)));
+        qq('[data-review-accept-update]').forEach(btn => btn.addEventListener('click', () => acceptNoteProposalAsUpdate(+btn.dataset.reviewAcceptUpdate)));
+        qq('[data-review-ignore]').forEach(btn => btn.addEventListener('click', () => ignoreNoteProposal(+btn.dataset.reviewIgnore)));
         if ($('htmlFileInput')) $('htmlFileInput').addEventListener('change', onHtmlFilePicked);
         if ($('htmlTextarea')) $('htmlTextarea').addEventListener('input', e => { ui.importDraft.html = e.target.value; });
         if ($('promptOutput')) $('promptOutput').addEventListener('input', e => { ui.importDraft.prompt = e.target.value; });
@@ -696,8 +703,10 @@
         qq('[data-status-feature]').forEach(sel => sel.addEventListener('change', e => updateFeatureStatus(sel.dataset.statusFeature, e.target.value)));
         qq('[data-prio-feature]').forEach(sel => sel.addEventListener('change', e => updateFeaturePriority(sel.dataset.prioFeature, e.target.value)));
         qq('[data-sync-feature]').forEach(btn => btn.addEventListener('click', () => syncFeatureToTrello(btn.dataset.syncFeature)));
+        qq('[data-pull-feature]').forEach(btn => btn.addEventListener('click', () => pullFeatureFromTrello(btn.dataset.pullFeature)));
         qq('[data-open-trello-card]').forEach(btn => btn.addEventListener('click', () => openTrelloCard(btn.dataset.openTrelloCard)));
         if ($('btnSyncProjectTrello')) $('btnSyncProjectTrello').addEventListener('click', () => syncActiveProjectToTrello());
+        if ($('btnPullProjectTrello')) $('btnPullProjectTrello').addEventListener('click', () => pullActiveProjectFromTrello());
         qq('[data-add-feature-from-note]').forEach(btn => btn.addEventListener('click', () => promoteNoteToFeature(btn.dataset.addFeatureFromNote)));
         qq('[data-build-note-prompt]').forEach(btn => btn.addEventListener('click', () => buildSingleNotePrompt(btn.dataset.buildNotePrompt)));
         qq('[data-create-feature]').forEach(btn => btn.addEventListener('click', () => quickCreateFeature(btn.dataset.createFeature)));
@@ -740,8 +749,10 @@
             <div class="stack-row">
               <button class="btn btn-primary" id="btnAddNote">Notiz speichern</button>
               <button class="btn" id="btnAnalyzeNote">Prompt bauen</button>
+              <button class="btn" id="btnBuildReviewPrompt">Review-Prompt bauen</button>
             </div>
           </details>
+          ${renderNoteReviewSection()}
           ${ui.showKanban ? renderKanban(features) : renderTable(features)}
           <details style="margin-top:12px;">
             <summary>Inbox / Notes (${notes.length})</summary>
@@ -779,6 +790,7 @@
           <div class="stack-row" style="margin-bottom:8px;">
             <button class="btn" id="btnStartNewProject">+ Neues Projekt</button>
             ${isCreateMode ? '' : '<button class="btn" id="btnSyncProjectTrello">Projekt nach Trello syncen</button>'}
+            ${isCreateMode ? '' : '<button class="btn" id="btnPullProjectTrello">Von Trello aktualisieren</button>'}
           </div>
           <div class="stack-row">
             <div class="field" style="flex:2"><label for="projectTitle">Titel</label><input id="projectTitle" value="${escapeAttr(formTitle)}" /></div>
@@ -935,6 +947,7 @@
                       <div class="mini">${escapeHtml(getTrelloSyncBadge(f))}</div>
                       <div class="stack-row" style="margin-top:6px;">
                         <button class="btn" data-sync-feature="${f.id}">${f.trello && f.trello.cardId ? 'Trello updaten' : 'Nach Trello'}</button>
+                        ${f.trello && f.trello.cardId ? `<button class="btn" data-pull-feature="${f.id}">Von Trello</button>` : ''}
                         ${f.trello && f.trello.cardId ? `<button class="btn" data-open-trello-card="${f.id}">Öffnen</button>` : ''}
                       </div>
                     </td>
@@ -965,6 +978,7 @@
                 <div class="stack-row">
                   <select data-status-feature="${f.id}">${FEATURE_STATUS.map(s => `<option value="${s}" ${s===f.status?'selected':''}>${s}</option>`).join('')}</select>
                   <button class="btn" data-sync-feature="${f.id}">${f.trello && f.trello.cardId ? 'Trello updaten' : 'Nach Trello'}</button>
+                  ${f.trello && f.trello.cardId ? `<button class="btn" data-pull-feature="${f.id}">Von Trello</button>` : ''}
                   ${f.trello && f.trello.cardId ? `<button class="btn" data-open-trello-card="${f.id}">Öffnen</button>` : ''}
                 </div>
                 <div class="mini">${escapeHtml(getTrelloSyncBadge(f))}</div>
@@ -1488,26 +1502,40 @@
 
       function buildFeaturePromptFromText(noteText, projectId) {
         const projectSummaries = S.projects.map(p => `- ${p.title}: ${p.summary || 'keine Beschreibung'}`).join('\n');
-        const relevantFeatures = S.features.filter(f => !projectId || f.projectId === projectId).map(f => `- ${f.title} | ${getProjectTitle(f.projectId)} | ${f.status}`).join('\n') || '- keine';
+        const relevantFeatures = S.features.filter(f => !projectId || f.projectId === projectId)
+          .map(f => `- [${f.id}] ${f.title} | ${getProjectTitle(f.projectId)} | ${f.status} | ${f.category}`)
+          .join('\n') || '- keine';
         return [
           'AUFGABE',
-          'Analysiere die Notiz und ordne darin genannte Features den passenden Projekten zu. Gib ausschließlich gültiges JSON zurück.',
+          'Analysiere die Notiz und gleiche sie mit den bestehenden Features ab. Gib ausschließlich gültiges JSON zurück. Kein Text vor oder nach dem JSON.',
           '',
           'PROJEKTE',
           projectSummaries || '- keine Projekte',
           '',
-          'BISHERIGE FEATURES',
+          'BISHERIGE FEATURES (ID | Titel | Projekt | Status | Kategorie)',
           relevantFeatures,
+          '',
+          'ANWEISUNGEN',
+          '- Jeder Eintrag in "proposals" beschreibt genau einen Vorschlag.',
+          '- type darf nur sein: "new-feature" | "update-feature" | "already-implemented" | "unclear"',
+          '- Bei "update-feature": targetFeatureId aus der obigen Liste setzen.',
+          '- Bei "already-implemented": ebenfalls targetFeatureId setzen, falls erkennbar.',
+          '- suggestedStatus darf nur sein: Idee|geprüft|geplant|in Arbeit|teilweise umgesetzt|umgesetzt',
+          '- suggestedCategory darf nur sein: UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges',
+          '- rationale: ein Satz, warum dieser Vorschlag gemacht wird.',
           '',
           'AUSGABEFORMAT JSON',
           '{',
-          '  "featureCandidates": [',
+          '  "proposals": [',
           '    {',
-          '      "projectTitle": "... oder leer",',
-          '      "title": "...",',
-          '      "description": "...",',
-          '      "category": "UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges",',
-          '      "novelty": "neu|duplikat|unterfeature|unklar"',
+          '      "type": "new-feature|update-feature|already-implemented|unclear",',
+          '      "targetFeatureId": "... oder leer",',
+          '      "targetFeatureTitle": "... oder leer",',
+          '      "suggestedTitle": "...",',
+          '      "suggestedDescription": "...",',
+          '      "suggestedCategory": "...",',
+          '      "suggestedStatus": "...",',
+          '      "rationale": "..."',
           '    }',
           '  ],',
           '  "summary": "..."',
@@ -1517,6 +1545,167 @@
           noteText
         ].join('\n');
       }
+
+      // ─── NOTE REVIEW ──────────────────────────────────────────────────────────
+
+      function buildNoteReviewPrompt() {
+        const rawText = $('quickNote') ? $('quickNote').value.trim() : '';
+        const pid = $('quickProject') ? $('quickProject').value || '' : '';
+        if (!rawText) return alert('Bitte erst eine Notiz schreiben.');
+        const prompt = buildFeaturePromptFromText(rawText, pid);
+        ui.noteReview.rawText = rawText;
+        ui.noteReview.projectId = pid;
+        ui.noteReview.proposals = [];
+        ui.noteReview.visible = true;
+        ui.importDraft.prompt = prompt;
+        if (pid) ui.importDraft.projectId = pid;
+        navigator.clipboard.writeText(prompt)
+          .then(() => alert('Review-Prompt erzeugt und in Zwischenablage kopiert.\nErgebnis-JSON unten einfügen und "Vorschläge laden" klicken.'))
+          .catch(() => alert('Review-Prompt erzeugt.\nErgebnis-JSON unten einfügen und "Vorschläge laden" klicken.'));
+        renderView();
+      }
+
+      function loadNoteReviewProposals() {
+        const raw = $('noteReviewJsonInput') ? $('noteReviewJsonInput').value.trim() : '';
+        if (!raw) return alert('Bitte JSON-Ergebnis einfügen.');
+        let parsed;
+        try { parsed = JSON.parse(extractJsonObjectFromText(raw)); } catch (e) {
+          return alert('Kein gültiges JSON erkannt: ' + e.message);
+        }
+        const proposals = Array.isArray(parsed.proposals) ? parsed.proposals : [];
+        if (!proposals.length) return alert('Keine Vorschläge im JSON gefunden (Schlüssel: "proposals").');
+        const validTypes = ['new-feature', 'update-feature', 'already-implemented', 'unclear'];
+        ui.noteReview.proposals = proposals.map((p, i) => ({
+          _idx: i,
+          type: validTypes.includes(p.type) ? p.type : 'unclear',
+          targetFeatureId: String(p.targetFeatureId || '').trim(),
+          targetFeatureTitle: String(p.targetFeatureTitle || '').trim(),
+          suggestedTitle: String(p.suggestedTitle || '').trim(),
+          suggestedDescription: String(p.suggestedDescription || '').trim(),
+          suggestedCategory: FEATURE_CATEGORIES.includes(p.suggestedCategory) ? p.suggestedCategory : 'Sonstiges',
+          suggestedStatus: FEATURE_STATUS.includes(p.suggestedStatus) ? p.suggestedStatus : 'Idee',
+          rationale: String(p.rationale || '').trim(),
+          _done: false
+        }));
+        renderView();
+      }
+
+      function acceptNoteProposalAsNew(idx) {
+        const proposal = ui.noteReview.proposals.find(p => p._idx === idx);
+        if (!proposal || proposal._done) return;
+        const projectId = ui.noteReview.projectId || '';
+        if (!proposal.suggestedTitle) return alert('Kein Titel im Vorschlag vorhanden.');
+        S.features.push(ensureFeatureDefaults({
+          id: uid('f'),
+          projectId,
+          title: proposal.suggestedTitle,
+          description: proposal.suggestedDescription || '',
+          category: proposal.suggestedCategory || 'Sonstiges',
+          status: proposal.suggestedStatus || 'Idee',
+          priority: 'mittel',
+          sourceType: 'note-review',
+          sourceNoteIds: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }));
+        proposal._done = true;
+        save();
+        renderView();
+      }
+
+      function acceptNoteProposalAsUpdate(idx) {
+        const proposal = ui.noteReview.proposals.find(p => p._idx === idx);
+        if (!proposal || proposal._done) return;
+        const targetId = proposal.targetFeatureId;
+        const feature = targetId ? S.features.find(x => x.id === targetId) : null;
+        if (!feature) return alert('Ziel-Feature nicht gefunden. Bitte manuell zuordnen.');
+        // Defensive: only update if value is non-empty and meaningfully different
+        if (proposal.suggestedTitle && proposal.suggestedTitle !== feature.title) {
+          if (confirm('Titel ändern von:\n"' + feature.title + '"\nauf:\n"' + proposal.suggestedTitle + '"?')) {
+            feature.title = proposal.suggestedTitle;
+          }
+        }
+        if (proposal.suggestedDescription) {
+          const existingDesc = String(feature.description || '').trim();
+          if (!existingDesc || isGenericFeatureDescription(existingDesc)) {
+            feature.description = proposal.suggestedDescription;
+          } else if (existingDesc !== proposal.suggestedDescription) {
+            if (confirm('Beschreibung ersetzen?\nAlt: ' + shorten(existingDesc, 80) + '\nNeu: ' + shorten(proposal.suggestedDescription, 80))) {
+              feature.description = proposal.suggestedDescription;
+            }
+          }
+        }
+        if (proposal.suggestedCategory && proposal.suggestedCategory !== 'Sonstiges' && feature.category === 'Sonstiges') {
+          feature.category = proposal.suggestedCategory;
+        }
+        if (proposal.suggestedStatus && FEATURE_STATUS.includes(proposal.suggestedStatus)) {
+          if (getFeatureStatusRank(proposal.suggestedStatus) > getFeatureStatusRank(feature.status)) {
+            if (confirm('Status anheben auf "' + proposal.suggestedStatus + '"?')) {
+              feature.status = proposal.suggestedStatus;
+            }
+          }
+        }
+        feature.updatedAt = new Date().toISOString();
+        proposal._done = true;
+        save();
+        renderView();
+      }
+
+      function ignoreNoteProposal(idx) {
+        const proposal = ui.noteReview.proposals.find(p => p._idx === idx);
+        if (!proposal) return;
+        proposal._done = true;
+        renderView();
+      }
+
+      function clearNoteReview() {
+        ui.noteReview = { proposals: [], projectId: '', rawText: '', visible: false };
+        renderView();
+      }
+
+      function renderNoteReviewSection() {
+        if (!ui.noteReview.visible) return '';
+        const proposals = ui.noteReview.proposals;
+        const typeLabel = { 'new-feature': 'Neu', 'update-feature': 'Update', 'already-implemented': 'Erledigt?', 'unclear': 'Unklar' };
+        const typeColor = { 'new-feature': 'var(--green)', 'update-feature': 'var(--blue)', 'already-implemented': 'var(--accent)', 'unclear': 'var(--ink-dim)' };
+        return `
+          <details open style="margin-top:10px;">
+            <summary style="font-weight:700;">Review-Vorschläge (${proposals.filter(p=>!p._done).length} offen)</summary>
+            <div style="margin-top:8px;" class="field">
+              <label for="noteReviewJsonInput">JSON-Ergebnis einfügen</label>
+              <textarea id="noteReviewJsonInput" style="min-height:80px;font-family:var(--font-mono);font-size:12px;" placeholder='{"proposals":[...]}'></textarea>
+              <div class="stack-row" style="margin-top:6px;">
+                <button class="btn btn-primary" id="btnLoadNoteReview">Vorschläge laden</button>
+                <button class="btn" id="btnClearNoteReview">Review schließen</button>
+              </div>
+            </div>
+            ${proposals.length ? `
+              <div class="list" style="margin-top:10px;">
+                ${proposals.map(p => `
+                  <div class="item" style="${p._done ? 'opacity:0.45;' : ''}border-left:3px solid ${typeColor[p.type] || 'var(--border)'}">
+                    <div class="row-top">
+                      <strong>${escapeHtml(p.suggestedTitle || p.targetFeatureTitle || '—')}</strong>
+                      <span class="pill">${typeLabel[p.type] || p.type}</span>
+                    </div>
+                    ${p.suggestedDescription ? `<div class="item-desc">${escapeHtml(p.suggestedDescription)}</div>` : ''}
+                    ${p.targetFeatureTitle && p.type !== 'new-feature' ? `<div class="mini">Ziel: ${escapeHtml(p.targetFeatureTitle)}</div>` : ''}
+                    ${p.rationale ? `<div class="mini" style="color:var(--ink-dim)">Grund: ${escapeHtml(p.rationale)}</div>` : ''}
+                    ${p._done ? '<div class="mini">✓ erledigt</div>' : `
+                      <div class="stack-row">
+                        ${p.type === 'new-feature' || p.type === 'unclear' ? `<button class="btn" data-review-accept-new="${p._idx}">Als neues Feature</button>` : ''}
+                        ${p.type === 'update-feature' || p.type === 'already-implemented' ? `<button class="btn" data-review-accept-update="${p._idx}">Feature aktualisieren</button>` : ''}
+                        <button class="btn" data-review-ignore="${p._idx}">Ignorieren</button>
+                      </div>
+                    `}
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
+          </details>
+        `;
+      }
+
+      // ─────────────────────────────────────────────────────────────────────────
 
       function copyPrompt() {
         const text = $('promptOutput').value;
@@ -2156,6 +2345,247 @@
           query: { fields: 'id,name,desc,idList,shortUrl,url,idLabels' }
         });
       }
+
+      // ─── TRELLO PULL & MERGE ──────────────────────────────────────────────────
+
+      function parseTrelloLabels(idLabels, allLabels) {
+        // Returns { project: [...], category: [...], priority: [...], other: [] }
+        const result = { project: [], category: [], priority: [], other: [] };
+        (idLabels || []).forEach(id => {
+          const label = (allLabels || []).find(l => l.id === id);
+          if (!label || !label.name) return;
+          const name = label.name;
+          if (name.startsWith(TRELLO_LABEL_PREFIX.project)) {
+            result.project.push(name.slice(TRELLO_LABEL_PREFIX.project.length).trim());
+          } else if (name.startsWith(TRELLO_LABEL_PREFIX.category)) {
+            result.category.push(name.slice(TRELLO_LABEL_PREFIX.category.length).trim());
+          } else if (name.startsWith(TRELLO_LABEL_PREFIX.priority)) {
+            result.priority.push(name.slice(TRELLO_LABEL_PREFIX.priority.length).trim());
+          } else {
+            result.other.push(name);
+          }
+        });
+        return result;
+      }
+
+      function mergeTrelloIntoFeature(feature, card, allLabels, allLists) {
+        // Returns { changed: boolean, conflicts: string[] }
+        const snap = feature.trello.lastSyncedSnapshot || {};
+        const changed = [];
+        const conflicts = [];
+
+        const parsed = parseRoadtripSyncBlock(card.desc || '');
+        if (!parsed.meta) {
+          feature.trello.syncState = 'conflict';
+          feature.trello.syncBlockedReason = 'invalid-sync-block';
+          return { changed: false, conflicts: ['invalid-sync-block'] };
+        }
+
+        // Validate feature ID in block
+        if (parsed.meta.roadtripFeatureId && parsed.meta.roadtripFeatureId !== feature.id) {
+          feature.trello.syncState = 'conflict';
+          feature.trello.syncBlockedReason = 'feature-id-mismatch';
+          return { changed: false, conflicts: ['feature-id-mismatch'] };
+        }
+
+        const trelloTitle = (card.name || '').trim();
+        const trelloDesc = (parsed.body || '').trim();
+
+        // Resolve list name → status
+        const list = (allLists || []).find(l => l.id === card.idList);
+        const trelloStatus = list ? list.name.trim() : '';
+
+        // Parse labels
+        const labelGroups = parseTrelloLabels(card.idLabels || [], allLabels);
+
+        const localTitle = String(feature.title || '').trim();
+        const snapTitle = String(snap.title || '').trim();
+        const localDesc = String(feature.description || '').trim();
+        const snapDesc = String(snap.description || '').trim();
+        const localStatus = String(feature.status || '').trim();
+        const snapStatus = String(snap.status || '').trim();
+        const localPriority = String(feature.priority || '').trim();
+        const snapPriority = String(snap.priority || '').trim();
+        const localCategory = String(feature.category || '').trim();
+        const snapCategory = String(snap.category || '').trim();
+
+        // ── title ──
+        const titleChangedTrello = trelloTitle !== snapTitle;
+        const titleChangedLocal = localTitle !== snapTitle;
+        if (titleChangedTrello && !titleChangedLocal) {
+          feature.title = trelloTitle;
+          changed.push('title');
+        } else if (titleChangedTrello && titleChangedLocal) {
+          conflicts.push('title');
+        }
+
+        // ── description ──
+        const descChangedTrello = trelloDesc !== snapDesc;
+        const descChangedLocal = localDesc !== snapDesc;
+        if (descChangedTrello && !descChangedLocal) {
+          feature.description = trelloDesc;
+          changed.push('description');
+        } else if (descChangedTrello && descChangedLocal) {
+          conflicts.push('description');
+        }
+
+        // ── status: Trello wins when changed ──
+        if (trelloStatus && FEATURE_STATUS.includes(trelloStatus)) {
+          if (trelloStatus !== snapStatus) {
+            feature.status = trelloStatus;
+            changed.push('status');
+          }
+        }
+
+        // ── priority: same 3-way logic as title/description ──
+        if (labelGroups.priority.length > 1) {
+          conflicts.push('priority-multiple-labels');
+        } else if (labelGroups.priority.length === 1) {
+          const tp = labelGroups.priority[0];
+          if (PRIORITIES.includes(tp)) {
+            const prioChangedTrello = tp !== snapPriority;
+            const prioChangedLocal = localPriority !== snapPriority;
+            if (prioChangedTrello && !prioChangedLocal) {
+              feature.priority = tp;
+              changed.push('priority');
+            } else if (prioChangedTrello && prioChangedLocal) {
+              conflicts.push('priority');
+            }
+          }
+        }
+
+        // ── category: same 3-way logic as title/description ──
+        if (labelGroups.category.length > 1) {
+          conflicts.push('category-multiple-labels');
+        } else if (labelGroups.category.length === 1) {
+          const tc = labelGroups.category[0];
+          if (FEATURE_CATEGORIES.includes(tc)) {
+            const catChangedTrello = tc !== snapCategory;
+            const catChangedLocal = localCategory !== snapCategory;
+            if (catChangedTrello && !catChangedLocal) {
+              feature.category = tc;
+              changed.push('category');
+            } else if (catChangedTrello && catChangedLocal) {
+              conflicts.push('category');
+            }
+          }
+        }
+
+        // ── project: never overwritten, validate only ──
+        if (labelGroups.project.length > 1) {
+          conflicts.push('project-multiple-labels');
+        } else if (labelGroups.project.length === 1) {
+          const expectedProjectTitle = String(getProjectTitle(feature.projectId) || '').trim();
+          if (normalizeText(labelGroups.project[0]) !== normalizeText(expectedProjectTitle)) {
+            conflicts.push('project-label-mismatch');
+          }
+        }
+
+        return { changed: changed.length > 0, changedFields: changed, conflicts };
+      }
+
+      async function pullFeatureFromTrello(featureId, options) {
+        const silent = !!(options && options.silent);
+        const feature = S.features.find(x => x.id === featureId);
+        if (!feature) return { ok: false, error: 'feature-not-found', featureId };
+        ensureFeatureDefaults(feature);
+
+        if (!feature.trello || !feature.trello.cardId) {
+          if (!silent) alert('Dieses Feature hat noch keine Trello-Verknüpfung. Erst nach Trello pushen.');
+          return { ok: false, error: 'not-linked', featureId };
+        }
+
+        try {
+          validateTrelloConfig();
+          const [card, allLabels, allLists] = await Promise.all([
+            trelloRequest('/cards/' + encodeURIComponent(feature.trello.cardId), {
+              query: { fields: 'id,name,desc,idList,idLabels,url,shortUrl' }
+            }),
+            getBoardLabels(),
+            getBoardLists()
+          ]);
+
+          const mergeResult = mergeTrelloIntoFeature(feature, card, allLabels, allLists);
+          const hardFail = mergeResult.conflicts.length > 0 &&
+            (mergeResult.conflicts[0] === 'invalid-sync-block' || mergeResult.conflicts[0] === 'feature-id-mismatch');
+
+          const now = new Date().toISOString();
+
+          if (hardFail) {
+            // syncState already set inside mergeTrelloIntoFeature, timestamps NOT updated
+            save();
+            renderView();
+            if (!silent) alert('Pull abgebrochen: ' + mergeResult.conflicts[0]);
+            return { ok: false, error: mergeResult.conflicts[0], featureId };
+          }
+
+          if (mergeResult.conflicts.length > 0) {
+            // Soft conflicts: state is conflict, but no timestamps (not a successful sync)
+            feature.trello.syncState = 'conflict';
+            feature.trello.syncBlockedReason = 'merge-conflicts: ' + mergeResult.conflicts.join(', ');
+            save();
+            renderView();
+            if (!silent) alert('Pull mit Konflikten:\n' + mergeResult.conflicts.join('\n') + '\nBitte manuell prüfen.');
+            return { ok: 'conflict', conflicts: mergeResult.conflicts, featureId };
+          }
+
+          // Clean pull/merge — set timestamps only now
+          feature.trello.lastPulledAt = now;
+          feature.trello.lastSyncedAt = now;
+          feature.trello.syncState = 'linked';
+          feature.trello.syncBlockedReason = '';
+          feature.trello.lastSyncDirection = mergeResult.changed ? 'merge' : 'pull';
+          feature.trello.lastSyncedSnapshot = getFeatureSnapshot(feature);
+          if (mergeResult.changed) feature.updatedAt = now;
+
+          save();
+          renderView();
+
+          if (!silent) {
+            if (mergeResult.changed) {
+              alert('Pull erfolgreich. Geänderte Felder: ' + (mergeResult.changedFields || []).join(', '));
+            } else {
+              alert('Pull erfolgreich. Keine Änderungen.');
+            }
+          }
+          return { ok: true, changed: mergeResult.changed, changedFields: mergeResult.changedFields, featureId };
+
+        } catch (err) {
+          feature.trello.syncState = 'conflict';
+          feature.trello.lastSyncError = err.message;
+          feature.trello.syncBlockedReason = 'pull-failed';
+          save();
+          renderView();
+          if (!silent) alert('Trello-Pull fehlgeschlagen: ' + err.message);
+          return { ok: false, error: err.message, featureId };
+        }
+      }
+
+      async function pullActiveProjectFromTrello() {
+        const projectId = ui.editingProjectId || ui.activeProjectId;
+        if (!projectId || projectId === ALL_PROJECTS_KEY) return alert('Kein konkretes Projekt ausgewählt.');
+        const features = S.features.filter(f => f.projectId === projectId && f.trello && f.trello.cardId);
+        if (!features.length) return alert('Keine verknüpften Trello-Karten in diesem Projekt.');
+        if (!confirm(features.length + ' Trello-Karten pullen?')) return;
+        let countOk = 0, countConflict = 0;
+        const failed = [];
+        for (const feature of features) {
+          const result = await pullFeatureFromTrello(feature.id, { silent: true });
+          if (!result || result.ok === false) {
+            failed.push(feature.title);
+          } else if (result.ok === 'conflict') {
+            countConflict++;
+          } else {
+            countOk++;
+          }
+        }
+        const parts = ['Projekt-Pull abgeschlossen.', 'Erfolgreich: ' + countOk];
+        if (countConflict) parts.push('Mit Konflikten: ' + countConflict);
+        if (failed.length) parts.push('Fehlgeschlagen: ' + failed.join(', '));
+        alert(parts.join('\n'));
+      }
+
+      // ─────────────────────────────────────────────────────────────────────────
 
       async function syncFeatureToTrello(featureId, options) {
         const silent = !!(options && options.silent);
