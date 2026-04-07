@@ -513,7 +513,10 @@
         return {
           version: 1,
           createdAt: new Date().toISOString(),
-          _lastExported: new Date().toISOString(),
+          _lastLocalSaveAt: '',
+          _lastExported: '',
+          _lastGistPushAt: '',
+          _lastGistPullAt: '',
           projects: [],
           features: [],
           notes: [],
@@ -545,12 +548,25 @@
       function load() {
         try {
           const raw = localStorage.getItem(LKEY);
-          if (raw) S = Object.assign(defaultState(), JSON.parse(raw));
-        } catch (e) { console.warn('load state failed', e); }
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            const parsedState = parsed && parsed.state && typeof parsed.state === 'object' ? parsed.state : parsed;
+            if (parsedState && typeof parsedState === 'object' && !Array.isArray(parsedState)) {
+              S = Object.assign(defaultState(), parsedState);
+            } else {
+              console.warn('[load] Unexpected state shape, using defaults');
+            }
+          }
+        } catch (e) { console.warn('[load] State load failed, using defaults:', e); }
         try {
           const raw = localStorage.getItem(CONFIG_KEY);
-          if (raw) C = Object.assign(defaultConfig(), JSON.parse(raw));
-        } catch (e) { console.warn('load config failed', e); }
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object') {
+              C = Object.assign(defaultConfig(), parsed);
+            }
+          }
+        } catch (e) { console.warn('[load] Config load failed, using defaults:', e); }
         ensureDefaults();
       }
 
@@ -559,14 +575,32 @@
         if (!Array.isArray(S.features)) S.features = [];
         if (!Array.isArray(S.notes)) S.notes = [];
         if (!Array.isArray(S.analyses)) S.analyses = [];
+        if (!S._lastLocalSaveAt && S._lastExported) S._lastLocalSaveAt = S._lastExported;
+        if (!S._lastGistPushAt && S._lastExported) S._lastGistPushAt = S._lastExported;
         S.features = S.features.map(ensureFeatureDefaults);
       }
 
       function save() {
-        S._lastExported = new Date().toISOString();
-        localStorage.setItem(LKEY, JSON.stringify(S));
-        localStorage.setItem(CONFIG_KEY, JSON.stringify(C));
-        $('lastSavedLabel').textContent = 'Gespeichert: ' + formatDateTime(S._lastExported);
+        S._lastLocalSaveAt = new Date().toISOString();
+        ensureDefaults();
+        try {
+          const payload = JSON.stringify(S);
+          if (!payload || payload.length < 10) throw new Error('suspiciously small payload');
+          localStorage.setItem(LKEY, payload);
+          const verifyRaw = localStorage.getItem(LKEY);
+          if (!verifyRaw) throw new Error('localStorage write verification failed');
+          JSON.parse(verifyRaw);
+        } catch (e) {
+          console.error('[save] State save failed:', e);
+          alert('Warnung: Lokales Speichern fehlgeschlagen. ' + e.message);
+        }
+        try {
+          localStorage.setItem(CONFIG_KEY, JSON.stringify(C));
+        } catch (e) {
+          console.error('[save] Config save failed:', e);
+        }
+        const lbl = $('lastSavedLabel');
+        if (lbl) lbl.textContent = 'Gespeichert: ' + formatDateTime(S._lastLocalSaveAt);
         renderStats();
         renderSidebarProjects();
       }
@@ -587,7 +621,7 @@
         renderProjectSelects();
         renderStats();
         renderView();
-        $('lastSavedLabel').textContent = 'Gespeichert: ' + formatDateTime(S._lastExported);
+        $('lastSavedLabel').textContent = 'Gespeichert: ' + formatDateTime(S._lastLocalSaveAt);
       }
 
       function applyTheme() {
@@ -668,6 +702,10 @@
         if ($('gistToken')) $('gistToken').addEventListener('input', e => { C.gistToken = e.target.value; save(); });
         if ($('rawGistId')) $('rawGistId').addEventListener('input', e => { C.rawGistId = e.target.value; save(); });
         if ($('rawGistToken')) $('rawGistToken').addEventListener('input', e => { C.rawGistToken = e.target.value; save(); });
+        if ($('btnGistPush')) $('btnGistPush').addEventListener('click', gistPush);
+        if ($('btnGistPull')) $('btnGistPull').addEventListener('click', gistPull);
+        if ($('btnGistRawBackup')) $('btnGistRawBackup').addEventListener('click', gistRawBackup);
+        updateGistStatusUI();
         if ($('openAiModel')) $('openAiModel').addEventListener('input', e => { C.openAiModel = e.target.value; save(); });
         if ($('trelloKey')) $('trelloKey').addEventListener('input', e => { C.trelloKey = e.target.value; save(); });
         if ($('trelloToken')) $('trelloToken').addEventListener('input', e => { C.trelloToken = e.target.value; save(); });
@@ -840,10 +878,23 @@
           <div class="panel-title"><h3>Settings</h3></div>
           <div class="field"><label for="themeSelect">Theme</label><select id="themeSelect"><option value="theme-dark">Dark</option><option value="theme-light">Light</option><option value="theme-eink">E-Ink</option></select></div>
           <div class="field"><label for="fontSelect">Font</label><select id="fontSelect"><option value="ui">UI</option><option value="serif">Serif</option></select></div>
+          <hr style="border:none;border-top:1px solid var(--border);margin:12px 0;">
+          <div class="panel-title" style="margin-top:8px;"><h3>GitHub Gist Sync</h3><div class="mini">Manueller Cloud-Backup</div></div>
           <div class="field"><label for="gistId">Gist ID</label><input id="gistId" type="text" value="${escapeAttr(C.gistId || '')}" /></div>
           <div class="field"><label for="gistToken">GitHub Token</label><input id="gistToken" type="password" value="${escapeAttr(C.gistToken || '')}" /></div>
+          <div class="stack-row" style="margin-bottom:8px;">
+            <button class="btn btn-primary" id="btnGistPush">☁ Zum Gist speichern</button>
+            <button class="btn" id="btnGistPull">↓ Vom Gist laden</button>
+          </div>
+          <div class="notice" id="gistStatusInfo" style="font-size:12px;">Noch kein Sync durchgeführt.</div>
+          <hr style="border:none;border-top:1px solid var(--border);margin:12px 0;">
+          <div class="panel-title" style="margin-top:8px;"><h3>Raw Backup Gist</h3><div class="mini">Nur Notizen &amp; Analysen (optional separates Gist)</div></div>
           <div class="field"><label for="rawGistId">Backup Gist ID</label><input id="rawGistId" type="text" value="${escapeAttr(C.rawGistId || '')}" /></div>
           <div class="field"><label for="rawGistToken">Backup Token</label><input id="rawGistToken" type="password" value="${escapeAttr(C.rawGistToken || '')}" /></div>
+          <div class="stack-row" style="margin-bottom:8px;">
+            <button class="btn" id="btnGistRawBackup">📦 Raw-Backup zum Gist</button>
+          </div>
+          <hr style="border:none;border-top:1px solid var(--border);margin:12px 0;">
           <div class="field"><label for="openAiModel">OpenAI Model</label><input id="openAiModel" type="text" value="${escapeAttr(C.openAiModel || '')}" /></div>
           <hr style="border:none;border-top:1px solid var(--border);margin:10px 0;">
           <div class="panel-title" style="margin-top:8px;"><h3>Trello</h3><div class="mini">V1 Push-Sync für Features</div></div>
@@ -2035,6 +2086,318 @@
         alert(importedLines + ' Zeilen als Features übernommen.');
       }
 
+      // ─── GITHUB GIST SYNC ────────────────────────────────────────────────────
+
+      const GIST_FILE = 'roadtrip_data.json';
+      let _gistStatus = { lastPush: '', lastPull: '', lastError: '' };
+
+      function githubHeaders(token, includeContentType) {
+        const h = {
+          'Authorization': 'token ' + token,
+          'Accept': 'application/vnd.github+json'
+        };
+        if (includeContentType) h['Content-Type'] = 'application/json';
+        return h;
+      }
+
+      function buildGistPayload() {
+        return { version: 1, exported: new Date().toISOString(), state: S };
+      }
+
+      function updateGistStatusUI() {
+        const el = $('gistStatusInfo');
+        if (!el) return;
+        let txt = '';
+        if (S._lastLocalSaveAt) txt += 'Lokal gespeichert: ' + formatDateTime(S._lastLocalSaveAt) + ' ';
+        const lastPush = _gistStatus.lastPush || S._lastGistPushAt;
+        const lastPull = _gistStatus.lastPull || S._lastGistPullAt;
+        if (lastPush) txt += '| Gist Push: ' + formatDateTime(lastPush) + ' ';
+        if (lastPull) txt += '| Gist Pull: ' + formatDateTime(lastPull) + ' ';
+        if (_gistStatus.lastError) txt += '| Fehler: ' + _gistStatus.lastError;
+        el.textContent = txt || 'Noch kein Sync durchgeführt.';
+      }
+
+      async function readGistFileJson(gist, preferredFileName) {
+        const fileObj = gist.files && (gist.files[preferredFileName] || Object.values(gist.files)[0]);
+        if (!fileObj) throw new Error('Keine Datei im Gist gefunden.');
+        let content = fileObj.content;
+        if ((!content || fileObj.truncated) && fileObj.raw_url) {
+          const rawResp = await fetch(fileObj.raw_url, { headers: { 'Accept': 'application/json,text/plain,*/*' } });
+          if (!rawResp.ok) throw new Error('Raw-Datei nicht lesbar (HTTP ' + rawResp.status + ')');
+          content = await rawResp.text();
+        }
+        if (!content || !String(content).trim()) throw new Error('Gist-Datei ist leer.');
+        try {
+          return JSON.parse(content);
+        } catch (e) {
+          throw new Error('Gist-Inhalt ist kein gültiges JSON.');
+        }
+      }
+
+      async function gistPush() {
+        if (!C.gistId || !C.gistToken) {
+          return alert('Bitte zuerst Gist ID und GitHub Token in den Settings eintragen.');
+        }
+        try {
+          const syncTs = new Date().toISOString();
+          S._lastExported = syncTs;
+          S._lastGistPushAt = syncTs;
+          const payload = buildGistPayload();
+          payload.exported = syncTs;
+          const r = await fetch('https://api.github.com/gists/' + C.gistId, {
+            method: 'PATCH',
+            headers: githubHeaders(C.gistToken, true),
+            body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(payload, null, 2) } } })
+          });
+          if (!r.ok) {
+            const errText = await r.text().catch(() => '');
+            throw new Error('HTTP ' + r.status + (errText ? ': ' + errText.slice(0, 120) : ''));
+          }
+          const body = await r.json().catch(() => null);
+          if (!body || !body.files || !body.files[GIST_FILE]) throw new Error('Antwort ohne erwartete Gist-Datei.');
+          _gistStatus.lastPush = syncTs;
+          _gistStatus.lastError = '';
+          save();
+          updateGistStatusUI();
+          alert('Zum Gist gespeichert: ' + formatDateTime(syncTs));
+        } catch (e) {
+          _gistStatus.lastError = e.message.slice(0, 80);
+          updateGistStatusUI();
+          alert('Gist-Push fehlgeschlagen: ' + e.message);
+        }
+      }
+
+      async function gistPull() {
+        if (!C.gistId || !C.gistToken) {
+          return alert('Bitte zuerst Gist ID und GitHub Token in den Settings eintragen.');
+        }
+        try {
+          const r = await fetch('https://api.github.com/gists/' + C.gistId, {
+            headers: githubHeaders(C.gistToken, false)
+          });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          const gist = await r.json();
+          const remote = await readGistFileJson(gist, GIST_FILE);
+          const remoteState = remote.state || remote; // handle both wrapped and legacy
+          if (!remoteState || typeof remoteState !== 'object' || Array.isArray(remoteState)) throw new Error('Ungültiger Gist-State.');
+          const remoteTs = remote.exported || remoteState._lastGistPushAt || remoteState._lastExported || '';
+          const localTs = S._lastGistPushAt || S._lastExported || '';
+          const remoteNewer = remoteTs > localTs;
+          const localHasData = S.projects.length > 0 || S.features.length > 0 || S.notes.length > 0;
+
+          let action;
+          if (!localHasData) {
+            action = 'replace';
+          } else {
+            const msg = 'Gist-Daten gefunden.\n\n'
+              + 'Gist-Stand: ' + (remoteTs ? formatDateTime(remoteTs) : '?') + '\n'
+              + 'Lokal: ' + (localTs ? formatDateTime(localTs) : '?') + '\n'
+              + (remoteNewer ? '(Gist ist neuer)' : '(Lokal ist aktueller oder gleich)') + '\n\n'
+              + 'Was soll passieren?\n'
+              + 'OK = Ersetzen (Gist überschreibt lokalen Stand)\n'
+              + 'Abbrechen = Nichts tun';
+            if (!confirm(msg)) return;
+            action = 'replace';
+          }
+
+          if (action === 'replace') {
+            const newState = Object.assign(defaultState(), remoteState);
+            S = newState;
+            ensureDefaults();
+            const pullTs = new Date().toISOString();
+            S._lastGistPullAt = pullTs;
+            _gistStatus.lastPull = pullTs;
+            _gistStatus.lastError = '';
+            save();
+            renderAll();
+            updateGistStatusUI();
+            alert('Vom Gist geladen (' + S.projects.length + ' Projekte, ' + S.features.length + ' Features, ' + S.notes.length + ' Notizen).');
+          }
+        } catch (e) {
+          _gistStatus.lastError = e.message.slice(0, 80);
+          updateGistStatusUI();
+          alert('Gist-Pull fehlgeschlagen: ' + e.message);
+        }
+      }
+
+      async function gistRawBackup() {
+        const id = C.rawGistId || C.gistId;
+        const token = C.rawGistToken || C.gistToken;
+        if (!id || !token) {
+          return alert('Bitte Backup Gist ID und Token in den Settings eintragen.');
+        }
+        try {
+          const backupFile = 'roadtrip_raw_notes.json';
+          const payload = { exported: new Date().toISOString(), notes: S.notes, analyses: S.analyses };
+          const r = await fetch('https://api.github.com/gists/' + id, {
+            method: 'PATCH',
+            headers: githubHeaders(token, true),
+            body: JSON.stringify({ files: { [backupFile]: { content: JSON.stringify(payload, null, 2) } } })
+          });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          alert('Raw-Backup gespeichert (' + S.notes.length + ' Notizen, ' + S.analyses.length + ' Analysen).');
+        } catch (e) {
+          alert('Raw-Backup fehlgeschlagen: ' + e.message);
+        }
+      }
+
+      // ─── MERGE IMPORT LOGIC ──────────────────────────────────────────────────
+
+      let _importDraftData = null;
+
+      function mergeArrayById(local, incoming, idKey, titleKey) {
+        // Merge incoming into local: add new items, keep existing items (by id or title)
+        const result = local.slice();
+        const localIds = new Set(result.map(x => x[idKey]));
+        const localTitles = new Set(result.map(x => normalizeText(x[titleKey] || '')));
+        incoming.forEach(item => {
+          if (!item) return;
+          if (item[idKey] && localIds.has(item[idKey])) return; // id collision → skip
+          if (titleKey && localTitles.has(normalizeText(item[titleKey] || ''))) return; // title collision → skip
+          result.push(item);
+          if (item[idKey]) localIds.add(item[idKey]);
+          if (titleKey) localTitles.add(normalizeText(item[titleKey] || ''));
+        });
+        return result;
+      }
+
+      function mergeFeaturesByProjectAndTitle(local, incoming) {
+        const result = local.slice();
+        const localIds = new Set(result.map(f => f.id));
+        const localKeys = new Set(result.map(f => f.projectId + '||' + normalizeText(f.title)));
+        incoming.forEach(f => {
+          if (!f) return;
+          if (f.id && localIds.has(f.id)) return;
+          const key = (f.projectId || '') + '||' + normalizeText(f.title || '');
+          if (localKeys.has(key)) return;
+          result.push(f);
+          if (f.id) localIds.add(f.id);
+          localKeys.add(key);
+        });
+        return result;
+      }
+
+      function applySelectiveMerge(incomingState, selections) {
+        if (selections.projects) {
+          S.projects = mergeArrayById(S.projects, incomingState.projects || [], 'id', 'title');
+        }
+        if (selections.features) {
+          S.features = mergeFeaturesByProjectAndTitle(S.features, incomingState.features || []);
+          S.features = S.features.map(ensureFeatureDefaults);
+        }
+        if (selections.notes) {
+          S.notes = mergeArrayById(S.notes, incomingState.notes || [], 'id', null);
+        }
+        if (selections.analyses) {
+          S.analyses = mergeArrayById(S.analyses, incomingState.analyses || [], 'id', null);
+        }
+        ensureDefaults();
+        save();
+        renderAll();
+      }
+
+      function normalizeImportedState(raw) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+        const candidate = raw.state && typeof raw.state === 'object' && !Array.isArray(raw.state) ? raw.state : raw;
+        const normalized = Object.assign(defaultState(), candidate);
+        if (!Array.isArray(normalized.projects) || !Array.isArray(normalized.features) || !Array.isArray(normalized.notes) || !Array.isArray(normalized.analyses)) {
+          return null;
+        }
+        return normalized;
+      }
+
+      function showImportDialog(parsedState) {
+        const normalized = normalizeImportedState(parsedState);
+        if (!normalized) return alert('Import fehlgeschlagen: JSON enthält keinen gültigen Roadtrip-State.');
+        _importDraftData = normalized;
+        const counts = {
+          projects: (normalized.projects || []).length,
+          features: (normalized.features || []).length,
+          notes: (normalized.notes || []).length,
+          analyses: (normalized.analyses || []).length
+        };
+        const modal = document.createElement('div');
+        modal.id = 'importMergeModal';
+        modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;';
+        modal.innerHTML = `
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;max-width:480px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow);">
+            <h3 style="margin:0 0 8px;">JSON Import</h3>
+            <p class="mini" style="margin:0 0 16px;">Wähle, was importiert werden soll und wie.</p>
+            <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:16px;">
+              <div class="mini" style="margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;">Im Export enthalten:</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                <span class="pill">Projekte: ${counts.projects}</span>
+                <span class="pill">Features: ${counts.features}</span>
+                <span class="pill">Notizen: ${counts.notes}</span>
+                <span class="pill">Analysen: ${counts.analyses}</span>
+              </div>
+            </div>
+            <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:16px;">
+              <div class="mini" style="margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;">Aktuell lokal:</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                <span class="pill">Projekte: ${S.projects.length}</span>
+                <span class="pill">Features: ${S.features.length}</span>
+                <span class="pill">Notizen: ${S.notes.length}</span>
+                <span class="pill">Analysen: ${S.analyses.length}</span>
+              </div>
+            </div>
+            <div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:16px;">
+              <div class="mini" style="margin-bottom:10px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;">Selektiv mergen:</div>
+              <div style="display:flex;flex-direction:column;gap:8px;">
+                <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;letter-spacing:0;color:var(--ink);">
+                  <input type="checkbox" id="mergeProjects" checked style="width:16px;height:16px;"> Projekte (${counts.projects})
+                </label>
+                <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;letter-spacing:0;color:var(--ink);">
+                  <input type="checkbox" id="mergeFeatures" checked style="width:16px;height:16px;"> Features (${counts.features})
+                </label>
+                <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;letter-spacing:0;color:var(--ink);">
+                  <input type="checkbox" id="mergeNotes" checked style="width:16px;height:16px;"> Notizen (${counts.notes})
+                </label>
+                <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;letter-spacing:0;color:var(--ink);">
+                  <input type="checkbox" id="mergeAnalyses" style="width:16px;height:16px;"> Analysen (${counts.analyses})
+                </label>
+              </div>
+              <div class="notice" style="margin-top:10px;font-size:12px;">Merge ist sicher: bestehende IDs und Titel werden nicht überschrieben. Nur neue Einträge werden hinzugefügt.</div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button id="btnImportReplace" class="btn btn-danger" style="flex:1;">Komplett ersetzen</button>
+              <button id="btnImportMerge" class="btn btn-primary" style="flex:1;">Selektiv mergen</button>
+              <button id="btnImportCancel" class="btn" style="flex:1;">Abbrechen</button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(modal);
+
+        modal.querySelector('#btnImportCancel').addEventListener('click', () => { modal.remove(); _importDraftData = null; });
+        modal.querySelector('#btnImportReplace').addEventListener('click', () => {
+          if (!confirm('Komplett ersetzen? Alle lokalen Daten werden überschrieben!')) return;
+          S = Object.assign(defaultState(), _importDraftData);
+          ensureDefaults();
+          save();
+          renderAll();
+          modal.remove();
+          _importDraftData = null;
+          alert('Import abgeschlossen (Ersetzen).');
+        });
+        modal.querySelector('#btnImportMerge').addEventListener('click', () => {
+          const sel = {
+            projects: modal.querySelector('#mergeProjects').checked,
+            features: modal.querySelector('#mergeFeatures').checked,
+            notes: modal.querySelector('#mergeNotes').checked,
+            analyses: modal.querySelector('#mergeAnalyses').checked
+          };
+          if (!sel.projects && !sel.features && !sel.notes && !sel.analyses) {
+            return alert('Bitte mindestens einen Bereich auswählen.');
+          }
+          applySelectiveMerge(_importDraftData, sel);
+          modal.remove();
+          _importDraftData = null;
+          alert('Merge abgeschlossen.');
+        });
+      }
+
+      // ─────────────────────────────────────────────────────────────────────────
+
       function exportJson() {
         downloadJson('roadtrip_export.json', S);
       }
@@ -2046,15 +2409,16 @@
       function importJson(e) {
         const file = e.target.files && e.target.files[0];
         if (!file) return;
+        // reset input so the same file can be loaded again if needed
+        e.target.value = '';
         const reader = new FileReader();
         reader.onload = () => {
           try {
             const data = JSON.parse(String(reader.result || '{}'));
-            if (!confirm('Import ersetzt den aktuellen Stand. Fortfahren?')) return;
-            S = Object.assign(defaultState(), data);
-            ensureDefaults();
-            save();
-            renderAll();
+            if (!data || typeof data !== 'object' || Array.isArray(data)) {
+              return alert('Ungültiges Format: kein JSON-Objekt.');
+            }
+            showImportDialog(data);
           } catch (err) {
             alert('Import fehlgeschlagen: ' + err.message);
           }
