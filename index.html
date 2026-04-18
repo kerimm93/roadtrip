@@ -489,6 +489,8 @@
       const TRELLO_LABEL_PREFIX = { project: 'P: ', category: 'C: ', priority: 'Prio: ' };
       const TRELLO_SYNC_START = '--- ROADTRIP_SYNC ---';
       const TRELLO_SYNC_END = '--- /ROADTRIP_SYNC ---';
+      const CHAT_TYPES = ['project-main', 'sprint', 'execution', 'branch'];
+      const CHAT_STATUS = ['aktiv', 'pausiert', 'abgeschlossen', 'referenz'];
 
       let S = defaultState();
       let C = defaultConfig();
@@ -499,6 +501,8 @@
         activeProjectId: ALL_PROJECTS_KEY,
         filters: { status: 'alle', category: 'alle', search: '' },
         showKanban: false,
+        showAllProjects: false,
+        projectEditMode: false,
         importDraft: { html: '', prompt: '', projectId: '' },
         noteReview: { proposals: [], projectId: '', rawText: '', visible: false }
       };
@@ -520,7 +524,8 @@
           projects: [],
           features: [],
           notes: [],
-          analyses: []
+          analyses: [],
+          chats: []
         };
       }
 
@@ -575,6 +580,7 @@
         if (!Array.isArray(S.features)) S.features = [];
         if (!Array.isArray(S.notes)) S.notes = [];
         if (!Array.isArray(S.analyses)) S.analyses = [];
+        if (!Array.isArray(S.chats)) S.chats = [];
         if (!S._lastLocalSaveAt && S._lastExported) S._lastLocalSaveAt = S._lastExported;
         if (!S._lastGistPushAt && S._lastExported) S._lastGistPushAt = S._lastExported;
         S.features = S.features.map(ensureFeatureDefaults);
@@ -616,6 +622,10 @@
       function renderAll() {
         applyTheme();
         if (!ui.activeProjectId) ui.activeProjectId = ALL_PROJECTS_KEY;
+        // Auto-select first project if still on ALL_PROJECTS_KEY and projects exist
+        if (ui.activeProjectId === ALL_PROJECTS_KEY && S.projects.length > 0) {
+          ui.activeProjectId = S.projects[0].id;
+        }
         renderNav();
         renderSidebarProjects();
         renderProjectSelects();
@@ -645,7 +655,7 @@
           Projekte: S.projects.filter(p => p.status !== 'archiviert').length,
           Features: S.features.length,
           Offene: S.features.filter(f => ['Idee','geprüft','geplant','in Arbeit','teilweise umgesetzt'].includes(f.status)).length,
-          Notizen: S.notes.filter(n => !n.processed).length
+          Chats: (S.chats || []).filter(c => c.status === 'aktiv').length
         };
         const el = $('stats');
         el.innerHTML = Object.entries(stats).map(([k,v]) => `
@@ -661,7 +671,15 @@
         fillSelect($('htmlProjectSelect'), options, true);
         fillSelect($('projectType'), APP_TYPES);
         fillSelect($('projectStatus'), PROJECT_STATUS);
-        if ($('htmlProjectSelect')) $('htmlProjectSelect').value = ui.importDraft.projectId || '';
+        // Sync import dropdown to active project context
+        const importTarget = ui.activeProjectId !== ALL_PROJECTS_KEY
+          ? ui.activeProjectId
+          : (ui.importDraft.projectId || '');
+        if ($('htmlProjectSelect')) {
+          $('htmlProjectSelect').value = importTarget;
+          if ($('htmlProjectSelect').value !== importTarget) $('htmlProjectSelect').value = '';
+          ui.importDraft.projectId = $('htmlProjectSelect').value;
+        }
         const typeCurrent = $('projectType')?.dataset.currentValue || APP_TYPES[0];
         const statusCurrent = $('projectStatus')?.dataset.currentValue || PROJECT_STATUS[0];
         if ($('projectType')) $('projectType').value = typeCurrent;
@@ -682,19 +700,17 @@
       }
 
       function wireDynamicView() {
-        qq('[data-open-project]').forEach(btn => btn.addEventListener('click', () => {
-          ui.activeProjectId = btn.dataset.openProject;
-          renderSidebarProjects();
-          renderView();
-        }));
+        // data-open-project is wired inside renderSidebarProjects()
         const statusFilter = $('filterStatus');
         const catFilter = $('filterCategory');
         const search = $('filterSearch');
         const kanbanToggle = $('toggleKanban');
+        const allProjectsToggle = $('toggleAllProjects');
         if (statusFilter) statusFilter.addEventListener('change', e => { ui.filters.status = e.target.value; renderView(); });
         if (catFilter) catFilter.addEventListener('change', e => { ui.filters.category = e.target.value; renderView(); });
         if (search) search.addEventListener('input', e => { ui.filters.search = e.target.value; renderView(); });
         if (kanbanToggle) kanbanToggle.addEventListener('change', e => { ui.showKanban = e.target.checked; renderView(); });
+        if (allProjectsToggle) allProjectsToggle.addEventListener('change', e => { ui.showAllProjects = e.target.checked; renderView(); });
 
         if ($('themeSelect')) $('themeSelect').addEventListener('change', e => { C.theme = e.target.value; applyTheme(); save(); });
         if ($('fontSelect')) $('fontSelect').addEventListener('change', e => { C.font = e.target.value; applyTheme(); save(); });
@@ -713,9 +729,17 @@
         if ($('btnTestTrello')) $('btnTestTrello').addEventListener('click', testTrelloConnection);
         if ($('btnSaveProject')) $('btnSaveProject').addEventListener('click', saveProjectFromForm);
         if ($('btnDeleteProject')) $('btnDeleteProject').addEventListener('click', deleteProjectFromForm);
-        if ($('btnResetProjectForm')) $('btnResetProjectForm').addEventListener('click', resetProjectForm);
+        if ($('btnResetProjectForm')) $('btnResetProjectForm').addEventListener('click', () => {
+          ui.projectEditMode = false;
+          renderView();
+        });
         if ($('btnStartNewProject')) $('btnStartNewProject').addEventListener('click', startNewProjectFromProjectView);
         if ($('btnStartNewProjectImport')) $('btnStartNewProjectImport').addEventListener('click', startNewProjectFromImportView);
+        if ($('btnEditActiveProject')) $('btnEditActiveProject').addEventListener('click', () => {
+          ui.projectEditMode = true;
+          ui.editingProjectId = ui.activeProjectId;
+          renderView();
+        });
         if ($('btnAddNote')) $('btnAddNote').addEventListener('click', addQuickNote);
         if ($('btnAnalyzeNote')) $('btnAnalyzeNote').addEventListener('click', buildNotePrompt);
         if ($('btnBuildReviewPrompt')) $('btnBuildReviewPrompt').addEventListener('click', buildNoteReviewPrompt);
@@ -748,30 +772,79 @@
         qq('[data-add-feature-from-note]').forEach(btn => btn.addEventListener('click', () => promoteNoteToFeature(btn.dataset.addFeatureFromNote)));
         qq('[data-build-note-prompt]').forEach(btn => btn.addEventListener('click', () => buildSingleNotePrompt(btn.dataset.buildNotePrompt)));
         qq('[data-create-feature]').forEach(btn => btn.addEventListener('click', () => quickCreateFeature(btn.dataset.createFeature)));
+        qq('[data-new-chat]').forEach(btn => btn.addEventListener('click', () => openChatModal(null, btn.dataset.newChat)));
+        qq('[data-edit-chat]').forEach(btn => btn.addEventListener('click', () => openChatModal(btn.dataset.editChat, null)));
+        qq('[data-delete-chat]').forEach(btn => btn.addEventListener('click', () => deleteChat(btn.dataset.deleteChat)));
       }
 
       function renderSidebarProjects() {
         const wrap = $('sidebarProjects');
+        const isAll = ui.activeProjectId === ALL_PROJECTS_KEY;
         const allBtn = `
-          <button class="sidebar-project ${ui.activeProjectId === ALL_PROJECTS_KEY ? 'active' : ''}" data-open-project="${ALL_PROJECTS_KEY}">All Projects</button>
+          <button class="sidebar-project ${isAll ? 'active' : ''}" data-open-project="${ALL_PROJECTS_KEY}" style="${isAll ? 'border-left:3px solid var(--accent-2);' : ''}">⊕ Alle Projekte</button>
         `;
-        wrap.innerHTML = allBtn + S.projects.map(p => `
-          <button class="sidebar-project ${ui.activeProjectId === p.id ? 'active' : ''}" data-open-project="${p.id}">
+        wrap.innerHTML = allBtn + S.projects.map(p => {
+          const isActive = ui.activeProjectId === p.id;
+          return `<button class="sidebar-project ${isActive ? 'active' : ''}" data-open-project="${p.id}" style="${isActive ? 'border-left:3px solid var(--accent);font-weight:700;' : ''}">
             ${escapeHtml(p.title)}
-          </button>
-        `).join('');
+            ${p.status === 'archiviert' ? '<span class="mini"> (arch.)</span>' : ''}
+          </button>`;
+        }).join('');
+        // Re-wire after DOM update
+        qq('[data-open-project]', wrap).forEach(btn => btn.addEventListener('click', () => {
+          const pid = btn.dataset.openProject;
+          ui.activeProjectId = pid;
+          ui.projectEditMode = false;
+          ui.editingProjectId = pid === ALL_PROJECTS_KEY ? null : pid;
+          // Sync import draft project
+          if (pid !== ALL_PROJECTS_KEY) ui.importDraft.projectId = pid;
+          if (ui.view === 'database' || ui.view === 'project') {
+            // Stay in current view but re-render with new context
+          } else {
+            ui.view = 'project';
+          }
+          renderNav();
+          renderSidebarProjects();
+          renderView();
+        }));
+      }
+
+      function renderContextBanner() {
+        const isAll = ui.activeProjectId === ALL_PROJECTS_KEY;
+        const p = isAll ? null : S.projects.find(x => x.id === ui.activeProjectId);
+        if (isAll) {
+          return `<div style="background:var(--surface-3);border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin-bottom:12px;display:flex;align-items:center;gap:8px;">
+            <span class="eyebrow" style="color:var(--accent-2)">Kontext</span>
+            <strong style="color:var(--accent-2)">Alle Projekte</strong>
+            <span class="mini">(kein Projekt-Filter aktiv)</span>
+          </div>`;
+        }
+        if (!p) return '';
+        return `<div style="background:var(--surface-3);border:1px solid var(--accent);border-left:3px solid var(--accent);border-radius:10px;padding:8px 12px;margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span class="eyebrow">Aktives Projekt</span>
+          <strong>${escapeHtml(p.title)}</strong>
+          <span class="pill">${escapeHtml(p.status)}</span>
+          ${p.currentFocus ? `<span class="mini">→ ${escapeHtml(p.currentFocus)}</span>` : ''}
+        </div>`;
       }
 
       function renderDatabaseView() {
         const features = getFilteredFeatures();
         const notes = getFilteredNotes();
+        const isAll = ui.activeProjectId === ALL_PROJECTS_KEY;
         return `
-          <div class="panel-title"><h3>Feature Database</h3></div>
+          ${renderContextBanner()}
+          <div class="panel-title">
+            <h3>Feature Database</h3>
+            <label class="pill" style="cursor:pointer;">
+              <input id="toggleAllProjects" type="checkbox" ${ui.showAllProjects?'checked':''} />
+              Alle Projekte
+            </label>
+          </div>
           <div class="db-toolbar">
             <input id="filterSearch" type="text" value="${escapeAttr(ui.filters.search)}" placeholder="Search features..." />
             <select id="filterStatus">${['alle'].concat(FEATURE_STATUS).map(s => `<option ${ui.filters.status===s?'selected':''}>${s}</option>`).join('')}</select>
             <select id="filterCategory">${['alle'].concat(FEATURE_CATEGORIES).map(s => `<option ${ui.filters.category===s?'selected':''}>${s}</option>`).join('')}</select>
-            <input disabled value="${escapeAttr(ui.activeProjectId === ALL_PROJECTS_KEY ? 'All projects' : getProjectTitle(ui.activeProjectId))}" />
             <label class="pill"><input id="toggleKanban" type="checkbox" ${ui.showKanban?'checked':''} /> Kanban</label>
           </div>
           <details style="margin-bottom:12px;">
@@ -800,56 +873,158 @@
       }
 
       function renderProjectWorkspace() {
-        if (ui.activeProjectId === ALL_PROJECTS_KEY) {
+        // ── Empty state ──────────────────────────────────────────────────────
+        if (ui.activeProjectId === ALL_PROJECTS_KEY || !S.projects.length) {
           return `
             <div class="panel-title"><h3>Project View</h3></div>
-            <div class="notice">Bitte links ein Projekt auswählen oder ein neues Projekt anlegen.</div>
+            <div class="notice">Kein Projekt ausgewählt. Wähle links ein Projekt oder lege ein neues an.</div>
             <div class="stack-row" style="margin-top:10px;">
-              <button class="btn" id="btnStartNewProject">+ Neues Projekt</button>
+              <button class="btn btn-primary" id="btnStartNewProject">+ Neues Projekt</button>
             </div>
           `;
         }
-        const activeProject = S.projects.find(x => x.id === ui.activeProjectId) || S.projects[0];
-        const isCreateMode = !ui.editingProjectId;
-        const p = isCreateMode ? null : (S.projects.find(x => x.id === ui.editingProjectId) || activeProject);
-        const formTitle = p ? p.title : '';
-        const formSummary = p ? (p.summary || '') : '';
-        const formTags = (p && p.tags ? p.tags : []).join(', ');
-        const formType = p ? (p.type || APP_TYPES[0]) : APP_TYPES[0];
-        const formStatus = p ? (p.status || PROJECT_STATUS[0]) : PROJECT_STATUS[0];
-        if (!activeProject && !isCreateMode) return '<div class="notice">Noch kein Projekt vorhanden.</div>';
-        if (!isCreateMode && p) ui.activeProjectId = p.id;
-        const projectFeatures = p ? S.features.filter(f => f.projectId === p.id) : [];
-        const latestAnalysis = p ? S.analyses.filter(a => a.projectId === p.id).sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''))[0] : null;
+
+        const p = S.projects.find(x => x.id === ui.activeProjectId) || S.projects[0];
+        if (!p) return '<div class="notice">Projekt nicht gefunden.</div>';
+
+        // Always sync editingProjectId to activeProjectId when not in create mode
+        if (!ui.projectEditMode || ui.editingProjectId === p.id) {
+          ui.editingProjectId = p.id;
+        }
+
+        const projectFeatures = S.features.filter(f => f.projectId === p.id);
+        const projectChats = S.chats.filter(c => c.projectId === p.id).sort((a,b) => (b.updatedAt||'').localeCompare(a.updatedAt||''));
+        const latestAnalysis = S.analyses.filter(a => a.projectId === p.id).sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''))[0];
+
+        function renderChatTypeBadge(type) {
+          const colors = { 'project-main': 'var(--accent)', 'sprint': 'var(--blue)', 'execution': 'var(--green)', 'branch': 'var(--yellow)' };
+          return `<span class="pill" style="border-color:${colors[type]||'var(--border)'};color:${colors[type]||'var(--ink-dim)'}">${escapeHtml(type||'—')}</span>`;
+        }
+        function renderChatStatusBadge(status) {
+          const colors = { 'aktiv': 'var(--green)', 'pausiert': 'var(--yellow)', 'abgeschlossen': 'var(--ink-dim)', 'referenz': 'var(--blue)' };
+          return `<span class="pill" style="color:${colors[status]||'var(--ink-dim)'}">${escapeHtml(status||'—')}</span>`;
+        }
+
+        // ── EDIT MODE (form) ──────────────────────────────────────────────────
+        if (ui.projectEditMode) {
+          const isCreate = !ui.editingProjectId || !S.projects.find(x => x.id === ui.editingProjectId);
+          const ep = isCreate ? null : S.projects.find(x => x.id === ui.editingProjectId);
+          return `
+            ${renderContextBanner()}
+            <div class="panel-title">
+              <h3>${isCreate ? 'Neues Projekt' : 'Projekt bearbeiten: ' + escapeHtml(ep ? ep.title : '')}</h3>
+              <button class="btn" id="btnResetProjectForm">← Zurück zum Dashboard</button>
+            </div>
+            <div class="stack-row">
+              <div class="field" style="flex:2"><label for="projectTitle">Titel</label><input id="projectTitle" value="${escapeAttr(ep ? ep.title : '')}" /></div>
+              <div class="field" style="flex:1"><label for="projectType">Typ</label><select id="projectType" data-current-value="${escapeAttr(ep ? (ep.type||APP_TYPES[0]) : APP_TYPES[0])}"></select></div>
+              <div class="field" style="flex:1"><label for="projectStatus">Status</label><select id="projectStatus" data-current-value="${escapeAttr(ep ? (ep.status||PROJECT_STATUS[0]) : PROJECT_STATUS[0])}"></select></div>
+            </div>
+            <div class="field"><label for="projectSummary">Summary</label><textarea id="projectSummary">${escapeHtml(ep ? (ep.summary||'') : '')}</textarea></div>
+            <div class="field"><label for="projectTags">Tags</label><input id="projectTags" value="${escapeAttr(ep ? (ep.tags||[]).join(', ') : '')}" /></div>
+            <details style="margin-bottom:10px;" open>
+              <summary>Links &amp; Fokus</summary>
+              <div style="margin-top:8px;">
+                <div class="field"><label for="projectMainChatUrl">Hauptchat URL</label><input id="projectMainChatUrl" type="url" placeholder="https://..." value="${escapeAttr(ep ? (ep.mainChatUrl||'') : '')}" /></div>
+                <div class="field"><label for="projectDriveUrl">Google Drive URL</label><input id="projectDriveUrl" type="url" placeholder="https://drive.google.com/..." value="${escapeAttr(ep ? (ep.driveUrl||'') : '')}" /></div>
+                <div class="field"><label for="projectObsidianUrl">Obsidian URL</label><input id="projectObsidianUrl" type="url" placeholder="obsidian://..." value="${escapeAttr(ep ? (ep.obsidianUrl||'') : '')}" /></div>
+                <div class="field"><label for="projectCurrentFocus">Aktueller Fokus</label><input id="projectCurrentFocus" placeholder="Was ist gerade das Hauptziel?" value="${escapeAttr(ep ? (ep.currentFocus||'') : '')}" /></div>
+                <div class="field"><label for="projectNextStep">Nächster Schritt</label><input id="projectNextStep" placeholder="Was kommt als nächstes?" value="${escapeAttr(ep ? (ep.nextStep||'') : '')}" /></div>
+              </div>
+            </details>
+            <div class="stack-row">
+              <button class="btn btn-primary" id="btnSaveProject">${isCreate ? 'Projekt erstellen' : 'Projekt speichern'}</button>
+              ${!isCreate ? '<button class="btn btn-danger" id="btnDeleteProject">Projekt löschen</button>' : ''}
+              ${!isCreate ? '<button class="btn" id="btnSyncProjectTrello">Nach Trello</button>' : ''}
+              ${!isCreate ? '<button class="btn" id="btnPullProjectTrello">Von Trello</button>' : ''}
+            </div>
+          `;
+        }
+
+        // ── DASHBOARD MODE (default) ──────────────────────────────────────────
+        const mainChatUrl = (p.mainChatUrl || '').trim();
+        const driveUrl = (p.driveUrl || '').trim();
+        const obsidianUrl = (p.obsidianUrl || '').trim();
+        const hasLinks = mainChatUrl || driveUrl || obsidianUrl;
+
         return `
-          <div class="panel-title"><h3>${escapeHtml(isCreateMode ? 'Neues Projekt' : p.title)}</h3><div class="mini">Project View</div></div>
-          <div class="notice">${escapeHtml(isCreateMode ? 'Lege ein neues Projekt an.' : (p.summary || 'Keine Zusammenfassung'))}</div>
-          <div class="mini" style="margin:8px 0 14px;">Recent analysis: ${latestAnalysis ? formatDateTime(latestAnalysis.createdAt) : '—'}</div>
-          <div class="stack-row" style="margin-bottom:8px;">
-            <button class="btn" id="btnStartNewProject">+ Neues Projekt</button>
-            ${isCreateMode ? '' : '<button class="btn" id="btnSyncProjectTrello">Projekt nach Trello syncen</button>'}
-            ${isCreateMode ? '' : '<button class="btn" id="btnPullProjectTrello">Von Trello aktualisieren</button>'}
+          ${renderContextBanner()}
+          <div class="panel-title">
+            <h3>${escapeHtml(p.title)}</h3>
+            <div class="stack-row" style="gap:6px;">
+              <span class="pill">${escapeHtml(p.status)}</span>
+              <button class="btn" id="btnStartNewProject">+ Neues Projekt</button>
+              <button class="btn" id="btnEditActiveProject">✏ Bearbeiten</button>
+            </div>
           </div>
-          <div class="stack-row">
-            <div class="field" style="flex:2"><label for="projectTitle">Titel</label><input id="projectTitle" value="${escapeAttr(formTitle)}" /></div>
-            <div class="field" style="flex:1"><label for="projectType">Typ</label><select id="projectType" data-current-value="${escapeAttr(formType)}"></select></div>
-            <div class="field" style="flex:1"><label for="projectStatus">Status</label><select id="projectStatus" data-current-value="${escapeAttr(formStatus)}"></select></div>
-          </div>
-          <div class="field"><label for="projectSummary">Summary</label><textarea id="projectSummary">${escapeHtml(formSummary)}</textarea></div>
-          <div class="field"><label for="projectTags">Tags</label><input id="projectTags" value="${escapeAttr(formTags)}" /></div>
-          <div class="stack-row">
-            <button class="btn btn-primary" id="btnSaveProject">${isCreateMode ? 'Projekt erstellen' : 'Projekt speichern'}</button>
-            ${isCreateMode ? '' : '<button class="btn btn-danger" id="btnDeleteProject">Projekt löschen</button>'}
+
+          ${p.summary ? `<div class="notice" style="margin-bottom:10px;">${escapeHtml(p.summary)}</div>` : ''}
+
+          ${p.currentFocus || p.nextStep ? `
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+              ${p.currentFocus ? `<div style="background:var(--surface-2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:10px;padding:10px 12px;">
+                <div class="eyebrow" style="margin-bottom:4px;">Fokus</div>
+                <div>${escapeHtml(p.currentFocus)}</div>
+              </div>` : ''}
+              ${p.nextStep ? `<div style="background:var(--surface-2);border:1px solid var(--border);border-left:3px solid var(--green);border-radius:10px;padding:10px 12px;">
+                <div class="eyebrow" style="margin-bottom:4px;">Nächster Schritt</div>
+                <div>${escapeHtml(p.nextStep)}</div>
+              </div>` : ''}
+            </div>
+          ` : ''}
+
+          ${hasLinks ? `
+            <div class="stack-row" style="margin-bottom:14px;">
+              ${mainChatUrl ? `<a href="${escapeAttr(mainChatUrl)}" target="_blank" rel="noopener" class="btn">💬 Hauptchat</a>` : ''}
+              ${driveUrl ? `<a href="${escapeAttr(driveUrl)}" target="_blank" rel="noopener" class="btn">📂 Drive</a>` : ''}
+              ${obsidianUrl ? `<a href="${escapeAttr(obsidianUrl)}" target="_blank" rel="noopener" class="btn">🔮 Obsidian</a>` : ''}
+            </div>
+          ` : ''}
+
+          <details style="margin-bottom:12px;" ${projectChats.length ? 'open' : ''}>
+            <summary style="font-weight:700;">Chats &amp; Sprints (${projectChats.length})</summary>
+            <div style="margin-top:10px;" class="list">
+              ${projectChats.map(c => `
+                <div class="item" style="border-left:3px solid ${c.type==='project-main'?'var(--accent)':c.type==='sprint'?'var(--blue)':c.type==='execution'?'var(--green)':'var(--yellow)'}">
+                  <div class="row-top">
+                    <strong>${escapeHtml(c.title||'Ohne Titel')}</strong>
+                    <div class="stack-row" style="gap:4px;">${renderChatTypeBadge(c.type)}${renderChatStatusBadge(c.status)}</div>
+                  </div>
+                  ${c.summary ? `<div class="item-desc">${escapeHtml(c.summary)}</div>` : ''}
+                  ${c.nextStep ? `<div class="mini" style="color:var(--accent)">→ ${escapeHtml(c.nextStep)}</div>` : ''}
+                  <div class="stack-row">
+                    ${c.url && c.url.trim() ? `<a href="${escapeAttr(c.url.trim())}" target="_blank" rel="noopener" class="btn">Öffnen</a>` : ''}
+                    <button class="btn" data-edit-chat="${c.id}">Bearbeiten</button>
+                    <button class="btn btn-danger" data-delete-chat="${c.id}">×</button>
+                  </div>
+                  <div class="mini">${formatDateTime(c.updatedAt||c.startedAt)}</div>
+                </div>
+              `).join('') || '<div class="notice">Noch keine Chat-Einträge.</div>'}
+            </div>
+            <div style="margin-top:8px;">
+              <button class="btn btn-primary" data-new-chat="${p.id}">+ Chat / Sprint anlegen</button>
+            </div>
+          </details>
+
+          <div class="mini" style="margin-bottom:6px;color:var(--ink-dim);">
+            Features: ${projectFeatures.length} | Letzte Analyse: ${latestAnalysis ? formatDateTime(latestAnalysis.createdAt) : '—'}
           </div>
           ${renderTable(projectFeatures)}
         `;
       }
 
       function renderImportWorkspace() {
+        // Auto-sync import project to active project when a concrete project is selected
+        const contextProjectId = ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : (ui.importDraft.projectId || '');
+        const contextProject = contextProjectId ? S.projects.find(x => x.id === contextProjectId) : null;
         return `
+          ${renderContextBanner()}
           <div class="panel-title"><h3>Import</h3></div>
+          <div class="notice" style="margin-bottom:10px;">
+            Import in Projekt: <strong>${contextProject ? escapeHtml(contextProject.title) : '— kein Projekt gewählt —'}</strong>
+          </div>
           <div class="field">
-            <label for="htmlProjectSelect">Projekt</label>
+            <label for="htmlProjectSelect">Projekt wechseln</label>
             <div class="stack-row">
               <select id="htmlProjectSelect"></select>
               <button class="btn" id="btnStartNewProjectImport">Neues Projekt</button>
@@ -1115,7 +1290,7 @@
         const cat = ui.filters.category || 'alle';
         const term = (ui.filters.search || '').trim().toLowerCase();
         return S.features.filter(f => {
-          if (p !== ALL_PROJECTS_KEY && f.projectId !== p) return false;
+          if (!ui.showAllProjects && p !== ALL_PROJECTS_KEY && f.projectId !== p) return false;
           if (st !== 'alle' && f.status !== st) return false;
           if (cat !== 'alle' && f.category !== cat) return false;
           if (term) {
@@ -1130,7 +1305,7 @@
         const p = ui.activeProjectId || ALL_PROJECTS_KEY;
         const term = (ui.filters.search || '').trim().toLowerCase();
         return S.notes.filter(n => {
-          if (p !== ALL_PROJECTS_KEY && n.projectId !== p) return false;
+          if (!ui.showAllProjects && p !== ALL_PROJECTS_KEY && n.projectId !== p) return false;
           if (term) {
             const blob = [n.text, getProjectTitle(n.projectId)].join(' ').toLowerCase();
             if (!blob.includes(term)) return false;
@@ -1147,7 +1322,12 @@
           type: $('projectType').value,
           status: $('projectStatus').value,
           summary: $('projectSummary').value.trim(),
-          tags: splitTags($('projectTags').value)
+          tags: splitTags($('projectTags').value),
+          mainChatUrl: ($('projectMainChatUrl') ? $('projectMainChatUrl').value.trim() : ''),
+          driveUrl: ($('projectDriveUrl') ? $('projectDriveUrl').value.trim() : ''),
+          obsidianUrl: ($('projectObsidianUrl') ? $('projectObsidianUrl').value.trim() : ''),
+          currentFocus: ($('projectCurrentFocus') ? $('projectCurrentFocus').value.trim() : ''),
+          nextStep: ($('projectNextStep') ? $('projectNextStep').value.trim() : '')
         };
         let savedProjectId = ui.editingProjectId || '';
         if (ui.editingProjectId) {
@@ -1162,6 +1342,7 @@
         ui.activeProjectId = savedProjectId;
         ui.editingProjectId = savedProjectId;
         ui.importDraft.projectId = savedProjectId;
+        ui.projectEditMode = false;
         save();
         renderSidebarProjects();
         renderProjectSelects();
@@ -1184,6 +1365,11 @@
         $('projectStatus').value = p.status || PROJECT_STATUS[0];
         $('projectSummary').value = p.summary || '';
         $('projectTags').value = (p.tags || []).join(', ');
+        if ($('projectMainChatUrl')) $('projectMainChatUrl').value = p.mainChatUrl || '';
+        if ($('projectDriveUrl')) $('projectDriveUrl').value = p.driveUrl || '';
+        if ($('projectObsidianUrl')) $('projectObsidianUrl').value = p.obsidianUrl || '';
+        if ($('projectCurrentFocus')) $('projectCurrentFocus').value = p.currentFocus || '';
+        if ($('projectNextStep')) $('projectNextStep').value = p.nextStep || '';
       }
 
       function resetProjectForm() {
@@ -1204,7 +1390,11 @@
       }
 
       function startNewProjectFromProjectView() {
-        startNewProjectCreation();
+        ui.projectEditMode = true;
+        ui.editingProjectId = null;
+        ui.view = 'project';
+        renderNav();
+        renderView();
       }
 
       function startNewProjectFromImportView() {
@@ -1239,7 +1429,10 @@
         S.projects = S.projects.filter(x => x.id !== id);
         S.features = S.features.filter(f => f.projectId !== id);
         S.notes = S.notes.filter(n => n.projectId !== id);
-        if (ui.editingProjectId === id) resetProjectForm();
+        S.chats = S.chats.filter(c => c.projectId !== id);
+        ui.projectEditMode = false;
+        ui.editingProjectId = null;
+        ui.activeProjectId = S.projects.length ? S.projects[0].id : ALL_PROJECTS_KEY;
         save();
         renderProjectSelects();
         renderView();
@@ -2086,6 +2279,83 @@
         alert(importedLines + ' Zeilen als Features übernommen.');
       }
 
+      // ─── CHAT / SPRINT MANAGEMENT ────────────────────────────────────────────
+
+      function openChatModal(editId, newProjectId) {
+        const existing = editId ? S.chats.find(c => c.id === editId) : null;
+        const projectId = newProjectId || (existing && existing.projectId) || ui.activeProjectId || '';
+        const modal = document.createElement('div');
+        modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;';
+        const typeOpts = CHAT_TYPES.map(t => `<option value="${t}" ${(existing&&existing.type)===t?'selected':''}>${t}</option>`).join('');
+        const statusOpts = CHAT_STATUS.map(s => `<option value="${s}" ${(existing&&existing.status)===s||(s==='aktiv'&&!existing)?'selected':''}>${s}</option>`).join('');
+        const projectOpts = S.projects.map(p => `<option value="${p.id}" ${p.id===projectId?'selected':''}>${escapeHtml(p.title)}</option>`).join('');
+        modal.innerHTML = `
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;max-width:520px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow);">
+            <h3 style="margin:0 0 16px;">${existing ? 'Chat bearbeiten' : 'Neuer Chat / Sprint'}</h3>
+            <div class="field"><label>Titel</label><input id="chatModalTitle" value="${escapeAttr(existing&&existing.title||'')}" placeholder="z.B. Sprint 3 – Auth-Flow" /></div>
+            <div class="stack-row">
+              <div class="field" style="flex:1"><label>Typ</label><select id="chatModalType">${typeOpts}</select></div>
+              <div class="field" style="flex:1"><label>Status</label><select id="chatModalStatus">${statusOpts}</select></div>
+            </div>
+            <div class="field"><label>Projekt</label><select id="chatModalProject">${projectOpts}</select></div>
+            <div class="field"><label>URL</label><input id="chatModalUrl" type="url" value="${escapeAttr(existing&&existing.url||'')}" placeholder="https://chatgpt.com/c/..." /></div>
+            <div class="field"><label>Zusammenfassung</label><textarea id="chatModalSummary" style="min-height:80px;">${escapeHtml(existing&&existing.summary||'')}</textarea></div>
+            <div class="field"><label>Nächster Schritt</label><input id="chatModalNextStep" value="${escapeAttr(existing&&existing.nextStep||'')}" placeholder="Was bleibt offen?" /></div>
+            <div class="field"><label>Roh-Bericht (optional)</label><textarea id="chatModalRaw" style="min-height:60px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(existing&&existing.rawReportText||'')}</textarea></div>
+            <div class="stack-row" style="margin-top:8px;">
+              <button id="chatModalSave" class="btn btn-primary">${existing ? 'Speichern' : 'Anlegen'}</button>
+              <button id="chatModalCancel" class="btn">Abbrechen</button>
+            </div>
+          </div>`;
+        document.body.appendChild(modal);
+        modal.querySelector('#chatModalCancel').addEventListener('click', () => modal.remove());
+        modal.querySelector('#chatModalSave').addEventListener('click', () => {
+          const title = modal.querySelector('#chatModalTitle').value.trim();
+          if (!title) return alert('Bitte einen Titel eintragen.');
+          const now = new Date().toISOString();
+          if (existing) {
+            existing.title = title;
+            existing.type = modal.querySelector('#chatModalType').value;
+            existing.status = modal.querySelector('#chatModalStatus').value;
+            existing.projectId = modal.querySelector('#chatModalProject').value;
+            existing.url = modal.querySelector('#chatModalUrl').value.trim();
+            existing.summary = modal.querySelector('#chatModalSummary').value.trim();
+            existing.nextStep = modal.querySelector('#chatModalNextStep').value.trim();
+            existing.rawReportText = modal.querySelector('#chatModalRaw').value.trim();
+            existing.updatedAt = now;
+          } else {
+            S.chats.push({
+              id: uid('ch'),
+              projectId: modal.querySelector('#chatModalProject').value,
+              title,
+              type: modal.querySelector('#chatModalType').value,
+              status: modal.querySelector('#chatModalStatus').value,
+              url: modal.querySelector('#chatModalUrl').value.trim(),
+              summary: modal.querySelector('#chatModalSummary').value.trim(),
+              nextStep: modal.querySelector('#chatModalNextStep').value.trim(),
+              rawReportText: modal.querySelector('#chatModalRaw').value.trim(),
+              parentChatId: '',
+              startedAt: now,
+              updatedAt: now
+            });
+          }
+          save();
+          renderView();
+          modal.remove();
+        });
+      }
+
+      function deleteChat(id) {
+        const c = S.chats.find(x => x.id === id);
+        if (!c) return;
+        if (!confirm(`Chat "${c.title}" löschen?`)) return;
+        S.chats = S.chats.filter(x => x.id !== id);
+        save();
+        renderView();
+      }
+
+      // ─────────────────────────────────────────────────────────────────────────
+
       // ─── GITHUB GIST SYNC ────────────────────────────────────────────────────
 
       const GIST_FILE = 'roadtrip_data.json';
@@ -2291,6 +2561,9 @@
         if (selections.analyses) {
           S.analyses = mergeArrayById(S.analyses, incomingState.analyses || [], 'id', null);
         }
+        if (selections.chats) {
+          S.chats = mergeArrayById(S.chats, incomingState.chats || [], 'id', null);
+        }
         ensureDefaults();
         save();
         renderAll();
@@ -2303,6 +2576,7 @@
         if (!Array.isArray(normalized.projects) || !Array.isArray(normalized.features) || !Array.isArray(normalized.notes) || !Array.isArray(normalized.analyses)) {
           return null;
         }
+        if (!Array.isArray(normalized.chats)) normalized.chats = [];
         return normalized;
       }
 
@@ -2314,7 +2588,8 @@
           projects: (normalized.projects || []).length,
           features: (normalized.features || []).length,
           notes: (normalized.notes || []).length,
-          analyses: (normalized.analyses || []).length
+          analyses: (normalized.analyses || []).length,
+          chats: (normalized.chats || []).length
         };
         const modal = document.createElement('div');
         modal.id = 'importMergeModal';
@@ -2330,6 +2605,7 @@
                 <span class="pill">Features: ${counts.features}</span>
                 <span class="pill">Notizen: ${counts.notes}</span>
                 <span class="pill">Analysen: ${counts.analyses}</span>
+                <span class="pill">Chats: ${counts.chats}</span>
               </div>
             </div>
             <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:16px;">
@@ -2339,6 +2615,7 @@
                 <span class="pill">Features: ${S.features.length}</span>
                 <span class="pill">Notizen: ${S.notes.length}</span>
                 <span class="pill">Analysen: ${S.analyses.length}</span>
+                <span class="pill">Chats: ${S.chats.length}</span>
               </div>
             </div>
             <div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:16px;">
@@ -2355,6 +2632,9 @@
                 </label>
                 <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;letter-spacing:0;color:var(--ink);">
                   <input type="checkbox" id="mergeAnalyses" style="width:16px;height:16px;"> Analysen (${counts.analyses})
+                </label>
+                <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;letter-spacing:0;color:var(--ink);">
+                  <input type="checkbox" id="mergeChats" checked style="width:16px;height:16px;"> Chats/Sprints (${counts.chats})
                 </label>
               </div>
               <div class="notice" style="margin-top:10px;font-size:12px;">Merge ist sicher: bestehende IDs und Titel werden nicht überschrieben. Nur neue Einträge werden hinzugefügt.</div>
@@ -2384,9 +2664,10 @@
             projects: modal.querySelector('#mergeProjects').checked,
             features: modal.querySelector('#mergeFeatures').checked,
             notes: modal.querySelector('#mergeNotes').checked,
-            analyses: modal.querySelector('#mergeAnalyses').checked
+            analyses: modal.querySelector('#mergeAnalyses').checked,
+            chats: modal.querySelector('#mergeChats').checked
           };
-          if (!sel.projects && !sel.features && !sel.notes && !sel.analyses) {
+          if (!sel.projects && !sel.features && !sel.notes && !sel.analyses && !sel.chats) {
             return alert('Bitte mindestens einen Bereich auswählen.');
           }
           applySelectiveMerge(_importDraftData, sel);
