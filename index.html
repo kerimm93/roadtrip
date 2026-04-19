@@ -951,13 +951,22 @@
             </div>
           ` : ''}
 
-          ${hasLinks ? `
-            <div class="stack-row" style="margin-bottom:14px;">
-              ${mainChatUrl ? `<a href="${escapeAttr(mainChatUrl)}" target="_blank" rel="noopener" class="btn">💬 Hauptchat</a>` : ''}
-              ${driveUrl ? `<a href="${escapeAttr(driveUrl)}" target="_blank" rel="noopener" class="btn">📂 Drive</a>` : ''}
-              ${obsidianUrl ? `<a href="${escapeAttr(obsidianUrl)}" target="_blank" rel="noopener" class="btn">🔮 Obsidian</a>` : ''}
+          <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:14px;">
+            <div class="row-top" style="margin-bottom:8px;">
+              <strong>Ressourcen</strong>
+              ${hasLinks ? `<button class="btn" style="padding:4px 8px;font-size:12px;" onclick="ui.projectEditMode=true;renderView();">Bearbeiten</button>` : ''}
             </div>
-          ` : ''}
+            ${hasLinks ? `
+              <div class="stack-row">
+                ${mainChatUrl ? `<a href="${escapeAttr(mainChatUrl)}" target="_blank" rel="noopener" class="btn">💬 Hauptchat</a>` : `<button class="btn" onclick="ui.projectEditMode=true;renderView();">+ Hauptchat hinzufügen</button>`}
+                ${driveUrl ? `<a href="${escapeAttr(driveUrl)}" target="_blank" rel="noopener" class="btn">📂 Drive</a>` : `<button class="btn" onclick="ui.projectEditMode=true;renderView();">+ Drive hinzufügen</button>`}
+                ${obsidianUrl ? `<a href="${escapeAttr(obsidianUrl)}" target="_blank" rel="noopener" class="btn">🔮 Obsidian</a>` : `<button class="btn" onclick="ui.projectEditMode=true;renderView();">+ Obsidian hinzufügen</button>`}
+              </div>
+            ` : `
+              <div class="notice" style="margin:0 0 8px 0;">Noch keine Ressourcen verlinkt</div>
+              <button class="btn btn-primary" onclick="ui.projectEditMode=true;renderView();">+ Links hinzufügen</button>
+            `}
+          </div>
 
           <details style="margin-bottom:12px;" ${projectChats.length ? 'open' : ''}>
             <summary style="font-weight:700;">Chats &amp; Sprints (${projectChats.length})</summary>
