@@ -830,8 +830,6 @@
 
       function renderDatabaseView() {
         const features = getFilteredFeatures();
-        const notes = getFilteredNotes();
-        const isAll = ui.activeProjectId === ALL_PROJECTS_KEY;
         return `
           ${renderContextBanner()}
           <div class="panel-title">
@@ -847,28 +845,7 @@
             <select id="filterCategory">${['alle'].concat(FEATURE_CATEGORIES).map(s => `<option ${ui.filters.category===s?'selected':''}>${s}</option>`).join('')}</select>
             <label class="pill"><input id="toggleKanban" type="checkbox" ${ui.showKanban?'checked':''} /> Kanban</label>
           </div>
-          <details style="margin-bottom:12px;">
-            <summary>Quick Add / Raw Notes</summary>
-            <div class="field" style="margin-top:8px;">
-              <label for="quickProject">Projekt</label>
-              <select id="quickProject">${[{value:'',label:'— Kein Projekt —'}].concat(S.projects.map(p=>({value:p.id,label:p.title}))).map(o=>`<option value="${escapeAttr(o.value)}" ${(ui.activeProjectId===o.value || (ui.activeProjectId===ALL_PROJECTS_KEY && !o.value)) ? 'selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}</select>
-            </div>
-            <div class="field">
-              <label for="quickNote">Rohe Notiz</label>
-              <textarea id="quickNote" placeholder="Notiz, Idee, Bug, Prompt-Hinweis ..."></textarea>
-            </div>
-            <div class="stack-row">
-              <button class="btn btn-primary" id="btnAddNote">Notiz speichern</button>
-              <button class="btn" id="btnAnalyzeNote">Prompt bauen</button>
-              <button class="btn" id="btnBuildReviewPrompt">Review-Prompt bauen</button>
-            </div>
-          </details>
-          ${renderNoteReviewSection()}
           ${ui.showKanban ? renderKanban(features) : renderTable(features)}
-          <details style="margin-top:12px;">
-            <summary>Inbox / Notes (${notes.length})</summary>
-            <div style="margin-top:10px;">${renderInbox(notes)}</div>
-          </details>
         `;
       }
 
@@ -893,6 +870,7 @@
         }
 
         const projectFeatures = S.features.filter(f => f.projectId === p.id);
+        const projectNotes = S.notes.filter(n => n.projectId === p.id).sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
         const projectChats = S.chats.filter(c => c.projectId === p.id).sort((a,b) => (b.updatedAt||'').localeCompare(a.updatedAt||''));
         const latestAnalysis = S.analyses.filter(a => a.projectId === p.id).sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''))[0];
 
@@ -1004,6 +982,30 @@
             <div style="margin-top:8px;">
               <button class="btn btn-primary" data-new-chat="${p.id}">+ Chat / Sprint anlegen</button>
             </div>
+          </details>
+
+          <details style="margin-bottom:12px;" open>
+            <summary style="font-weight:700;">Quick Add / Raw Notes</summary>
+            <div class="field" style="margin-top:8px;">
+              <label for="quickProject">Projekt</label>
+              <select id="quickProject"><option value="${escapeAttr(p.id)}" selected>${escapeHtml(p.title)}</option></select>
+            </div>
+            <div class="field">
+              <label for="quickNote">Rohe Notiz</label>
+              <textarea id="quickNote" placeholder="Notiz, Idee, Bug, Prompt-Hinweis ..."></textarea>
+            </div>
+            <div class="stack-row">
+              <button class="btn btn-primary" id="btnAddNote">Notiz speichern</button>
+              <button class="btn" id="btnAnalyzeNote">Prompt bauen</button>
+              <button class="btn" id="btnBuildReviewPrompt">Review-Prompt bauen</button>
+            </div>
+          </details>
+
+          ${renderNoteReviewSection()}
+
+          <details style="margin-bottom:12px;" ${projectNotes.length ? 'open' : ''}>
+            <summary style="font-weight:700;">Inbox / Notes (${projectNotes.length})</summary>
+            <div style="margin-top:10px;">${renderInbox(projectNotes)}</div>
           </details>
 
           <div class="mini" style="margin-bottom:6px;color:var(--ink-dim);">
