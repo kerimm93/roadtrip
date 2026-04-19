@@ -780,14 +780,23 @@
       function renderSidebarProjects() {
         const wrap = $('sidebarProjects');
         const isAll = ui.activeProjectId === ALL_PROJECTS_KEY;
+        const featureCountByProjectId = S.features.reduce((acc, f) => {
+          const pid = f.projectId || '';
+          acc[pid] = (acc[pid] || 0) + 1;
+          return acc;
+        }, {});
         const allBtn = `
           <button class="sidebar-project ${isAll ? 'active' : ''}" data-open-project="${ALL_PROJECTS_KEY}" style="${isAll ? 'border-left:3px solid var(--accent-2);' : ''}">⊕ Alle Projekte</button>
         `;
         wrap.innerHTML = allBtn + S.projects.map(p => {
           const isActive = ui.activeProjectId === p.id;
-          return `<button class="sidebar-project ${isActive ? 'active' : ''}" data-open-project="${p.id}" style="${isActive ? 'border-left:3px solid var(--accent);font-weight:700;' : ''}">
-            ${escapeHtml(p.title)}
-            ${p.status === 'archiviert' ? '<span class="mini"> (arch.)</span>' : ''}
+          const featureCount = featureCountByProjectId[p.id] || 0;
+          const updatedAt = p.updatedAt || p.lastAnalyzedAt || p.lastHtmlImportedAt || p.createdAt || '';
+          const updatedLabel = `aktualisiert: ${updatedAt ? formatDateTime(updatedAt) : '—'}`;
+          const emptyHint = featureCount === 0 ? ' · noch keine Features' : '';
+          return `<button class="sidebar-project ${isActive ? 'active' : ''}" data-open-project="${p.id}" style="${isActive ? 'border-left:3px solid var(--accent);font-weight:700;' : ''}text-align:left;">
+            <div>${escapeHtml(p.title)} (${featureCount})${p.status === 'archiviert' ? '<span class="mini"> (arch.)</span>' : ''}</div>
+            <div class="mini">${escapeHtml(updatedLabel + emptyHint)}</div>
           </button>`;
         }).join('');
         // Re-wire after DOM update
