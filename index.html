@@ -525,7 +525,8 @@
           features: [],
           notes: [],
           analyses: [],
-          chats: []
+          chats: [],
+          importVersions: []
         };
       }
 
@@ -581,6 +582,7 @@
         if (!Array.isArray(S.notes)) S.notes = [];
         if (!Array.isArray(S.analyses)) S.analyses = [];
         if (!Array.isArray(S.chats)) S.chats = [];
+        if (!Array.isArray(S.importVersions)) S.importVersions = [];
         if (!S._lastLocalSaveAt && S._lastExported) S._lastLocalSaveAt = S._lastExported;
         if (!S._lastGistPushAt && S._lastExported) S._lastGistPushAt = S._lastExported;
         S.features = S.features.map(ensureFeatureDefaults);
@@ -882,6 +884,7 @@
         const projectNotes = S.notes.filter(n => n.projectId === p.id).sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
         const projectChats = S.chats.filter(c => c.projectId === p.id).sort((a,b) => (b.updatedAt||'').localeCompare(a.updatedAt||''));
         const latestAnalysis = S.analyses.filter(a => a.projectId === p.id).sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''))[0];
+        const projectImports = getProjectImportVersions(p.id);
 
         function renderChatTypeBadge(type) {
           const colors = { 'project-main': 'var(--accent)', 'sprint': 'var(--blue)', 'execution': 'var(--green)', 'branch': 'var(--yellow)' };
@@ -1026,6 +1029,8 @@
             <div style="margin-top:10px;">${renderInbox(projectNotes)}</div>
           </details>
 
+          ${renderProjectImportHistory(projectImports)}
+
           <div class="mini" style="margin-bottom:6px;color:var(--ink-dim);">
             Features: ${projectFeatures.length} | Letzte Analyse: ${latestAnalysis ? formatDateTime(latestAnalysis.createdAt) : '—'}
           </div>
@@ -1065,6 +1070,56 @@
             <button class="btn btn-primary" id="btnImportJsonResult">JSON-Ergebnis importieren</button>
             <button class="btn" id="btnFeatureFromPrompt">Fallback: Zeilen importieren</button>
           </div>
+        `;
+      }
+
+      function getProjectImportVersions(projectId) {
+        return (S.importVersions || [])
+          .filter(v => v && v.projectId === projectId)
+          .sort((a,b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      }
+
+      function renderProjectImportHistory(imports) {
+        if (!imports.length) {
+          return `
+            <details style="margin-bottom:12px;">
+              <summary style="font-weight:700;">Importe / Versionen (0)</summary>
+              <div class="notice" style="margin-top:10px;">Noch keine Import-Versionen gespeichert.</div>
+            </details>
+          `;
+        }
+        return `
+          <details style="margin-bottom:12px;" open>
+            <summary style="font-weight:700;">Importe / Versionen (${imports.length})</summary>
+            <div class="list" style="margin-top:10px;">
+              ${imports.slice(0, 10).map(v => {
+                const cmp = v.comparisonToPrevious || {};
+                const added = Array.isArray(cmp.addedFeatures) ? cmp.addedFeatures.length : 0;
+                const updated = Array.isArray(cmp.updatedFeatures) ? cmp.updatedFeatures.length : 0;
+                const unchanged = Array.isArray(cmp.unchangedFeatures) ? cmp.unchangedFeatures.length : 0;
+                const missing = Array.isArray(cmp.missingFromNewVersion) ? cmp.missingFromNewVersion.length : 0;
+                const summary = v.parsedSummary || {};
+                return `
+                  <details class="item">
+                    <summary style="cursor:pointer;">
+                      <div class="row-top">
+                        <strong>${formatDateTime(v.createdAt)}</strong>
+                        <span class="pill">${escapeHtml(v.sourceType || 'import')}</span>
+                      </div>
+                      <div class="mini">${escapeHtml(v.sourceName || 'Analyse-Import')} · ${escapeHtml(summary.projectSummary || 'ohne Summary')}</div>
+                      <div class="mini">+${added} neu · ~${updated} geändert · =${unchanged} gleich · -${missing} fehlen</div>
+                    </summary>
+                    <div style="margin-top:10px;">
+                      ${added ? `<div class="mini"><strong>Neu:</strong> ${escapeHtml(cmp.addedFeatures.map(x => x.title || x).join(', '))}</div>` : ''}
+                      ${updated ? `<div class="mini"><strong>Geändert:</strong> ${escapeHtml(cmp.updatedFeatures.map(x => x.title || x).join(', '))}</div>` : ''}
+                      ${missing ? `<div class="mini"><strong>Fehlt in neuer Version:</strong> ${escapeHtml(cmp.missingFromNewVersion.map(x => x.title || x).join(', '))}</div>` : ''}
+                      ${(cmp.possibleRelevantNotes || []).length ? `<div class="mini"><strong>Mögliche Notizen:</strong> ${escapeHtml(cmp.possibleRelevantNotes.map(n => shorten(n.text || '', 80)).join(' | '))}</div>` : ''}
+                    </div>
+                  </details>
+                `;
+              }).join('')}
+            </div>
+          </details>
         `;
       }
 
@@ -1450,6 +1505,7 @@
         S.features = S.features.filter(f => f.projectId !== id);
         S.notes = S.notes.filter(n => n.projectId !== id);
         S.chats = S.chats.filter(c => c.projectId !== id);
+        S.importVersions = (S.importVersions || []).filter(v => v.projectId !== id);
         ui.projectEditMode = false;
         ui.editingProjectId = null;
         ui.activeProjectId = S.projects.length ? S.projects[0].id : ALL_PROJECTS_KEY;
@@ -2016,6 +2072,125 @@
         return S.features.find(x => x.projectId === projectId && normalizeText(x.title) === normalizedTitle) || null;
       }
 
+      function normalizeImportedFeature(item) {
+        if (!item || typeof item !== 'object') return null;
+        const title = String(item.title || '').trim();
+        if (!title) return null;
+        const description = String(item.description || '').trim();
+        const category = FEATURE_CATEGORIES.includes(item.category) ? item.category : 'Sonstiges';
+        const status = mapJsonAnalysisStatus(item.status);
+        return { title, description, category, status };
+      }
+
+      function featureVersionSignature(featureLike) {
+        const normalized = normalizeImportedFeature(featureLike);
+        if (!normalized) return '';
+        return [
+          normalizeText(normalized.description),
+          normalizeText(normalized.category),
+          normalizeText(normalized.status)
+        ].join('||');
+      }
+
+      function findPossibleRelevantNotes(projectId, changedTitles) {
+        const relevant = [];
+        const seen = new Set();
+        const titleTokens = changedTitles
+          .map(t => normalizeText(t).split(/\s+/).filter(Boolean))
+          .flat()
+          .filter(tok => tok.length >= 4);
+
+        S.notes
+          .filter(n => n.projectId === projectId && !n.processed)
+          .forEach(note => {
+            const textNorm = normalizeText(note.text || '');
+            if (!textNorm) return;
+            const hitsTitle = changedTitles.some(t => normalizeText(t) && textNorm.includes(normalizeText(t)));
+            const hitsToken = titleTokens.some(tok => textNorm.includes(tok));
+            if (!hitsTitle && !hitsToken) return;
+            if (seen.has(note.id)) return;
+            seen.add(note.id);
+            relevant.push({ id: note.id, text: note.text, createdAt: note.createdAt || '' });
+          });
+
+        return relevant.slice(0, 5);
+      }
+
+      function compareFeaturesToPreviousVersion(projectId, parsedFeatures) {
+        const previous = getProjectImportVersions(projectId)[0] || null;
+        const previousFeatures = Array.isArray(previous && previous.parsedFeatures) ? previous.parsedFeatures : [];
+        const prevByTitle = new Map();
+        previousFeatures.forEach(item => {
+          const normalized = normalizeImportedFeature(item);
+          if (!normalized) return;
+          prevByTitle.set(normalizeText(normalized.title), normalized);
+        });
+
+        const newByTitle = new Map();
+        parsedFeatures.forEach(item => {
+          const normalized = normalizeImportedFeature(item);
+          if (!normalized) return;
+          newByTitle.set(normalizeText(normalized.title), normalized);
+        });
+
+        const addedFeatures = [];
+        const updatedFeatures = [];
+        const unchangedFeatures = [];
+        const missingFromNewVersion = [];
+
+        newByTitle.forEach((current, key) => {
+          const prev = prevByTitle.get(key);
+          if (!prev) {
+            addedFeatures.push({ title: current.title });
+            return;
+          }
+          if (featureVersionSignature(prev) === featureVersionSignature(current)) {
+            unchangedFeatures.push({ title: current.title });
+          } else {
+            updatedFeatures.push({ title: current.title });
+          }
+        });
+
+        prevByTitle.forEach((prev, key) => {
+          if (newByTitle.has(key)) return;
+          missingFromNewVersion.push({ title: prev.title });
+        });
+
+        const noteRefs = findPossibleRelevantNotes(
+          projectId,
+          addedFeatures.concat(updatedFeatures, missingFromNewVersion).map(x => x.title)
+        );
+
+        return {
+          previousImportId: previous ? previous.id : null,
+          addedFeatures,
+          updatedFeatures,
+          unchangedFeatures,
+          missingFromNewVersion,
+          possibleRelevantNotes: noteRefs
+        };
+      }
+
+      function createImportVersionEntry(projectId, sourceType, sourceName, rawAnalysisText, parsed, parsedFeatures, comparison) {
+        return {
+          id: uid('iv'),
+          projectId,
+          createdAt: new Date().toISOString(),
+          sourceType: sourceType || 'analysis-json',
+          sourceName: sourceName || '',
+          rawAnalysisText: String(rawAnalysisText || ''),
+          parsedSummary: {
+            appType: typeof parsed.appType === 'string' ? parsed.appType : '',
+            projectSummary: typeof parsed.projectSummary === 'string' ? parsed.projectSummary : '',
+            viewsCount: Array.isArray(parsed.views) ? parsed.views.length : 0,
+            technicalNotesCount: Array.isArray(parsed.technicalNotes) ? parsed.technicalNotes.length : 0,
+            unclearPointsCount: Array.isArray(parsed.unclearPoints) ? parsed.unclearPoints.length : 0
+          },
+          parsedFeatures,
+          comparisonToPrevious: comparison
+        };
+      }
+
       function reconcileImportedFeature(existing, imported, nowIso) {
         const importedStatus = mapJsonAnalysisStatus(imported.status);
         const importedDescription = String(imported.description || '').trim();
@@ -2180,6 +2355,8 @@
           || Object.prototype.hasOwnProperty.call(parsed, 'detectedFeatures');
         if (!hasFeatureKey || !featureSource) throw new Error('missing-features-array');
         if (featureSource.length === 0) throw new Error('empty-features-array');
+        const parsedFeatures = featureSource.map(normalizeImportedFeature).filter(Boolean);
+        const comparisonToPrevious = compareFeaturesToPreviousVersion(projectId, parsedFeatures);
         const reconciliation = reconcileImportedFeaturesForProject(projectId, featureSource, now);
 
         const views = Array.isArray(parsed.views) ? parsed.views.map(x => String(x || '').trim()).filter(Boolean) : [];
@@ -2205,7 +2382,18 @@
           });
         }
 
-        return reconciliation;
+        const importVersion = createImportVersionEntry(
+          projectId,
+          'analysis-json',
+          'JSON Result Import',
+          text,
+          parsed,
+          parsedFeatures,
+          comparisonToPrevious
+        );
+        S.importVersions.push(importVersion);
+
+        return { reconciliation, comparisonToPrevious };
       }
 
       function importFeatureLinesFromPrompt() {
@@ -2257,10 +2445,13 @@
             renderView();
             return alert(
               'Reconciliation abgeschlossen:\n'
-              + '- ' + result.created.length + ' neue Features erstellt\n'
-              + '- ' + result.updated.length + ' bestehende Features aktualisiert\n'
-              + '- ' + result.unchanged.length + ' unverändert\n'
-              + '- ' + result.possibleStaleFeatures.length + ' mögliche stale Features'
+              + '- ' + result.reconciliation.created.length + ' neue Features erstellt\n'
+              + '- ' + result.reconciliation.updated.length + ' bestehende Features aktualisiert\n'
+              + '- ' + result.reconciliation.unchanged.length + ' unverändert\n'
+              + '- ' + result.reconciliation.possibleStaleFeatures.length + ' mögliche stale Features\n'
+              + '- ' + result.comparisonToPrevious.addedFeatures.length + ' neu ggü. letzter Import-Version\n'
+              + '- ' + result.comparisonToPrevious.updatedFeatures.length + ' geändert ggü. letzter Import-Version\n'
+              + '- ' + result.comparisonToPrevious.missingFromNewVersion.length + ' fehlen ggü. letzter Import-Version'
             );
           } catch (err) {
             if (err && err.message === 'missing-features-array') return alert("Analyse-JSON erkannt, aber es enthält kein 'features'-Array.");
@@ -2584,6 +2775,9 @@
         if (selections.chats) {
           S.chats = mergeArrayById(S.chats, incomingState.chats || [], 'id', null);
         }
+        if (selections.importVersions) {
+          S.importVersions = mergeArrayById(S.importVersions || [], incomingState.importVersions || [], 'id', null);
+        }
         ensureDefaults();
         save();
         renderAll();
@@ -2597,6 +2791,7 @@
           return null;
         }
         if (!Array.isArray(normalized.chats)) normalized.chats = [];
+        if (!Array.isArray(normalized.importVersions)) normalized.importVersions = [];
         return normalized;
       }
 
@@ -2609,7 +2804,8 @@
           features: (normalized.features || []).length,
           notes: (normalized.notes || []).length,
           analyses: (normalized.analyses || []).length,
-          chats: (normalized.chats || []).length
+          chats: (normalized.chats || []).length,
+          importVersions: (normalized.importVersions || []).length
         };
         const modal = document.createElement('div');
         modal.id = 'importMergeModal';
@@ -2626,6 +2822,7 @@
                 <span class="pill">Notizen: ${counts.notes}</span>
                 <span class="pill">Analysen: ${counts.analyses}</span>
                 <span class="pill">Chats: ${counts.chats}</span>
+                <span class="pill">Importe: ${counts.importVersions}</span>
               </div>
             </div>
             <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:16px;">
@@ -2636,6 +2833,7 @@
                 <span class="pill">Notizen: ${S.notes.length}</span>
                 <span class="pill">Analysen: ${S.analyses.length}</span>
                 <span class="pill">Chats: ${S.chats.length}</span>
+                <span class="pill">Importe: ${(S.importVersions || []).length}</span>
               </div>
             </div>
             <div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:16px;">
@@ -2655,6 +2853,9 @@
                 </label>
                 <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;letter-spacing:0;color:var(--ink);">
                   <input type="checkbox" id="mergeChats" checked style="width:16px;height:16px;"> Chats/Sprints (${counts.chats})
+                </label>
+                <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;letter-spacing:0;color:var(--ink);">
+                  <input type="checkbox" id="mergeImportVersions" checked style="width:16px;height:16px;"> Importe/Versionen (${counts.importVersions})
                 </label>
               </div>
               <div class="notice" style="margin-top:10px;font-size:12px;">Merge ist sicher: bestehende IDs und Titel werden nicht überschrieben. Nur neue Einträge werden hinzugefügt.</div>
@@ -2685,9 +2886,10 @@
             features: modal.querySelector('#mergeFeatures').checked,
             notes: modal.querySelector('#mergeNotes').checked,
             analyses: modal.querySelector('#mergeAnalyses').checked,
-            chats: modal.querySelector('#mergeChats').checked
+            chats: modal.querySelector('#mergeChats').checked,
+            importVersions: modal.querySelector('#mergeImportVersions').checked
           };
-          if (!sel.projects && !sel.features && !sel.notes && !sel.analyses && !sel.chats) {
+          if (!sel.projects && !sel.features && !sel.notes && !sel.analyses && !sel.chats && !sel.importVersions) {
             return alert('Bitte mindestens einen Bereich auswählen.');
           }
           applySelectiveMerge(_importDraftData, sel);
