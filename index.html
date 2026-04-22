@@ -503,7 +503,7 @@
         showKanban: false,
         showAllProjects: false,
         projectEditMode: false,
-        importDraft: { html: '', prompt: '', projectId: '' },
+        importDraft: { html: '', prompt: '', analysisPrompt: '', cleanupPrompt: '', projectId: '' },
         noteReview: { proposals: [], projectId: '', rawText: '', visible: false },
         cleanupReview: { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', visible: false, versionLogged: false }
       };
@@ -753,7 +753,9 @@
         qq('[data-review-ignore]').forEach(btn => btn.addEventListener('click', () => ignoreNoteProposal(+btn.dataset.reviewIgnore)));
         if ($('htmlFileInput')) $('htmlFileInput').addEventListener('change', onHtmlFilePicked);
         if ($('htmlTextarea')) $('htmlTextarea').addEventListener('input', e => { ui.importDraft.html = e.target.value; });
+        if ($('analysisPromptOutput')) $('analysisPromptOutput').addEventListener('input', e => { ui.importDraft.analysisPrompt = e.target.value; });
         if ($('promptOutput')) $('promptOutput').addEventListener('input', e => { ui.importDraft.prompt = e.target.value; });
+        if ($('cleanupPromptOutput')) $('cleanupPromptOutput').addEventListener('input', e => { ui.importDraft.cleanupPrompt = e.target.value; });
         if ($('htmlProjectSelect')) $('htmlProjectSelect').addEventListener('change', e => { ui.importDraft.projectId = e.target.value; });
         if ($('btnAnalyzeHtml')) $('btnAnalyzeHtml').addEventListener('click', analyzeHtmlLocal);
         if ($('btnBuildHtmlPrompt')) $('btnBuildHtmlPrompt').addEventListener('click', buildHtmlPrompt);
@@ -762,7 +764,8 @@
         if ($('btnBuildProjectDedupePrompt')) $('btnBuildProjectDedupePrompt').addEventListener('click', buildProjectDedupePrompt);
         if ($('btnLoadCleanupReview')) $('btnLoadCleanupReview').addEventListener('click', loadCleanupReviewProposals);
         if ($('btnClearCleanupReview')) $('btnClearCleanupReview').addEventListener('click', clearCleanupReview);
-        if ($('btnCopyPrompt')) $('btnCopyPrompt').addEventListener('click', copyPrompt);
+        if ($('btnCopyAnalysisPrompt')) $('btnCopyAnalysisPrompt').addEventListener('click', () => copyPrompt('analysisPromptOutput'));
+        if ($('btnCopyCleanupPrompt')) $('btnCopyCleanupPrompt').addEventListener('click', () => copyPrompt('cleanupPromptOutput'));
         if ($('btnFeatureFromPrompt')) $('btnFeatureFromPrompt').addEventListener('click', importFeatureLinesFromPrompt);
         qq('[data-cleanup-accept-update]').forEach(btn => btn.addEventListener('click', () => acceptCleanupProposalAsUpdate(+btn.dataset.cleanupAcceptUpdate)));
         qq('[data-cleanup-accept-new]').forEach(btn => btn.addEventListener('click', () => acceptCleanupProposalAsNew(+btn.dataset.cleanupAcceptNew)));
@@ -1032,6 +1035,15 @@
           </details>
 
           ${renderNoteReviewSection()}
+          <details style="margin-bottom:12px;" open>
+            <summary style="font-weight:700;">Feature-Bereinigung</summary>
+            <div class="mini" style="margin:8px 0;">
+              Nutze das, wenn dieses Projekt bereits doppelte oder ähnliche Features enthält. Es wird kein neuer Code benötigt.
+            </div>
+            <div class="stack-row">
+              <button class="btn" id="btnBuildProjectDedupePrompt">Bestehende Features auf Dubletten prüfen</button>
+            </div>
+          </details>
           ${renderCleanupReviewSection()}
 
           <details style="margin-bottom:12px;" ${projectNotes.length ? 'open' : ''}>
@@ -1072,15 +1084,29 @@
             <button class="btn" id="btnBuildHtmlPrompt">KI-Prompt erzeugen</button>
           </div>
           <div class="field" style="margin-top:12px;">
-            <label for="promptOutput">Paste JSON Result / Prompt Output</label>
+            <label for="analysisPromptOutput">Analyse-Prompt Ausgabe</label>
+            <textarea id="analysisPromptOutput" style="min-height:180px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(ui.importDraft.analysisPrompt || '')}</textarea>
+            <div class="stack-row" style="margin-top:6px;">
+              <button class="btn" id="btnCopyAnalysisPrompt">Copy</button>
+            </div>
+          </div>
+          <div class="field">
+            <label for="promptOutput">Analyse-JSON Eingabe</label>
+            <div class="mini" style="margin-bottom:6px;">Füge hier das KI-Analyse-JSON ein. Dieses Feld bleibt beim Erzeugen von Cleanup-/Dedupe-Prompts unverändert.</div>
             <textarea id="promptOutput" style="min-height:220px">${escapeHtml(ui.importDraft.prompt || '')}</textarea>
           </div>
           <div class="stack-row">
-            <button class="btn" id="btnCopyPrompt">Copy</button>
-            <button class="btn btn-primary" id="btnImportJsonResult">Import-Cleanup starten</button>
+            <button class="btn btn-primary" id="btnImportJsonResult">Analyse-JSON abgleichen</button>
             <button class="btn" id="btnBuildCleanupPrompt">Cleanup-Prompt bauen</button>
-            <button class="btn" id="btnBuildProjectDedupePrompt">Projekt-Dedupe-Prompt</button>
             <button class="btn" id="btnFeatureFromPrompt">Fallback: Zeilen importieren</button>
+          </div>
+          <div class="mini" style="margin-top:6px;">Nutze das, wenn du ein neues Analyse-JSON aus neuem Code hast.</div>
+          <div class="field" style="margin-top:12px;">
+            <label for="cleanupPromptOutput">Cleanup-Prompt Ausgabe</label>
+            <textarea id="cleanupPromptOutput" style="min-height:180px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(ui.importDraft.cleanupPrompt || '')}</textarea>
+            <div class="stack-row" style="margin-top:6px;">
+              <button class="btn" id="btnCopyCleanupPrompt">Copy</button>
+            </div>
           </div>
           ${renderCleanupReviewSection()}
         `;
@@ -1668,15 +1694,15 @@
           'Erkannte Features:',
           ...result.features.map(f => '- ' + f)
         ].join('\n');
-        $('promptOutput').value = analysisText;
-        ui.importDraft.prompt = analysisText;
+        if ($('analysisPromptOutput')) $('analysisPromptOutput').value = analysisText;
+        ui.importDraft.analysisPrompt = analysisText;
 
         S.analyses.push({
           id: uid('a'),
           type: 'html-project-analysis',
           projectId,
           createdAt: new Date().toISOString(),
-          resultRaw: $('promptOutput').value,
+          resultRaw: analysisText,
           resultParsed: result
         });
 
@@ -1800,8 +1826,8 @@
           html
         ].join('\n');
 
-        $('promptOutput').value = prompt;
-        ui.importDraft.prompt = prompt;
+        if ($('analysisPromptOutput')) $('analysisPromptOutput').value = prompt;
+        ui.importDraft.analysisPrompt = prompt;
 
         navigator.clipboard.writeText(prompt)
           .then(() => alert('KI-Analyse-Prompt erzeugt und in die Zwischenablage kopiert.'))
@@ -1813,24 +1839,24 @@
         const pid = $('quickProject').value || '';
         if (!noteText) return alert('Bitte erst eine Notiz schreiben.');
         const prompt = buildFeaturePromptFromText(noteText, pid);
-        ui.importDraft.prompt = prompt;
+        ui.importDraft.analysisPrompt = prompt;
         if (pid) ui.importDraft.projectId = pid;
         ui.view = 'import';
         renderNav();
         renderView();
-        if ($('promptOutput')) $('promptOutput').value = prompt;
+        if ($('analysisPromptOutput')) $('analysisPromptOutput').value = prompt;
       }
 
       function buildSingleNotePrompt(noteId) {
         const note = S.notes.find(x => x.id === noteId);
         if (!note) return;
         const prompt = buildFeaturePromptFromText(note.text, note.projectId || '');
-        ui.importDraft.prompt = prompt;
+        ui.importDraft.analysisPrompt = prompt;
         if (note.projectId) ui.importDraft.projectId = note.projectId;
         ui.view = 'import';
         renderNav();
         renderView();
-        if ($('promptOutput')) $('promptOutput').value = prompt;
+        if ($('analysisPromptOutput')) $('analysisPromptOutput').value = prompt;
       }
 
       function buildFeaturePromptFromText(noteText, projectId) {
@@ -1890,7 +1916,7 @@
         ui.noteReview.projectId = pid;
         ui.noteReview.proposals = [];
         ui.noteReview.visible = true;
-        ui.importDraft.prompt = prompt;
+        ui.importDraft.analysisPrompt = prompt;
         if (pid) ui.importDraft.projectId = pid;
         navigator.clipboard.writeText(prompt)
           .then(() => alert('Review-Prompt erzeugt und in Zwischenablage kopiert.\nErgebnis-JSON unten einfügen und "Vorschläge laden" klicken.'))
@@ -2080,14 +2106,59 @@
       function buildCleanupPrompt(projectId, incomingFeatures, mode) {
         const projectTitle = getProjectTitle(projectId) || 'Unbekanntes Projekt';
         const existingFeatures = buildFeatureListForCleanupPrompt(projectId);
+        if (mode === 'project-dedupe') {
+          return [
+            'AUFGABE',
+            'Prüfe die bestehenden Features dieses Projekts intern auf Dubletten, sehr ähnliche Features, überlappende Features, mögliche Zusammenführungen sowie veraltete oder zu allgemeine Einträge.',
+            'Es gibt keine neuen Import-Features.',
+            'Alle Einträge stammen bereits aus dem Projekt.',
+            'Ziel ist Aufräumen per Vorschlägen, nicht Neu-Anlage.',
+            'Nichts automatisch löschen.',
+            'Gib ausschließlich gültiges JSON zurück (kein Markdown, kein Zusatztext).',
+            '',
+            'PROJEKT',
+            '- projectId: ' + projectId,
+            '- projectTitle: ' + projectTitle,
+            '',
+            'BESTEHENDE FEATURES (ID | Titel | Status | Kategorie | Beschreibung)',
+            existingFeatures,
+            '',
+            'ANWEISUNGEN',
+            '- Erzeuge nur Vorschläge, keine endgültigen Löschungen.',
+            '- type soll primär sein: "duplicate-of" | "update-existing" | "probably-stale".',
+            '- "new-feature" möglichst nicht verwenden.',
+            '- targetFeatureId soll das Feature sein, das behalten/aktualisiert werden soll.',
+            '- duplicateFeatureId soll das mutmaßliche Duplikat enthalten, falls vorhanden.',
+            '- resolvedStatus darf nur sein: Idee|geprüft|geplant|in Arbeit|teilweise umgesetzt|umgesetzt',
+            '- resolvedCategory darf nur sein: UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges',
+            '- confidence darf nur sein: hoch|mittel|niedrig',
+            '- rationale: kurzer nachvollziehbarer Grund.',
+            '',
+            'AUSGABEFORMAT JSON',
+            '{',
+            '  "proposals": [',
+            '    {',
+            '      "type": "duplicate-of|update-existing|probably-stale",',
+            '      "targetFeatureId": "",',
+            '      "duplicateFeatureId": "",',
+            '      "incomingTitle": "",',
+            '      "resolvedTitle": "",',
+            '      "resolvedDescription": "",',
+            '      "resolvedCategory": "",',
+            '      "resolvedStatus": "",',
+            '      "confidence": "hoch|mittel|niedrig",',
+            '      "rationale": ""',
+            '    }',
+            '  ],',
+            '  "summary": ""',
+            '}'
+          ].join('\n');
+        }
         const incomingList = buildIncomingListForCleanupPrompt(incomingFeatures);
-        const promptModeLine = mode === 'project-dedupe'
-          ? 'Ziel ist deduplizieren und ähnliche bzw. veraltete Features markieren.'
-          : 'Ziel ist Import-Cleanup: bestehende Features aktualisieren statt unnötig neu anzulegen.';
         return [
           'AUFGABE',
           'Führe ein defensives Feature-Cleanup durch. Gib ausschließlich gültiges JSON zurück (kein Markdown, kein Zusatztext).',
-          promptModeLine,
+          'Ziel ist Import-Cleanup: bestehende Features aktualisieren statt unnötig neu anzulegen.',
           '',
           'PROJEKT',
           '- projectId: ' + projectId,
@@ -2096,9 +2167,7 @@
           'BESTEHENDE FEATURES (ID | Titel | Status | Kategorie | Beschreibung)',
           existingFeatures,
           '',
-          mode === 'project-dedupe'
-            ? 'ZU PRÜFENDE FEATURES (identisch mit Bestand für interne Dedupe-Prüfung)'
-            : 'NEU ERKANNTE FEATURES AUS IMPORT',
+          'NEU ERKANNTE FEATURES AUS IMPORT',
           incomingList,
           '',
           'ANWEISUNGEN',
@@ -2142,7 +2211,8 @@
         ui.cleanupReview.visible = true;
         ui.cleanupReview.versionLogged = false;
         ui.importDraft.projectId = projectId;
-        ui.importDraft.prompt = prompt;
+        ui.importDraft.cleanupPrompt = prompt;
+        if ($('cleanupPromptOutput')) $('cleanupPromptOutput').value = prompt;
         renderView();
         navigator.clipboard.writeText(prompt)
           .then(() => alert('Cleanup-Prompt erzeugt und in Zwischenablage kopiert.\nJSON mit Vorschlägen einfügen und "Cleanup-Vorschläge laden" klicken.'))
@@ -2211,10 +2281,12 @@
         if (!proposals.length) return alert('Keine Vorschläge im JSON gefunden (Schlüssel: "proposals").');
         const validTypes = ['match-existing', 'update-existing', 'new-feature', 'duplicate-of', 'probably-stale'];
         const validConfidence = ['hoch', 'mittel', 'niedrig'];
+        const fallbackType = ui.cleanupReview.mode === 'project-dedupe' ? 'update-existing' : 'new-feature';
         ui.cleanupReview.proposals = proposals.map((p, i) => ({
           _idx: i,
-          type: validTypes.includes(p.type) ? p.type : 'new-feature',
+          type: validTypes.includes(p.type) ? p.type : fallbackType,
           targetFeatureId: String(p.targetFeatureId || '').trim(),
+          duplicateFeatureId: String(p.duplicateFeatureId || '').trim(),
           incomingTitle: String(p.incomingTitle || '').trim(),
           resolvedTitle: String(p.resolvedTitle || '').trim(),
           resolvedDescription: String(p.resolvedDescription || '').trim(),
@@ -2271,16 +2343,34 @@
       }
 
       function applyCleanupProposalToFeature(feature, proposal) {
-        const changes = reconcileImportedFeature(feature, {
-          status: proposal.resolvedStatus || proposal.suggestedStatus || feature.status,
-          description: proposal.resolvedDescription || '',
-          category: proposal.resolvedCategory || 'Sonstiges'
-        }, new Date().toISOString());
+        const changes = [];
         const nextTitle = proposal.resolvedTitle || proposal.incomingTitle;
         if (nextTitle && nextTitle !== feature.title) {
           if (confirm('Titel ändern von:\n"' + feature.title + '"\nauf:\n"' + nextTitle + '"?')) {
             feature.title = nextTitle;
             changes.push('title');
+          }
+        }
+        const nextDescription = String(proposal.resolvedDescription || '').trim();
+        const existingDescription = String(feature.description || '').trim();
+        if (nextDescription && nextDescription !== existingDescription) {
+          if (confirm('Beschreibung ersetzen?\nAlt: ' + shorten(existingDescription || '—', 120) + '\nNeu: ' + shorten(nextDescription, 120))) {
+            feature.description = nextDescription;
+            changes.push('description');
+          }
+        }
+        const nextCategory = proposal.resolvedCategory;
+        if (nextCategory && FEATURE_CATEGORIES.includes(nextCategory) && nextCategory !== feature.category) {
+          if (confirm('Kategorie ändern von "' + feature.category + '" auf "' + nextCategory + '"?')) {
+            feature.category = nextCategory;
+            changes.push('category');
+          }
+        }
+        const nextStatus = proposal.resolvedStatus;
+        if (nextStatus && FEATURE_STATUS.includes(nextStatus) && nextStatus !== feature.status) {
+          if (confirm('Status ändern von "' + feature.status + '" auf "' + nextStatus + '"?')) {
+            feature.status = nextStatus;
+            changes.push('status');
           }
         }
         if (changes.length) feature.updatedAt = new Date().toISOString();
@@ -2359,7 +2449,7 @@
         const proposals = ui.cleanupReview.proposals || [];
         const typeLabel = { 'match-existing': 'Match', 'update-existing': 'Update', 'new-feature': 'Neu', 'duplicate-of': 'Dublette?', 'probably-stale': 'Veraltet?' };
         const typeColor = { 'match-existing': 'var(--blue)', 'update-existing': 'var(--accent-2)', 'new-feature': 'var(--green)', 'duplicate-of': 'var(--yellow)', 'probably-stale': 'var(--ink-dim)' };
-        const modeLabel = ui.cleanupReview.mode === 'project-dedupe' ? 'Projekt-Dedupe' : 'Import-Cleanup';
+        const modeLabel = ui.cleanupReview.mode === 'project-dedupe' ? 'Feature-Bereinigung' : 'Import-Cleanup';
         return `
           <details open style="margin-top:10px;">
             <summary style="font-weight:700;">Cleanup-Review (${modeLabel}) · ${proposals.filter(p=>!p._done).length} offen</summary>
@@ -2382,6 +2472,7 @@
                     </div>
                     ${p.incomingTitle ? `<div class="mini">Import: ${escapeHtml(p.incomingTitle)}</div>` : ''}
                     ${p.targetFeatureId ? `<div class="mini">Ziel-ID: ${escapeHtml(p.targetFeatureId)}</div>` : ''}
+                    ${p.duplicateFeatureId ? `<div class="mini">Duplikat-ID: ${escapeHtml(p.duplicateFeatureId)}</div>` : ''}
                     ${p.resolvedDescription ? `<div class="item-desc">${escapeHtml(p.resolvedDescription)}</div>` : ''}
                     <div class="mini">Confidence: ${escapeHtml(p.confidence)}</div>
                     ${p.rationale ? `<div class="mini" style="color:var(--ink-dim)">Grund: ${escapeHtml(p.rationale)}</div>` : ''}
@@ -2403,10 +2494,14 @@
 
       // ─────────────────────────────────────────────────────────────────────────
 
-      function copyPrompt() {
-        const text = $('promptOutput').value;
+      function copyPrompt(textareaId) {
+        const field = $(textareaId || 'promptOutput');
+        if (!field) return;
+        const text = field.value;
         if (!text.trim()) return;
-        ui.importDraft.prompt = text;
+        if (textareaId === 'analysisPromptOutput') ui.importDraft.analysisPrompt = text;
+        else if (textareaId === 'cleanupPromptOutput') ui.importDraft.cleanupPrompt = text;
+        else ui.importDraft.prompt = text;
         navigator.clipboard.writeText(text).then(() => alert('Text kopiert.'));
       }
 
