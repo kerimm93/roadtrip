@@ -504,7 +504,8 @@
         showAllProjects: false,
         projectEditMode: false,
         importDraft: { html: '', prompt: '', projectId: '' },
-        noteReview: { proposals: [], projectId: '', rawText: '', visible: false }
+        noteReview: { proposals: [], projectId: '', rawText: '', visible: false },
+        cleanupReview: { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', visible: false, versionLogged: false }
       };
 
       const $ = (id) => document.getElementById(id);
@@ -756,9 +757,17 @@
         if ($('htmlProjectSelect')) $('htmlProjectSelect').addEventListener('change', e => { ui.importDraft.projectId = e.target.value; });
         if ($('btnAnalyzeHtml')) $('btnAnalyzeHtml').addEventListener('click', analyzeHtmlLocal);
         if ($('btnBuildHtmlPrompt')) $('btnBuildHtmlPrompt').addEventListener('click', buildHtmlPrompt);
-        if ($('btnImportJsonResult')) $('btnImportJsonResult').addEventListener('click', importFeatureLinesFromPrompt);
+        if ($('btnImportJsonResult')) $('btnImportJsonResult').addEventListener('click', startImportCleanupFromPrompt);
+        if ($('btnBuildCleanupPrompt')) $('btnBuildCleanupPrompt').addEventListener('click', buildCleanupPromptFromPromptOutput);
+        if ($('btnBuildProjectDedupePrompt')) $('btnBuildProjectDedupePrompt').addEventListener('click', buildProjectDedupePrompt);
+        if ($('btnLoadCleanupReview')) $('btnLoadCleanupReview').addEventListener('click', loadCleanupReviewProposals);
+        if ($('btnClearCleanupReview')) $('btnClearCleanupReview').addEventListener('click', clearCleanupReview);
         if ($('btnCopyPrompt')) $('btnCopyPrompt').addEventListener('click', copyPrompt);
         if ($('btnFeatureFromPrompt')) $('btnFeatureFromPrompt').addEventListener('click', importFeatureLinesFromPrompt);
+        qq('[data-cleanup-accept-update]').forEach(btn => btn.addEventListener('click', () => acceptCleanupProposalAsUpdate(+btn.dataset.cleanupAcceptUpdate)));
+        qq('[data-cleanup-accept-new]').forEach(btn => btn.addEventListener('click', () => acceptCleanupProposalAsNew(+btn.dataset.cleanupAcceptNew)));
+        qq('[data-cleanup-mark-duplicate]').forEach(btn => btn.addEventListener('click', () => markCleanupProposalAsDuplicate(+btn.dataset.cleanupMarkDuplicate)));
+        qq('[data-cleanup-ignore]').forEach(btn => btn.addEventListener('click', () => ignoreCleanupProposal(+btn.dataset.cleanupIgnore)));
 
         qq('[data-edit-project]').forEach(btn => btn.addEventListener('click', () => editProject(btn.dataset.editProject)));
         qq('[data-delete-project]').forEach(btn => btn.addEventListener('click', () => deleteProject(btn.dataset.deleteProject)));
@@ -790,7 +799,7 @@
         const allBtn = `
           <button class="sidebar-project ${isAll ? 'active' : ''}" data-open-project="${ALL_PROJECTS_KEY}" style="${isAll ? 'border-left:3px solid var(--accent-2);' : ''}">⊕ Alle Projekte</button>
         `;
-        wrap.innerHTML = allBtn + S.projects.map(p => {
+        wrap.innerHTML = allBtn + S.projects.filter(p => p.status !== 'archiviert').map(p => {
           const isActive = ui.activeProjectId === p.id;
           const featureCount = featureCountByProjectId[p.id] || 0;
           const updatedAt = p.updatedAt || p.lastAnalyzedAt || p.lastHtmlImportedAt || p.createdAt || '';
@@ -1023,6 +1032,7 @@
           </details>
 
           ${renderNoteReviewSection()}
+          ${renderCleanupReviewSection()}
 
           <details style="margin-bottom:12px;" ${projectNotes.length ? 'open' : ''}>
             <summary style="font-weight:700;">Inbox / Notes (${projectNotes.length})</summary>
@@ -1067,9 +1077,12 @@
           </div>
           <div class="stack-row">
             <button class="btn" id="btnCopyPrompt">Copy</button>
-            <button class="btn btn-primary" id="btnImportJsonResult">JSON-Ergebnis importieren</button>
+            <button class="btn btn-primary" id="btnImportJsonResult">Import-Cleanup starten</button>
+            <button class="btn" id="btnBuildCleanupPrompt">Cleanup-Prompt bauen</button>
+            <button class="btn" id="btnBuildProjectDedupePrompt">Projekt-Dedupe-Prompt</button>
             <button class="btn" id="btnFeatureFromPrompt">Fallback: Zeilen importieren</button>
           </div>
+          ${renderCleanupReviewSection()}
         `;
       }
 
@@ -2027,6 +2040,369 @@
 
       // ─────────────────────────────────────────────────────────────────────────
 
+      function parseAnalysisJsonForCleanup(text, projectId) {
+        let parsed;
+        try {
+          parsed = JSON.parse(String(text || '{}'));
+        } catch (err) {
+          throw new Error('invalid-analysis-json');
+        }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('unsupported-top-level-structure');
+        const p = S.projects.find(x => x.id === projectId);
+        if (!p) throw new Error('project-not-found');
+        const featureSource = Array.isArray(parsed.features) ? parsed.features
+          : Array.isArray(parsed.featureCandidates) ? parsed.featureCandidates
+          : Array.isArray(parsed.detectedFeatures) ? parsed.detectedFeatures
+          : null;
+        const hasFeatureKey = Object.prototype.hasOwnProperty.call(parsed, 'features')
+          || Object.prototype.hasOwnProperty.call(parsed, 'featureCandidates')
+          || Object.prototype.hasOwnProperty.call(parsed, 'detectedFeatures');
+        if (!hasFeatureKey || !featureSource) throw new Error('missing-features-array');
+        if (featureSource.length === 0) throw new Error('empty-features-array');
+        const parsedFeatures = featureSource.map(normalizeImportedFeature).filter(Boolean);
+        if (!parsedFeatures.length) throw new Error('empty-features-array');
+        return { parsed, parsedFeatures };
+      }
+
+      function buildFeatureListForCleanupPrompt(projectId) {
+        return S.features
+          .filter(f => f.projectId === projectId)
+          .map(f => `- [${f.id}] ${f.title} | ${f.status} | ${f.category} | ${shorten(f.description || '', 180)}`)
+          .join('\n') || '- keine';
+      }
+
+      function buildIncomingListForCleanupPrompt(incomingFeatures) {
+        return incomingFeatures
+          .map((f, idx) => `- [IN-${idx + 1}] ${f.title} | ${f.status} | ${f.category} | ${shorten(f.description || '', 180)}`)
+          .join('\n') || '- keine';
+      }
+
+      function buildCleanupPrompt(projectId, incomingFeatures, mode) {
+        const projectTitle = getProjectTitle(projectId) || 'Unbekanntes Projekt';
+        const existingFeatures = buildFeatureListForCleanupPrompt(projectId);
+        const incomingList = buildIncomingListForCleanupPrompt(incomingFeatures);
+        const promptModeLine = mode === 'project-dedupe'
+          ? 'Ziel ist deduplizieren und ähnliche bzw. veraltete Features markieren.'
+          : 'Ziel ist Import-Cleanup: bestehende Features aktualisieren statt unnötig neu anzulegen.';
+        return [
+          'AUFGABE',
+          'Führe ein defensives Feature-Cleanup durch. Gib ausschließlich gültiges JSON zurück (kein Markdown, kein Zusatztext).',
+          promptModeLine,
+          '',
+          'PROJEKT',
+          '- projectId: ' + projectId,
+          '- projectTitle: ' + projectTitle,
+          '',
+          'BESTEHENDE FEATURES (ID | Titel | Status | Kategorie | Beschreibung)',
+          existingFeatures,
+          '',
+          mode === 'project-dedupe'
+            ? 'ZU PRÜFENDE FEATURES (identisch mit Bestand für interne Dedupe-Prüfung)'
+            : 'NEU ERKANNTE FEATURES AUS IMPORT',
+          incomingList,
+          '',
+          'ANWEISUNGEN',
+          '- Erzeuge nur Vorschläge, keine endgültigen Löschungen.',
+          '- type darf nur sein: "match-existing" | "update-existing" | "new-feature" | "duplicate-of" | "probably-stale".',
+          '- Bei match-existing / update-existing / duplicate-of / probably-stale muss targetFeatureId gesetzt werden, wenn möglich.',
+          '- duplicate-of darf nur Vorschlag sein; nichts direkt löschen.',
+          '- resolvedStatus darf nur sein: Idee|geprüft|geplant|in Arbeit|teilweise umgesetzt|umgesetzt',
+          '- resolvedCategory darf nur sein: UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges',
+          '- confidence darf nur sein: hoch|mittel|niedrig',
+          '- rationale: kurzer nachvollziehbarer Grund.',
+          '',
+          'AUSGABEFORMAT JSON',
+          '{',
+          '  "proposals": [',
+          '    {',
+          '      "type": "match-existing|update-existing|new-feature|duplicate-of|probably-stale",',
+          '      "targetFeatureId": "",',
+          '      "incomingTitle": "",',
+          '      "resolvedTitle": "",',
+          '      "resolvedDescription": "",',
+          '      "resolvedCategory": "",',
+          '      "resolvedStatus": "",',
+          '      "confidence": "hoch|mittel|niedrig",',
+          '      "rationale": ""',
+          '    }',
+          '  ],',
+          '  "summary": ""',
+          '}'
+        ].join('\n');
+      }
+
+      function startCleanupReview(projectId, incomingFeatures, rawAnalysisJson, mode) {
+        const prompt = buildCleanupPrompt(projectId, incomingFeatures, mode);
+        ui.cleanupReview.projectId = projectId;
+        ui.cleanupReview.incomingFeatures = incomingFeatures.slice();
+        ui.cleanupReview.rawAnalysisJson = rawAnalysisJson || '';
+        ui.cleanupReview.mode = mode || 'import-cleanup';
+        ui.cleanupReview.summary = '';
+        ui.cleanupReview.proposals = [];
+        ui.cleanupReview.visible = true;
+        ui.cleanupReview.versionLogged = false;
+        ui.importDraft.projectId = projectId;
+        ui.importDraft.prompt = prompt;
+        renderView();
+        navigator.clipboard.writeText(prompt)
+          .then(() => alert('Cleanup-Prompt erzeugt und in Zwischenablage kopiert.\nJSON mit Vorschlägen einfügen und "Cleanup-Vorschläge laden" klicken.'))
+          .catch(() => alert('Cleanup-Prompt erzeugt.\nJSON mit Vorschlägen einfügen und "Cleanup-Vorschläge laden" klicken.'));
+      }
+
+      function buildCleanupPromptFromPromptOutput() {
+        const text = $('promptOutput') ? $('promptOutput').value.trim() : '';
+        if (!text) return alert('Kein JSON/Prompt-Text vorhanden.');
+        const projectId = getImportTargetProjectId();
+        if (!projectId) return alert('Bitte zuerst ein Projekt auswählen.');
+        let extractedJson = null;
+        try { extractedJson = extractJsonObjectFromText(text); } catch (err) { extractedJson = null; }
+        if (!extractedJson) return alert('Kein Analyse-JSON erkannt. Für Cleanup wird ein JSON mit Features benötigt.');
+        try {
+          const prepared = parseAnalysisJsonForCleanup(extractedJson, projectId);
+          startCleanupReview(projectId, prepared.parsedFeatures, extractedJson, 'import-cleanup');
+        } catch (err) {
+          if (err && err.message === 'missing-features-array') return alert("Analyse-JSON erkannt, aber es enthält kein 'features'-Array.");
+          if (err && err.message === 'empty-features-array') return alert("Analyse-JSON erkannt, aber es wurden keine Features zurückgegeben.");
+          if (err && err.message === 'unsupported-top-level-structure') return alert('Analyse-JSON erkannt, aber die Top-Level-Struktur wird nicht unterstützt.');
+          if (err && err.message === 'invalid-analysis-json') return alert('Kein gültiges Analyse-JSON erkannt.');
+          throw err;
+        }
+      }
+
+      function buildProjectDedupePrompt() {
+        const projectId = ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : (ui.importDraft.projectId || '');
+        if (!projectId) return alert('Bitte ein konkretes Projekt auswählen.');
+        const currentFeatures = S.features
+          .filter(f => f.projectId === projectId)
+          .map(f => normalizeImportedFeature(f))
+          .filter(Boolean);
+        if (!currentFeatures.length) return alert('Dieses Projekt hat noch keine Features für Dedupe.');
+        startCleanupReview(projectId, currentFeatures, '', 'project-dedupe');
+      }
+
+      function startImportCleanupFromPrompt() {
+        const text = $('promptOutput').value.trim();
+        if (!text) return alert('Kein Text vorhanden.');
+        const projectId = getImportTargetProjectId();
+        if (!projectId) return alert('Bitte zuerst ein Projekt auswählen (HTML-Analyse oder Quick-Notiz).');
+        let extractedJson = null;
+        try { extractedJson = extractJsonObjectFromText(text); } catch (err) { extractedJson = null; }
+        if (!extractedJson) return alert('Kein Analyse-JSON erkannt. Für direkten Import nutze bei Bedarf den Fallback-Button.');
+        try {
+          const prepared = parseAnalysisJsonForCleanup(extractedJson, projectId);
+          startCleanupReview(projectId, prepared.parsedFeatures, extractedJson, 'import-cleanup');
+        } catch (err) {
+          if (err && err.message === 'missing-features-array') return alert("Analyse-JSON erkannt, aber es enthält kein 'features'-Array.");
+          if (err && err.message === 'empty-features-array') return alert("Analyse-JSON erkannt, aber es wurden keine Features zurückgegeben.");
+          if (err && err.message === 'unsupported-top-level-structure') return alert('Analyse-JSON erkannt, aber die Top-Level-Struktur wird nicht unterstützt.');
+          if (err && err.message === 'invalid-analysis-json') return alert('Kein gültiges Analyse-JSON erkannt.');
+          throw err;
+        }
+      }
+
+      function loadCleanupReviewProposals() {
+        const raw = $('cleanupReviewJsonInput') ? $('cleanupReviewJsonInput').value.trim() : '';
+        if (!raw) return alert('Bitte Cleanup-JSON einfügen.');
+        let parsed;
+        try { parsed = JSON.parse(extractJsonObjectFromText(raw)); } catch (e) {
+          return alert('Kein gültiges JSON erkannt: ' + e.message);
+        }
+        const proposals = Array.isArray(parsed.proposals) ? parsed.proposals : [];
+        if (!proposals.length) return alert('Keine Vorschläge im JSON gefunden (Schlüssel: "proposals").');
+        const validTypes = ['match-existing', 'update-existing', 'new-feature', 'duplicate-of', 'probably-stale'];
+        const validConfidence = ['hoch', 'mittel', 'niedrig'];
+        ui.cleanupReview.proposals = proposals.map((p, i) => ({
+          _idx: i,
+          type: validTypes.includes(p.type) ? p.type : 'new-feature',
+          targetFeatureId: String(p.targetFeatureId || '').trim(),
+          incomingTitle: String(p.incomingTitle || '').trim(),
+          resolvedTitle: String(p.resolvedTitle || '').trim(),
+          resolvedDescription: String(p.resolvedDescription || '').trim(),
+          resolvedCategory: FEATURE_CATEGORIES.includes(p.resolvedCategory) ? p.resolvedCategory : 'Sonstiges',
+          resolvedStatus: FEATURE_STATUS.includes(p.resolvedStatus) ? p.resolvedStatus : 'Idee',
+          confidence: validConfidence.includes(String(p.confidence || '').trim()) ? String(p.confidence || '').trim() : 'mittel',
+          rationale: String(p.rationale || '').trim(),
+          _done: false
+        }));
+        ui.cleanupReview.summary = String(parsed.summary || '').trim();
+        ui.cleanupReview.visible = true;
+        if (
+          !ui.cleanupReview.versionLogged &&
+          ui.cleanupReview.mode === 'import-cleanup' &&
+          ui.cleanupReview.projectId &&
+          ui.cleanupReview.rawAnalysisJson &&
+          ui.cleanupReview.proposals.length
+        ) {
+          try {
+            const parsedAnalysis = JSON.parse(ui.cleanupReview.rawAnalysisJson);
+            const comparisonToPrevious = compareFeaturesToPreviousVersion(ui.cleanupReview.projectId, ui.cleanupReview.incomingFeatures || []);
+            S.importVersions.push(createImportVersionEntry(
+              ui.cleanupReview.projectId,
+              'analysis-json-cleanup',
+              'Cleanup Review gestartet',
+              ui.cleanupReview.rawAnalysisJson,
+              parsedAnalysis,
+              ui.cleanupReview.incomingFeatures || [],
+              comparisonToPrevious
+            ));
+            ui.cleanupReview.versionLogged = true;
+            save();
+          } catch (err) {
+            console.warn('Import-Version für Cleanup konnte nicht gespeichert werden:', err);
+          }
+        }
+        renderView();
+      }
+
+      function resolveCleanupTargetFeature(proposal) {
+        if (!proposal) return null;
+        const pid = ui.cleanupReview.projectId || '';
+        if (proposal.targetFeatureId) {
+          const byId = S.features.find(x => x.id === proposal.targetFeatureId && (!pid || x.projectId === pid));
+          if (byId) return byId;
+        }
+        if (proposal.resolvedTitle) {
+          return getMatchingProjectFeature(pid, proposal.resolvedTitle);
+        }
+        if (proposal.incomingTitle) {
+          return getMatchingProjectFeature(pid, proposal.incomingTitle);
+        }
+        return null;
+      }
+
+      function applyCleanupProposalToFeature(feature, proposal) {
+        const changes = reconcileImportedFeature(feature, {
+          status: proposal.resolvedStatus || proposal.suggestedStatus || feature.status,
+          description: proposal.resolvedDescription || '',
+          category: proposal.resolvedCategory || 'Sonstiges'
+        }, new Date().toISOString());
+        const nextTitle = proposal.resolvedTitle || proposal.incomingTitle;
+        if (nextTitle && nextTitle !== feature.title) {
+          if (confirm('Titel ändern von:\n"' + feature.title + '"\nauf:\n"' + nextTitle + '"?')) {
+            feature.title = nextTitle;
+            changes.push('title');
+          }
+        }
+        if (changes.length) feature.updatedAt = new Date().toISOString();
+        return changes;
+      }
+
+      function acceptCleanupProposalAsUpdate(idx) {
+        const proposal = ui.cleanupReview.proposals.find(p => p._idx === idx);
+        if (!proposal || proposal._done) return;
+        const feature = resolveCleanupTargetFeature(proposal);
+        if (!feature) return alert('Ziel-Feature nicht gefunden. Bitte als "neu" übernehmen oder ignorieren.');
+        applyCleanupProposalToFeature(feature, proposal);
+        proposal._done = true;
+        save();
+        renderView();
+      }
+
+      function acceptCleanupProposalAsNew(idx) {
+        const proposal = ui.cleanupReview.proposals.find(p => p._idx === idx);
+        if (!proposal || proposal._done) return;
+        const projectId = ui.cleanupReview.projectId || '';
+        const title = proposal.resolvedTitle || proposal.incomingTitle;
+        if (!title) return alert('Kein Titel vorhanden.');
+        S.features.push(ensureFeatureDefaults({
+          id: uid('f'),
+          projectId,
+          title,
+          description: proposal.resolvedDescription || 'Aus Cleanup-Review übernommen.',
+          category: proposal.resolvedCategory || 'Sonstiges',
+          status: proposal.resolvedStatus || 'geprüft',
+          priority: 'mittel',
+          sourceType: 'cleanup-review',
+          sourceNoteIds: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }));
+        proposal._done = true;
+        save();
+        renderView();
+      }
+
+      function markCleanupProposalAsDuplicate(idx) {
+        const proposal = ui.cleanupReview.proposals.find(p => p._idx === idx);
+        if (!proposal || proposal._done) return;
+        const feature = resolveCleanupTargetFeature(proposal);
+        if (!feature) {
+          proposal._done = true;
+          renderView();
+          return;
+        }
+        const marker = `[Dup-Hinweis] ${proposal.incomingTitle || proposal.resolvedTitle || 'Ähnliches Feature'}${proposal.rationale ? ' – ' + proposal.rationale : ''}`;
+        const existingDescription = String(feature.description || '').trim();
+        if (!existingDescription.includes(marker)) {
+          feature.description = existingDescription ? (existingDescription + '\n\n' + marker) : marker;
+          feature.updatedAt = new Date().toISOString();
+        }
+        proposal._done = true;
+        save();
+        renderView();
+      }
+
+      function ignoreCleanupProposal(idx) {
+        const proposal = ui.cleanupReview.proposals.find(p => p._idx === idx);
+        if (!proposal) return;
+        proposal._done = true;
+        renderView();
+      }
+
+      function clearCleanupReview() {
+        ui.cleanupReview = { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', visible: false, versionLogged: false };
+        renderView();
+      }
+
+      function renderCleanupReviewSection() {
+        if (!ui.cleanupReview.visible) return '';
+        const proposals = ui.cleanupReview.proposals || [];
+        const typeLabel = { 'match-existing': 'Match', 'update-existing': 'Update', 'new-feature': 'Neu', 'duplicate-of': 'Dublette?', 'probably-stale': 'Veraltet?' };
+        const typeColor = { 'match-existing': 'var(--blue)', 'update-existing': 'var(--accent-2)', 'new-feature': 'var(--green)', 'duplicate-of': 'var(--yellow)', 'probably-stale': 'var(--ink-dim)' };
+        const modeLabel = ui.cleanupReview.mode === 'project-dedupe' ? 'Projekt-Dedupe' : 'Import-Cleanup';
+        return `
+          <details open style="margin-top:10px;">
+            <summary style="font-weight:700;">Cleanup-Review (${modeLabel}) · ${proposals.filter(p=>!p._done).length} offen</summary>
+            <div style="margin-top:8px;" class="field">
+              <label for="cleanupReviewJsonInput">Cleanup-JSON einfügen</label>
+              <textarea id="cleanupReviewJsonInput" style="min-height:100px;font-family:var(--font-mono);font-size:12px;" placeholder='{"proposals":[...]}'></textarea>
+              <div class="stack-row" style="margin-top:6px;">
+                <button class="btn btn-primary" id="btnLoadCleanupReview">Cleanup-Vorschläge laden</button>
+                <button class="btn" id="btnClearCleanupReview">Cleanup schließen</button>
+              </div>
+              ${ui.cleanupReview.summary ? `<div class="mini" style="margin-top:8px;">Summary: ${escapeHtml(ui.cleanupReview.summary)}</div>` : ''}
+            </div>
+            ${proposals.length ? `
+              <div class="list" style="margin-top:10px;">
+                ${proposals.map(p => `
+                  <div class="item" style="${p._done ? 'opacity:0.45;' : ''}border-left:3px solid ${typeColor[p.type] || 'var(--border)'}">
+                    <div class="row-top">
+                      <strong>${escapeHtml(p.resolvedTitle || p.incomingTitle || '—')}</strong>
+                      <span class="pill">${typeLabel[p.type] || p.type}</span>
+                    </div>
+                    ${p.incomingTitle ? `<div class="mini">Import: ${escapeHtml(p.incomingTitle)}</div>` : ''}
+                    ${p.targetFeatureId ? `<div class="mini">Ziel-ID: ${escapeHtml(p.targetFeatureId)}</div>` : ''}
+                    ${p.resolvedDescription ? `<div class="item-desc">${escapeHtml(p.resolvedDescription)}</div>` : ''}
+                    <div class="mini">Confidence: ${escapeHtml(p.confidence)}</div>
+                    ${p.rationale ? `<div class="mini" style="color:var(--ink-dim)">Grund: ${escapeHtml(p.rationale)}</div>` : ''}
+                    ${p._done ? '<div class="mini">✓ erledigt</div>' : `
+                      <div class="stack-row">
+                        <button class="btn" data-cleanup-accept-update="${p._idx}">Bestehendes aktualisieren</button>
+                        <button class="btn" data-cleanup-accept-new="${p._idx}">Als neues Feature</button>
+                        ${p.type === 'duplicate-of' ? `<button class="btn" data-cleanup-mark-duplicate="${p._idx}">Als Dublette markieren</button>` : ''}
+                        <button class="btn" data-cleanup-ignore="${p._idx}">Ignorieren</button>
+                      </div>
+                    `}
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
+          </details>
+        `;
+      }
+
+      // ─────────────────────────────────────────────────────────────────────────
+
       function copyPrompt() {
         const text = $('promptOutput').value;
         if (!text.trim()) return;
@@ -2431,35 +2807,9 @@
         if (!projectId) return alert('Bitte zuerst ein Projekt auswählen (HTML-Analyse oder Quick-Notiz).');
 
         let extractedJson = null;
-        try {
-          extractedJson = extractJsonObjectFromText(text);
-        } catch (err) {
-          extractedJson = null;
-        }
-
+        try { extractedJson = extractJsonObjectFromText(text); } catch (err) { extractedJson = null; }
         if (extractedJson) {
-          try {
-            const result = importJsonAnalysisFromPrompt(extractedJson, projectId);
-            save();
-            renderProjectSelects();
-            renderView();
-            return alert(
-              'Reconciliation abgeschlossen:\n'
-              + '- ' + result.reconciliation.created.length + ' neue Features erstellt\n'
-              + '- ' + result.reconciliation.updated.length + ' bestehende Features aktualisiert\n'
-              + '- ' + result.reconciliation.unchanged.length + ' unverändert\n'
-              + '- ' + result.reconciliation.possibleStaleFeatures.length + ' mögliche stale Features\n'
-              + '- ' + result.comparisonToPrevious.addedFeatures.length + ' neu ggü. letzter Import-Version\n'
-              + '- ' + result.comparisonToPrevious.updatedFeatures.length + ' geändert ggü. letzter Import-Version\n'
-              + '- ' + result.comparisonToPrevious.missingFromNewVersion.length + ' fehlen ggü. letzter Import-Version'
-            );
-          } catch (err) {
-            if (err && err.message === 'missing-features-array') return alert("Analyse-JSON erkannt, aber es enthält kein 'features'-Array.");
-            if (err && err.message === 'empty-features-array') return alert("Analyse-JSON erkannt, aber es wurden keine Features zurückgegeben.");
-            if (err && err.message === 'unsupported-top-level-structure') return alert('Analyse-JSON erkannt, aber die Top-Level-Struktur wird nicht unterstützt.');
-            if (err && err.message === 'invalid-analysis-json') return alert('Kein gültiges Analyse-JSON erkannt.');
-            throw err;
-          }
+          return alert('Analyse-JSON erkannt. Bitte "Import-Cleanup starten" verwenden, damit nichts automatisch übernommen wird.');
         }
 
         const lines = text.split(/\n+/).map(s => s.trim()).filter(Boolean).filter(s => s.startsWith('- '));
