@@ -654,10 +654,11 @@
       }
 
       function renderStats() {
+        const visibleFeatures = getVisibleFeatures(S.features);
         const stats = {
           Projekte: S.projects.filter(p => p.status !== 'archiviert').length,
-          Features: S.features.length,
-          Offene: S.features.filter(f => ['Idee','geprüft','geplant','in Arbeit','teilweise umgesetzt'].includes(f.status)).length,
+          Features: visibleFeatures.length,
+          Offene: visibleFeatures.filter(f => ['Idee','geprüft','geplant','in Arbeit','teilweise umgesetzt'].includes(f.status)).length,
           Chats: (S.chats || []).filter(c => c.status === 'aktiv').length
         };
         const el = $('stats');
@@ -771,6 +772,7 @@
         qq('[data-cleanup-accept-new]').forEach(btn => btn.addEventListener('click', () => acceptCleanupProposalAsNew(+btn.dataset.cleanupAcceptNew)));
         qq('[data-cleanup-mark-duplicate]').forEach(btn => btn.addEventListener('click', () => markCleanupProposalAsDuplicate(+btn.dataset.cleanupMarkDuplicate)));
         qq('[data-cleanup-ignore]').forEach(btn => btn.addEventListener('click', () => ignoreCleanupProposal(+btn.dataset.cleanupIgnore)));
+        qq('[data-restore-feature]').forEach(btn => btn.addEventListener('click', () => restoreFeatureFromTrash(btn.dataset.restoreFeature)));
 
         qq('[data-edit-project]').forEach(btn => btn.addEventListener('click', () => editProject(btn.dataset.editProject)));
         qq('[data-delete-project]').forEach(btn => btn.addEventListener('click', () => deleteProject(btn.dataset.deleteProject)));
@@ -794,7 +796,7 @@
       function renderSidebarProjects() {
         const wrap = $('sidebarProjects');
         const isAll = ui.activeProjectId === ALL_PROJECTS_KEY;
-        const featureCountByProjectId = S.features.reduce((acc, f) => {
+        const featureCountByProjectId = getVisibleFeatures(S.features).reduce((acc, f) => {
           const pid = f.projectId || '';
           acc[pid] = (acc[pid] || 0) + 1;
           return acc;
@@ -892,7 +894,8 @@
           ui.editingProjectId = p.id;
         }
 
-        const projectFeatures = S.features.filter(f => f.projectId === p.id);
+        const projectFeatures = getVisibleFeatures(S.features).filter(f => f.projectId === p.id);
+        const trashedFeatures = getTrashedFeaturesForProject(p.id);
         const projectNotes = S.notes.filter(n => n.projectId === p.id).sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
         const projectChats = S.chats.filter(c => c.projectId === p.id).sort((a,b) => (b.updatedAt||'').localeCompare(a.updatedAt||''));
         const latestAnalysis = S.analyses.filter(a => a.projectId === p.id).sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''))[0];
@@ -1042,6 +1045,28 @@
             </div>
             <div class="stack-row">
               <button class="btn" id="btnBuildProjectDedupePrompt">Bestehende Features auf Dubletten prüfen</button>
+            </div>
+          </details>
+          <details style="margin-bottom:12px;" ${trashedFeatures.length ? 'open' : ''}>
+            <summary style="font-weight:700;">Papierkorb (${trashedFeatures.length})</summary>
+            <div style="margin-top:10px;" class="list">
+              ${trashedFeatures.length ? trashedFeatures.map(tf => {
+                const mergeTarget = tf.mergedIntoFeatureId ? S.features.find(x => x.id === tf.mergedIntoFeatureId) : null;
+                return `
+                  <div class="item" style="border-left:3px solid var(--yellow);">
+                    <div class="row-top">
+                      <strong>${escapeHtml(tf.title || 'Ohne Titel')}</strong>
+                      <span class="pill">im Papierkorb</span>
+                    </div>
+                    <div class="mini">Grund: ${escapeHtml(tf.trashReason || '—')} · Workflow: ${escapeHtml(tf.trashedByWorkflow || '—')}</div>
+                    <div class="mini">Gelöscht am: ${escapeHtml(formatDateTime(tf.trashedAt))}</div>
+                    ${tf.mergedIntoFeatureId ? `<div class="mini">Zusammengeführt mit: ${escapeHtml(mergeTarget ? mergeTarget.title : tf.mergedIntoFeatureId)}</div>` : ''}
+                    <div class="stack-row">
+                      <button class="btn" data-restore-feature="${tf.id}">Wiederherstellen</button>
+                    </div>
+                  </div>
+                `;
+              }).join('') : '<div class="notice">Keine Features im Papierkorb.</div>'}
             </div>
           </details>
           ${renderCleanupReviewSection()}
@@ -1367,7 +1392,7 @@
                 <div class="item-desc">${escapeHtml(p.summary || '')}</div>
                 <div class="meta">
                   <span class="pill">${escapeHtml(p.type || '—')}</span>
-                  <span class="pill">${S.features.filter(f => f.projectId === p.id).length} Features</span>
+                  <span class="pill">${getVisibleFeatures(S.features).filter(f => f.projectId === p.id).length} Features</span>
                   <span class="pill">${S.notes.filter(n => n.projectId === p.id && !n.processed).length} Notizen</span>
                 </div>
                 <div class="stack-row">
@@ -1403,7 +1428,7 @@
         const st = ui.filters.status || 'alle';
         const cat = ui.filters.category || 'alle';
         const term = (ui.filters.search || '').trim().toLowerCase();
-        return S.features.filter(f => {
+        return getVisibleFeatures(S.features).filter(f => {
           if (!ui.showAllProjects && p !== ALL_PROJECTS_KEY && f.projectId !== p) return false;
           if (st !== 'alle' && f.status !== st) return false;
           if (cat !== 'alle' && f.category !== cat) return false;
@@ -2091,7 +2116,7 @@
       }
 
       function buildFeatureListForCleanupPrompt(projectId) {
-        return S.features
+        return getVisibleFeatures(S.features)
           .filter(f => f.projectId === projectId)
           .map(f => `- [${f.id}] ${f.title} | ${f.status} | ${f.category} | ${shorten(f.description || '', 180)}`)
           .join('\n') || '- keine';
@@ -2127,8 +2152,10 @@
             '- Erzeuge nur Vorschläge, keine endgültigen Löschungen.',
             '- type soll primär sein: "duplicate-of" | "update-existing" | "probably-stale".',
             '- "new-feature" möglichst nicht verwenden.',
-            '- targetFeatureId soll das Feature sein, das behalten/aktualisiert werden soll.',
-            '- duplicateFeatureId soll das mutmaßliche Duplikat enthalten, falls vorhanden.',
+            '- targetFeatureId ist das Feature, das behalten werden soll.',
+            '- duplicateFeatureId ist das Feature, das in den Papierkorb verschoben werden soll.',
+            '- Bei "duplicate-of" müssen targetFeatureId und duplicateFeatureId gesetzt sein, wenn es eine echte Dublette ist.',
+            '- Verwende "duplicate-of" ohne duplicateFeatureId nur bei Unsicherheit; dann confidence auf "niedrig".',
             '- resolvedStatus darf nur sein: Idee|geprüft|geplant|in Arbeit|teilweise umgesetzt|umgesetzt',
             '- resolvedCategory darf nur sein: UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges',
             '- confidence darf nur sein: hoch|mittel|niedrig',
@@ -2242,7 +2269,7 @@
       function buildProjectDedupePrompt() {
         const projectId = ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : (ui.importDraft.projectId || '');
         if (!projectId) return alert('Bitte ein konkretes Projekt auswählen.');
-        const currentFeatures = S.features
+        const currentFeatures = getVisibleFeatures(S.features)
           .filter(f => f.projectId === projectId)
           .map(f => normalizeImportedFeature(f))
           .filter(Boolean);
@@ -2415,17 +2442,33 @@
       function markCleanupProposalAsDuplicate(idx) {
         const proposal = ui.cleanupReview.proposals.find(p => p._idx === idx);
         if (!proposal || proposal._done) return;
-        const feature = resolveCleanupTargetFeature(proposal);
-        if (!feature) {
-          proposal._done = true;
-          renderView();
-          return;
-        }
-        const marker = `[Dup-Hinweis] ${proposal.incomingTitle || proposal.resolvedTitle || 'Ähnliches Feature'}${proposal.rationale ? ' – ' + proposal.rationale : ''}`;
-        const existingDescription = String(feature.description || '').trim();
-        if (!existingDescription.includes(marker)) {
-          feature.description = existingDescription ? (existingDescription + '\n\n' + marker) : marker;
-          feature.updatedAt = new Date().toISOString();
+        const targetFeature = resolveCleanupTargetFeature(proposal);
+        const duplicateFeatureId = String(proposal.duplicateFeatureId || '').trim();
+        const duplicateFeature = duplicateFeatureId ? S.features.find(f => f.id === duplicateFeatureId) : null;
+        if (duplicateFeature) {
+          const keepTitle = targetFeature ? targetFeature.title : (proposal.targetFeatureId || '—');
+          const duplicateTitle = duplicateFeature.title || duplicateFeature.id;
+          const ok = confirm(
+            'Feature als Dublette in den Papierkorb verschieben?\n' +
+            'Behalten: ' + keepTitle + '\n' +
+            'Verschieben: ' + duplicateTitle
+          );
+          if (!ok) return;
+          moveFeatureToTrash(duplicateFeature.id, {
+            reason: proposal.rationale || 'Als Dublette markiert',
+            workflow: ui.cleanupReview.mode || 'cleanup-review',
+            mergedIntoFeatureId: proposal.targetFeatureId || ''
+          });
+        } else {
+          if (targetFeature) {
+            const marker = `[Dup-Hinweis] ${proposal.incomingTitle || proposal.resolvedTitle || 'Ähnliches Feature'}${proposal.rationale ? ' – ' + proposal.rationale : ''}`;
+            const existingDescription = String(targetFeature.description || '').trim();
+            if (!existingDescription.includes(marker)) {
+              targetFeature.description = existingDescription ? (existingDescription + '\n\n' + marker) : marker;
+              targetFeature.updatedAt = new Date().toISOString();
+            }
+          }
+          alert('Kein duplicateFeatureId vorhanden oder Feature nicht gefunden. Es wurde nichts in den Papierkorb verschoben.');
         }
         proposal._done = true;
         save();
@@ -2473,6 +2516,7 @@
                     ${p.incomingTitle ? `<div class="mini">Import: ${escapeHtml(p.incomingTitle)}</div>` : ''}
                     ${p.targetFeatureId ? `<div class="mini">Ziel-ID: ${escapeHtml(p.targetFeatureId)}</div>` : ''}
                     ${p.duplicateFeatureId ? `<div class="mini">Duplikat-ID: ${escapeHtml(p.duplicateFeatureId)}</div>` : ''}
+                    ${p.duplicateFeatureId ? `<div class="mini">Duplikat-Titel: ${escapeHtml(((S.features.find(f => f.id === p.duplicateFeatureId) || {}).title) || '—')}</div>` : ''}
                     ${p.resolvedDescription ? `<div class="item-desc">${escapeHtml(p.resolvedDescription)}</div>` : ''}
                     <div class="mini">Confidence: ${escapeHtml(p.confidence)}</div>
                     ${p.rationale ? `<div class="mini" style="color:var(--ink-dim)">Grund: ${escapeHtml(p.rationale)}</div>` : ''}
@@ -2480,7 +2524,7 @@
                       <div class="stack-row">
                         <button class="btn" data-cleanup-accept-update="${p._idx}">Bestehendes aktualisieren</button>
                         <button class="btn" data-cleanup-accept-new="${p._idx}">Als neues Feature</button>
-                        ${p.type === 'duplicate-of' ? `<button class="btn" data-cleanup-mark-duplicate="${p._idx}">Als Dublette markieren</button>` : ''}
+                        ${p.type === 'duplicate-of' ? `<button class="btn" data-cleanup-mark-duplicate="${p._idx}">Dublette in Papierkorb</button>` : ''}
                         <button class="btn" data-cleanup-ignore="${p._idx}">Ignorieren</button>
                       </div>
                     `}
@@ -3432,6 +3476,10 @@
           category: 'Sonstiges',
           sourceType: 'manual',
           sourceNoteIds: [],
+          trashedAt: '',
+          trashReason: '',
+          trashedByWorkflow: '',
+          mergedIntoFeatureId: '',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         }, feature || {});
@@ -3471,6 +3519,63 @@
           projectTitle: ''
         }, clone.trello.lastSyncedSnapshot || {});
         return clone;
+      }
+
+      function isFeatureTrashed(feature) {
+        return !!(feature && String(feature.trashedAt || '').trim());
+      }
+
+      function getVisibleFeatures(features) {
+        return (features || []).filter(f => !isFeatureTrashed(f));
+      }
+
+      function getTrashedFeaturesForProject(projectId) {
+        return (S.features || [])
+          .filter(f => f.projectId === projectId && isFeatureTrashed(f))
+          .sort((a, b) => String(b.trashedAt || '').localeCompare(String(a.trashedAt || '')));
+      }
+
+      function moveFeatureToTrash(featureId, options) {
+        const feature = S.features.find(x => x.id === featureId);
+        if (!feature) return null;
+        Object.assign(feature, ensureFeatureDefaults(feature));
+        const opts = Object.assign({
+          reason: '',
+          workflow: '',
+          mergedIntoFeatureId: ''
+        }, options || {});
+        const now = new Date().toISOString();
+        feature.trashedAt = now;
+        feature.trashReason = String(opts.reason || '').trim();
+        feature.trashedByWorkflow = String(opts.workflow || '').trim();
+        feature.mergedIntoFeatureId = String(opts.mergedIntoFeatureId || '').trim();
+        feature.updatedAt = now;
+        const hadTrelloLink = !!(feature.trello && (feature.trello.enabled === true || feature.trello.cardId));
+        if (hadTrelloLink) {
+          feature.trello.syncState = 'ignored';
+          feature.trello.syncBlockedReason = 'trashed';
+          feature.trello.lastSyncError = 'feature-trashed';
+        }
+        return feature;
+      }
+
+      function restoreFeatureFromTrash(featureId) {
+        const feature = S.features.find(x => x.id === featureId);
+        if (!feature) return;
+        Object.assign(feature, ensureFeatureDefaults(feature));
+        feature.trashedAt = '';
+        feature.trashReason = '';
+        feature.trashedByWorkflow = '';
+        feature.mergedIntoFeatureId = '';
+        feature.updatedAt = new Date().toISOString();
+        if (feature.trello && feature.trello.syncBlockedReason === 'trashed') {
+          feature.trello.syncBlockedReason = '';
+          feature.trello.lastSyncError = '';
+          if (feature.trello.cardId) feature.trello.syncState = 'dirty-roadtrip';
+          else feature.trello.syncState = 'unlinked';
+        }
+        save();
+        renderView();
       }
 
       function getFeatureSnapshot(feature) {
@@ -3985,7 +4090,7 @@
       async function syncActiveProjectToTrello() {
         const projectId = ui.editingProjectId || ui.activeProjectId;
         if (!projectId || projectId === ALL_PROJECTS_KEY) return alert('Kein konkretes Projekt ausgewählt.');
-        const features = S.features.filter(f => f.projectId === projectId);
+        const features = getVisibleFeatures(S.features).filter(f => f.projectId === projectId);
         if (!features.length) return alert('Dieses Projekt hat keine Features.');
         if (!confirm(features.length + ' Features nach Trello synchronisieren?')) return;
         let ok = 0;
