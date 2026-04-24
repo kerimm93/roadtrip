@@ -505,6 +505,7 @@
         projectEditMode: false,
         importDraft: { html: '', prompt: '', analysisPrompt: '', cleanupPrompt: '', projectId: '' },
         chatWorkflow: { projectId: '', sourceChatId: '', sprintGoal: '', prompt: '', mode: '' },
+        dailyLogQuery: { prompt: '' },
         noteReview: { proposals: [], projectId: '', rawText: '', visible: false },
         cleanupReview: { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', visible: false, versionLogged: false }
       };
@@ -854,6 +855,14 @@
           st.prompt = buildSprintPromptFromMainChat(projectId, st.sprintGoal || '');
           renderView();
         });
+        if ($('btnBuildDailyLogProjectPrompt')) $('btnBuildDailyLogProjectPrompt').addEventListener('click', () => {
+          ui.dailyLogQuery.prompt = buildDailyLogProjectPrompt();
+          renderView();
+        });
+        if ($('dailyLogProjectPromptOutput')) $('dailyLogProjectPromptOutput').addEventListener('input', e => {
+          ui.dailyLogQuery.prompt = e.target.value;
+        });
+        if ($('btnCopyDailyLogProjectPrompt')) $('btnCopyDailyLogProjectPrompt').addEventListener('click', () => copyPrompt('dailyLogProjectPromptOutput'));
       }
 
       function renderSidebarProjects() {
@@ -1153,6 +1162,40 @@
         ].join('\n');
       }
 
+      function buildDailyLogProjectPrompt() {
+        const activeProjects = (S.projects || [])
+          .filter(p => p && p.status !== 'archiviert')
+          .sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')));
+        if (!activeProjects.length) return '';
+        const projectBlocks = activeProjects.map(p => {
+          const title = (p.title || 'Unbenanntes Projekt').trim() || 'Unbenanntes Projekt';
+          const summary = (p.summary || '').trim() || 'Keine Summary hinterlegt.';
+          return `## ${title}\n- Kurzbeschreibung: ${summary}\n- Relevante Fundstellen / Aussagen:\n  - ...\n  - ...\n  - ...`;
+        });
+        return [
+          'Hier ist meine aktuelle Liste aktiver Projekte mit Kurzbeschreibung.',
+          'Bitte nutze diese Projektkontexte als wichtigste Grundlage, um Bezüge in Daily-Log-Einträgen zu erkennen.',
+          '',
+          ...projectBlocks,
+          '',
+          'Gehe den Daily-Log-Inhalt für den gewählten Zeitraum durch und sammle alle Aussagen, Notizen, Ideen, Wünsche, Probleme, Umsetzungen oder Überlegungen, die sich wahrscheinlich auf eines dieser Projekte beziehen.',
+          'Ordne jeden Fund dem wahrscheinlich passenden Projekt zu.',
+          'Wenn etwas unklar ist, setze es in einen Abschnitt "Unklar / möglicherweise projektbezogen".',
+          '',
+          'Nutze genau dieses Ausgabeformat:',
+          '## [Projektname]',
+          '- Kurzbeschreibung: ...',
+          '- Relevante Fundstellen / Aussagen:',
+          '  - ...',
+          '  - ...',
+          '  - ...',
+          '',
+          '## Unklar / möglicherweise projektbezogen',
+          '- ...',
+          '- ...'
+        ].join('\n');
+      }
+
       function renderProjectWorkspace() {
         // ── Empty state ──────────────────────────────────────────────────────
         if (ui.activeProjectId === ALL_PROJECTS_KEY || !S.projects.length) {
@@ -1182,6 +1225,7 @@
         const chatWorkflow = getChatWorkflowState(p.id);
         const chatWorkflowSource = sourceChats.find(c => c.id === chatWorkflow.sourceChatId) || null;
         const isArchivedProject = p.status === 'archiviert';
+        const activeProjects = (S.projects || []).filter(x => x && x.status !== 'archiviert');
         const latestAnalysis = S.analyses.filter(a => a.projectId === p.id).sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''))[0];
         const projectImports = getProjectImportVersions(p.id);
 
@@ -1345,6 +1389,23 @@
                 <textarea id="chatWorkflowPromptOutput" style="min-height:220px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(chatWorkflow.prompt || '')}</textarea>
                 <div class="stack-row" style="margin-top:6px;">
                   <button class="btn" id="btnCopyChatWorkflowPrompt">Copy</button>
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <details style="margin-bottom:12px;" open>
+            <summary style="font-weight:700;">Daily-Log-Abfrage</summary>
+            <div style="margin-top:10px;">
+              ${activeProjects.length ? `<div class="mini" style="margin-bottom:8px;">Aktive Projekte im Prompt: ${activeProjects.length}</div>` : '<div class="notice" style="margin-bottom:8px;">Keine aktiven Projekte gefunden.</div>'}
+              <div class="stack-row" style="margin-bottom:8px;">
+                <button class="btn btn-primary" id="btnBuildDailyLogProjectPrompt" ${activeProjects.length ? '' : 'disabled'}>Prompt: Projekte im Daily Log suchen</button>
+              </div>
+              <div class="field">
+                <label for="dailyLogProjectPromptOutput">Prompt-Ausgabe</label>
+                <textarea id="dailyLogProjectPromptOutput" style="min-height:220px;font-family:var(--font-mono);font-size:12px;" placeholder="Prompt wird hier erzeugt...">${escapeHtml((ui.dailyLogQuery && ui.dailyLogQuery.prompt) || '')}</textarea>
+                <div class="stack-row" style="margin-top:6px;">
+                  <button class="btn" id="btnCopyDailyLogProjectPrompt">Copy</button>
                 </div>
               </div>
             </div>
@@ -2878,6 +2939,10 @@
         else if (textareaId === 'chatWorkflowPromptOutput') {
           const projectId = ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : (ui.chatWorkflow && ui.chatWorkflow.projectId) || '';
           if (projectId) getChatWorkflowState(projectId).prompt = text;
+        }
+        else if (textareaId === 'dailyLogProjectPromptOutput') {
+          if (!ui.dailyLogQuery) ui.dailyLogQuery = { prompt: '' };
+          ui.dailyLogQuery.prompt = text;
         }
         else ui.importDraft.prompt = text;
         navigator.clipboard.writeText(text).then(() => alert('Text kopiert.'));
