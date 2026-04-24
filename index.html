@@ -504,6 +504,7 @@
         showAllProjects: false,
         projectEditMode: false,
         importDraft: { html: '', prompt: '', analysisPrompt: '', cleanupPrompt: '', projectId: '' },
+        chatWorkflow: { projectId: '', sourceChatId: '', sprintGoal: '', prompt: '', mode: '' },
         noteReview: { proposals: [], projectId: '', rawText: '', visible: false },
         cleanupReview: { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', visible: false, versionLogged: false }
       };
@@ -586,7 +587,9 @@
         if (!Array.isArray(S.importVersions)) S.importVersions = [];
         if (!S._lastLocalSaveAt && S._lastExported) S._lastLocalSaveAt = S._lastExported;
         if (!S._lastGistPushAt && S._lastExported) S._lastGistPushAt = S._lastExported;
+        S.projects = S.projects.map(ensureProjectDefaults);
         S.features = S.features.map(ensureFeatureDefaults);
+        S.chats = S.chats.map(ensureChatDefaults);
       }
 
       function save() {
@@ -791,6 +794,66 @@
         qq('[data-new-chat]').forEach(btn => btn.addEventListener('click', () => openChatModal(null, btn.dataset.newChat)));
         qq('[data-edit-chat]').forEach(btn => btn.addEventListener('click', () => openChatModal(btn.dataset.editChat, null)));
         qq('[data-delete-chat]').forEach(btn => btn.addEventListener('click', () => deleteChat(btn.dataset.deleteChat)));
+        qq('[data-use-chat-source]').forEach(btn => btn.addEventListener('click', () => {
+          const projectId = btn.dataset.projectId || ui.activeProjectId || '';
+          setChatWorkflowSource(projectId, btn.dataset.useChatSource || '');
+          renderView();
+        }));
+        qq('[data-set-chat-main]').forEach(btn => btn.addEventListener('click', () => {
+          const chatId = btn.dataset.setChatMain || '';
+          if (!chatId) return;
+          setSelectedChatAsMain(chatId);
+        }));
+        if ($('chatWorkflowSourceChat')) $('chatWorkflowSourceChat').addEventListener('change', e => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          setChatWorkflowSource(projectId, e.target.value || '');
+          renderView();
+        });
+        if ($('chatWorkflowSprintGoal')) $('chatWorkflowSprintGoal').addEventListener('input', e => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          getChatWorkflowState(projectId).sprintGoal = e.target.value;
+        });
+        if ($('chatWorkflowPromptOutput')) $('chatWorkflowPromptOutput').addEventListener('input', e => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          getChatWorkflowState(projectId).prompt = e.target.value;
+        });
+        if ($('btnCopyChatWorkflowPrompt')) $('btnCopyChatWorkflowPrompt').addEventListener('click', () => copyPrompt('chatWorkflowPromptOutput'));
+        if ($('btnChatWorkflowSetMain')) $('btnChatWorkflowSetMain').addEventListener('click', () => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          const sourceChatId = getChatWorkflowState(projectId).sourceChatId || '';
+          if (!sourceChatId) return alert('Bitte zuerst einen Ausgangschat auswählen.');
+          setSelectedChatAsMain(sourceChatId);
+        });
+        if ($('btnChatWorkflowBuildReturn')) $('btnChatWorkflowBuildReturn').addEventListener('click', () => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          const st = getChatWorkflowState(projectId);
+          if (!st.sourceChatId) return alert('Bitte zuerst einen Ausgangschat auswählen.');
+          st.mode = 'return-to-main';
+          st.prompt = buildReturnToMainChatPrompt(projectId, st.sourceChatId);
+          renderView();
+        });
+        if ($('btnChatWorkflowBuildBootstrap')) $('btnChatWorkflowBuildBootstrap').addEventListener('click', () => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          const st = getChatWorkflowState(projectId);
+          if (!st.sourceChatId) return alert('Bitte zuerst einen Ausgangschat auswählen.');
+          st.mode = 'bootstrap-main';
+          st.prompt = buildMainChatBootstrapPrompt(projectId, st.sourceChatId);
+          renderView();
+        });
+        if ($('btnChatWorkflowBuildSprint')) $('btnChatWorkflowBuildSprint').addEventListener('click', () => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          const st = getChatWorkflowState(projectId);
+          st.mode = 'next-sprint';
+          st.prompt = buildSprintPromptFromMainChat(projectId, st.sprintGoal || '');
+          renderView();
+        });
       }
 
       function renderSidebarProjects() {
@@ -874,6 +937,222 @@
         `;
       }
 
+      function getProjectChats(projectId) {
+        if (!projectId) return [];
+        return (S.chats || [])
+          .filter(c => c && c.projectId === projectId)
+          .map(ensureChatDefaults)
+          .sort((a, b) => String(b.updatedAt || b.startedAt || '').localeCompare(String(a.updatedAt || a.startedAt || '')));
+      }
+
+      function getProjectMainChat(projectId) {
+        if (!projectId) return null;
+        const project = S.projects.find(x => x.id === projectId);
+        if (!project || !project.mainChatId) return null;
+        const mainChat = (S.chats || []).find(c => c && c.id === project.mainChatId && c.projectId === projectId);
+        if (!mainChat) return null;
+        return ensureChatDefaults(mainChat);
+      }
+
+      function getProjectSourceChats(projectId) {
+        return getProjectChats(projectId).filter(c => ['sprint', 'execution', 'branch'].includes(String(c.type || '')));
+      }
+
+      function getChatWorkflowState(projectId) {
+        if (!projectId || projectId === ALL_PROJECTS_KEY) {
+          ui.chatWorkflow = { projectId: projectId || '', sourceChatId: '', sprintGoal: '', prompt: '', mode: '' };
+          return ui.chatWorkflow;
+        }
+        if (!ui.chatWorkflow) ui.chatWorkflow = { projectId: '', sourceChatId: '', sprintGoal: '', prompt: '', mode: '' };
+        if (ui.chatWorkflow.projectId !== projectId) {
+          ui.chatWorkflow = { projectId, sourceChatId: '', sprintGoal: '', prompt: '', mode: '' };
+        }
+        const sourceChats = getProjectSourceChats(projectId);
+        if (!ui.chatWorkflow.sourceChatId || !sourceChats.some(c => c.id === ui.chatWorkflow.sourceChatId)) {
+          ui.chatWorkflow.sourceChatId = (sourceChats[0] || {}).id || '';
+        }
+        return ui.chatWorkflow;
+      }
+
+      function setChatWorkflowSource(projectId, sourceChatId) {
+        const st = getChatWorkflowState(projectId);
+        st.sourceChatId = sourceChatId || '';
+      }
+
+      function clearProjectMainChat(projectId) {
+        if (!projectId) return;
+        const project = S.projects.find(x => x.id === projectId);
+        if (project) {
+          project.mainChatId = '';
+          project.mainChatUrl = '';
+          project.updatedAt = new Date().toISOString();
+        }
+        (S.chats || []).forEach(c => {
+          if (!c || c.projectId !== projectId) return;
+          c.mainChatId = '';
+        });
+      }
+
+      function setProjectMainChat(projectId, chatId) {
+        const project = S.projects.find(x => x.id === projectId);
+        const chat = S.chats.find(x => x.id === chatId && x.projectId === projectId);
+        if (!project || !chat) return false;
+        project.mainChatId = chat.id;
+        project.mainChatUrl = '';
+        if (chat.url && chat.url.trim()) project.mainChatUrl = chat.url.trim();
+        (S.chats || []).forEach(c => {
+          if (!c || c.projectId !== projectId) return;
+          c.mainChatId = chat.id;
+        });
+        project.updatedAt = new Date().toISOString();
+        return true;
+      }
+
+      function setSelectedChatAsMain(chatId) {
+        const chat = S.chats.find(c => c && c.id === chatId);
+        if (!chat) return alert('Chat nicht gefunden.');
+        const project = S.projects.find(p => p.id === chat.projectId);
+        if (!project) return alert('Projekt zum Chat nicht gefunden.');
+        if (project.status === 'archiviert') return alert('Archivierte Projekte können nicht im Chat-Workflow geändert werden.');
+        const needsTypeUpgrade = chat.type !== 'project-main';
+        if (needsTypeUpgrade) {
+          const ok = confirm('Dieser Chat ist kein "project-main". Soll der Typ auf "project-main" geändert werden?');
+          if (!ok) return;
+          chat.type = 'project-main';
+        }
+        if (!setProjectMainChat(project.id, chat.id)) return alert('Hauptchat konnte nicht gesetzt werden.');
+        chat.mainChatId = chat.id;
+        chat.updatedAt = new Date().toISOString();
+        save();
+        renderView();
+      }
+
+      function getRelevantFeatureTitles(projectId, maxItems) {
+        const projectFeatures = getVisibleFeatures(S.features).filter(f => f.projectId === projectId);
+        const openStatuses = ['Idee', 'geprüft', 'geplant', 'in Arbeit', 'teilweise umgesetzt'];
+        const sorted = projectFeatures.slice().sort((a, b) => {
+          const aOpen = openStatuses.includes(a.status) ? 1 : 0;
+          const bOpen = openStatuses.includes(b.status) ? 1 : 0;
+          if (aOpen !== bOpen) return bOpen - aOpen;
+          return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
+        });
+        return sorted.slice(0, Math.max(1, maxItems || 8)).map(f => `- ${f.title} (${f.status})`);
+      }
+
+      function getRelevantUnprocessedNotes(projectId, maxItems) {
+        return (S.notes || [])
+          .filter(n => n && n.projectId === projectId && !n.processed && String(n.text || '').trim())
+          .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+          .slice(0, Math.max(0, maxItems || 5))
+          .map(n => '- ' + shorten(String(n.text || '').trim(), 160));
+      }
+
+      function buildReturnToMainChatPrompt(projectId, sourceChatId) {
+        const project = S.projects.find(p => p.id === projectId);
+        const sourceChat = S.chats.find(c => c.id === sourceChatId && c.projectId === projectId);
+        const mainChat = getProjectMainChat(projectId);
+        if (!project || !sourceChat || !mainChat) return '';
+        const featureLines = getRelevantFeatureTitles(projectId, 8);
+        const noteLines = getRelevantUnprocessedNotes(projectId, 5);
+        return [
+          'Bitte hilf mir, den Kontext sauber in den Hauptchat zurückzuführen.',
+          '',
+          '## Projektkontext',
+          `- Projekttitel: ${project.title || '—'}`,
+          `- Projektsummary: ${project.summary || '—'}`,
+          `- Aktueller Fokus: ${project.currentFocus || '—'}`,
+          `- Nächster Schritt (Projekt): ${project.nextStep || '—'}`,
+          `- Hauptchat: ${mainChat.title || '—'}${mainChat.url ? ' (' + mainChat.url + ')' : ''}`,
+          '',
+          '## Was im Sprintchat passiert ist',
+          `- Ausgangschat: ${sourceChat.title || '—'}`,
+          `- Typ/Status: ${sourceChat.type || '—'} / ${sourceChat.status || '—'}`,
+          `- URL: ${sourceChat.url || '—'}`,
+          `- Zusammenfassung: ${sourceChat.summary || '—'}`,
+          `- Nächster Schritt aus dem Ausgangschat: ${sourceChat.nextStep || '—'}`,
+          sourceChat.rawReportText ? `- Raw Report:\n${sourceChat.rawReportText}` : '- Raw Report: —',
+          '',
+          '## Offene Punkte',
+          ...(featureLines.length ? featureLines : ['- Keine offenen Features hinterlegt.']),
+          ...(noteLines.length ? ['', '## Relevante unverarbeitete Notizen', ...noteLines] : []),
+          '',
+          '## Was jetzt im Hauptchat geklärt/entschieden werden soll',
+          '- Bitte fasse die wichtigsten Ergebnisse knapp zusammen.',
+          '- Bitte markiere offene Risiken/Abhängigkeiten.',
+          '- Bitte formuliere einen klaren, priorisierten nächsten Arbeitsfokus.',
+          '- Bitte gib mir zum Schluss 3 konkrete nächste Schritte, die ich direkt ausführen kann.'
+        ].join('\n');
+      }
+
+      function buildMainChatBootstrapPrompt(projectId, sourceChatId) {
+        const project = S.projects.find(p => p.id === projectId);
+        const sourceChat = S.chats.find(c => c.id === sourceChatId && c.projectId === projectId);
+        if (!project || !sourceChat) return '';
+        const featureLines = getRelevantFeatureTitles(projectId, 8);
+        const noteLines = getRelevantUnprocessedNotes(projectId, 5);
+        return [
+          'Bitte arbeite mit mir den zentralen Hauptchat für dieses Projekt auf.',
+          'Dieser Chat soll ab jetzt der zentrale Kontextchat für das Projekt sein.',
+          '',
+          '## Projektkontext',
+          `- Projekttitel: ${project.title || '—'}`,
+          `- Projektsummary: ${project.summary || '—'}`,
+          `- Aktueller Fokus: ${project.currentFocus || '—'}`,
+          `- Nächster Schritt: ${project.nextStep || '—'}`,
+          '',
+          '## Aktueller Stand aus Ausgangschat',
+          `- Ausgangschat: ${sourceChat.title || '—'} (${sourceChat.type || '—'})`,
+          `- Status: ${sourceChat.status || '—'}`,
+          `- URL: ${sourceChat.url || '—'}`,
+          `- Zusammenfassung: ${sourceChat.summary || '—'}`,
+          `- Next Step im Ausgangschat: ${sourceChat.nextStep || '—'}`,
+          sourceChat.rawReportText ? `- Raw Report:\n${sourceChat.rawReportText}` : '- Raw Report: —',
+          '',
+          '## Wichtige offene Punkte (Features)',
+          ...(featureLines.length ? featureLines : ['- Keine offenen Features hinterlegt.']),
+          ...(noteLines.length ? ['', '## Wichtige unverarbeitete Notizen', ...noteLines] : []),
+          '',
+          '## Auftrag',
+          '- Erstelle eine belastbare, strukturierte Hauptchat-Zusammenfassung.',
+          '- Definiere den zentralen Fokus für die nächste Arbeitsphase.',
+          '- Halte offene Entscheidungen und Annahmen sichtbar fest.',
+          '- Schlage einen pragmatischen Ausführungsplan für den nächsten Sprint vor.'
+        ].join('\n');
+      }
+
+      function buildSprintPromptFromMainChat(projectId, sprintGoal) {
+        const project = S.projects.find(p => p.id === projectId);
+        const mainChat = getProjectMainChat(projectId);
+        if (!project || !mainChat) return '';
+        const featureLines = getRelevantFeatureTitles(projectId, 8);
+        const cleanGoal = String(sprintGoal || '').trim();
+        return [
+          'Bitte hilf mir, den nächsten Sprintchat vorzubereiten.',
+          '',
+          '## Projektkontext',
+          `- Projekttitel: ${project.title || '—'}`,
+          `- Projektsummary: ${project.summary || '—'}`,
+          `- Aktueller Fokus: ${project.currentFocus || '—'}`,
+          `- Nächster Schritt (Projekt): ${project.nextStep || '—'}`,
+          '',
+          '## Hauptchat-Kontext',
+          `- Hauptchat: ${mainChat.title || '—'}`,
+          `- URL: ${mainChat.url || project.mainChatUrl || '—'}`,
+          `- Hauptchat-Summary: ${mainChat.summary || '—'}`,
+          `- Hauptchat-Next Step: ${mainChat.nextStep || '—'}`,
+          '',
+          cleanGoal ? `## Sprint-Ziel / Anliegen\n${cleanGoal}\n` : '## Sprint-Ziel / Anliegen\n- Kein separates Sprint-Ziel eingetragen.\n',
+          '## Relevante offene Features',
+          ...(featureLines.length ? featureLines : ['- Keine offenen Features hinterlegt.']),
+          '',
+          '## Auftrag',
+          '- Formuliere einen klaren Sprint-Startplan.',
+          '- Begrenze den Scope auf einen fokussierten Sprint.',
+          '- Nenne Deliverables und klare Akzeptanzkriterien.',
+          '- Schlage den ersten konkreten Umsetzungsschritt vor.'
+        ].join('\n');
+      }
+
       function renderProjectWorkspace() {
         // ── Empty state ──────────────────────────────────────────────────────
         if (ui.activeProjectId === ALL_PROJECTS_KEY || !S.projects.length) {
@@ -897,7 +1176,12 @@
         const projectFeatures = getVisibleFeatures(S.features).filter(f => f.projectId === p.id);
         const trashedFeatures = getTrashedFeaturesForProject(p.id);
         const projectNotes = S.notes.filter(n => n.projectId === p.id).sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
-        const projectChats = S.chats.filter(c => c.projectId === p.id).sort((a,b) => (b.updatedAt||'').localeCompare(a.updatedAt||''));
+        const projectChats = getProjectChats(p.id);
+        const projectMainChat = getProjectMainChat(p.id);
+        const sourceChats = getProjectSourceChats(p.id);
+        const chatWorkflow = getChatWorkflowState(p.id);
+        const chatWorkflowSource = sourceChats.find(c => c.id === chatWorkflow.sourceChatId) || null;
+        const isArchivedProject = p.status === 'archiviert';
         const latestAnalysis = S.analyses.filter(a => a.projectId === p.id).sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''))[0];
         const projectImports = getProjectImportVersions(p.id);
 
@@ -1001,13 +1285,15 @@
               ${projectChats.map(c => `
                 <div class="item" style="border-left:3px solid ${c.type==='project-main'?'var(--accent)':c.type==='sprint'?'var(--blue)':c.type==='execution'?'var(--green)':'var(--yellow)'}">
                   <div class="row-top">
-                    <strong>${escapeHtml(c.title||'Ohne Titel')}</strong>
+                    <strong>${escapeHtml(c.title||'Ohne Titel')} ${p.mainChatId === c.id ? '⭐' : ''}</strong>
                     <div class="stack-row" style="gap:4px;">${renderChatTypeBadge(c.type)}${renderChatStatusBadge(c.status)}</div>
                   </div>
                   ${c.summary ? `<div class="item-desc">${escapeHtml(c.summary)}</div>` : ''}
                   ${c.nextStep ? `<div class="mini" style="color:var(--accent)">→ ${escapeHtml(c.nextStep)}</div>` : ''}
                   <div class="stack-row">
                     ${c.url && c.url.trim() ? `<a href="${escapeAttr(c.url.trim())}" target="_blank" rel="noopener" class="btn">Öffnen</a>` : ''}
+                    ${p.mainChatId !== c.id ? `<button class="btn" data-set-chat-main="${c.id}" ${isArchivedProject ? 'disabled' : ''}>Als Hauptchat setzen</button>` : '<span class="pill">Kanonischer Hauptchat</span>'}
+                    <button class="btn" data-use-chat-source="${c.id}" data-project-id="${p.id}" ${isArchivedProject ? 'disabled' : ''}>Als Ausgangschat nutzen</button>
                     <button class="btn" data-edit-chat="${c.id}">Bearbeiten</button>
                     <button class="btn btn-danger" data-delete-chat="${c.id}">×</button>
                   </div>
@@ -1017,6 +1303,50 @@
             </div>
             <div style="margin-top:8px;">
               <button class="btn btn-primary" data-new-chat="${p.id}">+ Chat / Sprint anlegen</button>
+            </div>
+          </details>
+
+          <details style="margin-bottom:12px;" open>
+            <summary style="font-weight:700;">Chat-Workflow</summary>
+            <div style="margin-top:10px;">
+              ${isArchivedProject ? '<div class="notice" style="margin-bottom:8px;">Projekt ist archiviert. Chat-Workflow-Aktionen sind deaktiviert.</div>' : ''}
+              <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;">
+                <div class="eyebrow" style="margin-bottom:6px;">Hauptchat-Status</div>
+                ${projectMainChat ? `
+                  <div class="row-top">
+                    <strong>${escapeHtml(projectMainChat.title || 'Ohne Titel')}</strong>
+                    <div class="stack-row" style="gap:4px;">${renderChatTypeBadge(projectMainChat.type)}${renderChatStatusBadge(projectMainChat.status)}</div>
+                  </div>
+                  <div class="stack-row" style="margin-top:6px;">
+                    ${projectMainChat.url ? `<a href="${escapeAttr(projectMainChat.url)}" target="_blank" rel="noopener" class="btn">Öffnen</a>` : ''}
+                    <button class="btn" data-edit-chat="${projectMainChat.id}">Bearbeiten</button>
+                  </div>
+                ` : `<div class="notice" style="margin:0;">Noch kein Hauptchat gesetzt.</div>`}
+              </div>
+              <div class="field">
+                <label for="chatWorkflowSourceChat">Ausgangschat</label>
+                <select id="chatWorkflowSourceChat">
+                  ${sourceChats.length ? sourceChats.map(c => `<option value="${escapeAttr(c.id)}" ${chatWorkflow.sourceChatId === c.id ? 'selected' : ''}>${escapeHtml(c.title || 'Ohne Titel')} · ${escapeHtml(c.type)} · ${escapeHtml(c.status || '—')}</option>`).join('') : '<option value="">— Keine Sprint-/Execution-/Branch-Chats vorhanden —</option>'}
+                </select>
+                ${chatWorkflowSource && chatWorkflowSource.url ? `<div class="mini" style="margin-top:4px;">Ausgewählt: <a href="${escapeAttr(chatWorkflowSource.url)}" target="_blank" rel="noopener">${escapeHtml(chatWorkflowSource.url)}</a></div>` : ''}
+              </div>
+              <div class="field">
+                <label for="chatWorkflowSprintGoal">Neues Sprint-Ziel / Anliegen (optional)</label>
+                <textarea id="chatWorkflowSprintGoal" style="min-height:70px;" placeholder="z.B. Checkout-Flow stabilisieren und offene Fehler beheben">${escapeHtml(chatWorkflow.sprintGoal || '')}</textarea>
+              </div>
+              <div class="stack-row" style="margin-bottom:8px;">
+                <button class="btn" id="btnChatWorkflowSetMain" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Als Hauptchat setzen</button>
+                <button class="btn" id="btnChatWorkflowBuildReturn" ${isArchivedProject || !chatWorkflow.sourceChatId || !projectMainChat ? 'disabled' : ''}>Prompt: In Hauptchat zurückkehren</button>
+                <button class="btn" id="btnChatWorkflowBuildBootstrap" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Prompt: Hauptchat neu anlegen</button>
+                <button class="btn btn-primary" id="btnChatWorkflowBuildSprint" ${isArchivedProject || !projectMainChat ? 'disabled' : ''}>Prompt: Nächsten Sprintchat starten</button>
+              </div>
+              <div class="field">
+                <label for="chatWorkflowPromptOutput">Chat-Workflow Prompt-Ausgabe</label>
+                <textarea id="chatWorkflowPromptOutput" style="min-height:220px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(chatWorkflow.prompt || '')}</textarea>
+                <div class="stack-row" style="margin-top:6px;">
+                  <button class="btn" id="btnCopyChatWorkflowPrompt">Copy</button>
+                </div>
+              </div>
             </div>
           </details>
 
@@ -1490,7 +1820,7 @@
 
       function createProjectFromData(data) {
         const now = new Date().toISOString();
-        const created = Object.assign({ id: uid('p'), createdAt: now, lastHtmlImportedAt: '', lastAnalyzedAt: '' }, data, { updatedAt: now });
+        const created = ensureProjectDefaults(Object.assign({ id: uid('p'), createdAt: now, lastHtmlImportedAt: '', lastAnalyzedAt: '' }, data, { updatedAt: now }));
         S.projects.push(created);
         return created;
       }
@@ -2545,6 +2875,10 @@
         if (!text.trim()) return;
         if (textareaId === 'analysisPromptOutput') ui.importDraft.analysisPrompt = text;
         else if (textareaId === 'cleanupPromptOutput') ui.importDraft.cleanupPrompt = text;
+        else if (textareaId === 'chatWorkflowPromptOutput') {
+          const projectId = ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : (ui.chatWorkflow && ui.chatWorkflow.projectId) || '';
+          if (projectId) getChatWorkflowState(projectId).prompt = text;
+        }
         else ui.importDraft.prompt = text;
         navigator.clipboard.writeText(text).then(() => alert('Text kopiert.'));
       }
@@ -3014,6 +3348,8 @@
           if (!title) return alert('Bitte einen Titel eintragen.');
           const now = new Date().toISOString();
           if (existing) {
+            const prevProjectId = existing.projectId || '';
+            const prevUrl = existing.url || '';
             existing.title = title;
             existing.type = modal.querySelector('#chatModalType').value;
             existing.status = modal.querySelector('#chatModalStatus').value;
@@ -3023,10 +3359,37 @@
             existing.nextStep = modal.querySelector('#chatModalNextStep').value.trim();
             existing.rawReportText = modal.querySelector('#chatModalRaw').value.trim();
             existing.updatedAt = now;
+            Object.assign(existing, ensureChatDefaults(existing));
+            const prevProject = S.projects.find(p => p.id === prevProjectId);
+            if (prevProject && prevProject.mainChatId === existing.id && prevProjectId !== existing.projectId) {
+              clearProjectMainChat(prevProjectId);
+            }
+            const currentProject = S.projects.find(p => p.id === existing.projectId);
+            if (currentProject && currentProject.mainChatId === existing.id && existing.type !== 'project-main') {
+              existing.type = 'project-main';
+            }
+            if (currentProject && currentProject.mainChatId === existing.id && prevUrl !== existing.url) {
+              currentProject.mainChatUrl = existing.url || '';
+            }
+            const parentRef = S.chats.find(c => c && c.id === existing.parentChatId);
+            if (!parentRef || parentRef.projectId !== existing.projectId) existing.parentChatId = '';
+            const mainRef = S.chats.find(c => c && c.id === existing.mainChatId);
+            if (!mainRef || mainRef.projectId !== existing.projectId) existing.mainChatId = '';
           } else {
-            S.chats.push({
+            const finalProjectId = modal.querySelector('#chatModalProject').value;
+            const workflowState = finalProjectId && finalProjectId !== ALL_PROJECTS_KEY ? getChatWorkflowState(finalProjectId) : null;
+            const workflowSourceChatId = workflowState && workflowState.sourceChatId
+              ? ((S.chats || []).some(c => c && c.id === workflowState.sourceChatId && c.projectId === finalProjectId) ? workflowState.sourceChatId : '')
+              : '';
+            const projectMainChatId = finalProjectId && finalProjectId !== ALL_PROJECTS_KEY
+              ? (((S.projects.find(p => p.id === finalProjectId) || {}).mainChatId) || '')
+              : '';
+            const validMainChatId = projectMainChatId && (S.chats || []).some(c => c && c.id === projectMainChatId && c.projectId === finalProjectId)
+              ? projectMainChatId
+              : '';
+            S.chats.push(ensureChatDefaults({
               id: uid('ch'),
-              projectId: modal.querySelector('#chatModalProject').value,
+              projectId: finalProjectId,
               title,
               type: modal.querySelector('#chatModalType').value,
               status: modal.querySelector('#chatModalStatus').value,
@@ -3034,10 +3397,11 @@
               summary: modal.querySelector('#chatModalSummary').value.trim(),
               nextStep: modal.querySelector('#chatModalNextStep').value.trim(),
               rawReportText: modal.querySelector('#chatModalRaw').value.trim(),
-              parentChatId: '',
+              parentChatId: workflowSourceChatId || '',
+              mainChatId: validMainChatId || '',
               startedAt: now,
               updatedAt: now
-            });
+            }));
           }
           save();
           renderView();
@@ -3049,6 +3413,23 @@
         const c = S.chats.find(x => x.id === id);
         if (!c) return;
         if (!confirm(`Chat "${c.title}" löschen?`)) return;
+        const project = S.projects.find(p => p.id === c.projectId);
+        const wasMainChat = !!(project && project.mainChatId === c.id);
+        if (wasMainChat) {
+          clearProjectMainChat(c.projectId);
+        } else {
+          (S.chats || []).forEach(chat => {
+            if (!chat || chat.projectId !== c.projectId) return;
+            if (chat.mainChatId === c.id) chat.mainChatId = '';
+            if (chat.parentChatId === c.id) chat.parentChatId = '';
+          });
+        }
+        if (wasMainChat) {
+          (S.chats || []).forEach(chat => {
+            if (!chat || chat.projectId !== c.projectId) return;
+            if (chat.parentChatId === c.id) chat.parentChatId = '';
+          });
+        }
         S.chats = S.chats.filter(x => x.id !== id);
         save();
         renderView();
@@ -3462,6 +3843,45 @@
         if (/(workflow|quick|inbox|note)/.test(t)) return 'Workflow';
         if (/(data|modell|state|localstorage)/.test(t)) return 'Datenmodell';
         return 'Sonstiges';
+      }
+
+      function ensureProjectDefaults(project) {
+        return Object.assign({
+          id: uid('p'),
+          title: '',
+          type: APP_TYPES[0],
+          status: PROJECT_STATUS[0],
+          summary: '',
+          tags: [],
+          mainChatUrl: '',
+          mainChatId: '',
+          driveUrl: '',
+          obsidianUrl: '',
+          currentFocus: '',
+          nextStep: '',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          lastHtmlImportedAt: '',
+          lastAnalyzedAt: ''
+        }, project || {});
+      }
+
+      function ensureChatDefaults(chat) {
+        return Object.assign({
+          id: uid('ch'),
+          projectId: '',
+          title: '',
+          type: 'sprint',
+          status: 'aktiv',
+          url: '',
+          summary: '',
+          nextStep: '',
+          rawReportText: '',
+          parentChatId: '',
+          mainChatId: '',
+          startedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }, chat || {});
       }
 
 
