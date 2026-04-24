@@ -1196,6 +1196,29 @@
         ].join('\n');
       }
 
+      function renderDailyLogQuerySection() {
+        const activeProjects = (S.projects || []).filter(x => x && x.status !== 'archiviert');
+        return `
+          <details style="margin-bottom:12px;" open>
+            <summary style="font-weight:700;">Daily-Log-Abfrage (projektübergreifend)</summary>
+            <div style="margin-top:10px;">
+              <div class="mini" style="margin-bottom:8px;">Dieser Prompt nutzt alle aktiven Projekte mit ihren Beschreibungen als Abgleichsgrundlage.</div>
+              ${activeProjects.length ? `<div class="mini" style="margin-bottom:8px;">Aktive Projekte im Prompt: ${activeProjects.length}</div>` : '<div class="notice" style="margin-bottom:8px;">Keine aktiven Projekte gefunden.</div>'}
+              <div class="stack-row" style="margin-bottom:8px;">
+                <button class="btn btn-primary" id="btnBuildDailyLogProjectPrompt" ${activeProjects.length ? '' : 'disabled'}>Prompt: Aktive Projekte im Daily Log suchen</button>
+              </div>
+              <div class="field">
+                <label for="dailyLogProjectPromptOutput">Prompt-Ausgabe</label>
+                <textarea id="dailyLogProjectPromptOutput" style="min-height:220px;font-family:var(--font-mono);font-size:12px;" placeholder="Prompt wird hier erzeugt...">${escapeHtml((ui.dailyLogQuery && ui.dailyLogQuery.prompt) || '')}</textarea>
+                <div class="stack-row" style="margin-top:6px;">
+                  <button class="btn" id="btnCopyDailyLogProjectPrompt">Copy</button>
+                </div>
+              </div>
+            </div>
+          </details>
+        `;
+      }
+
       function renderProjectWorkspace() {
         // ── Empty state ──────────────────────────────────────────────────────
         if (ui.activeProjectId === ALL_PROJECTS_KEY || !S.projects.length) {
@@ -1204,6 +1227,9 @@
             <div class="notice">Kein Projekt ausgewählt. Wähle links ein Projekt oder lege ein neues an.</div>
             <div class="stack-row" style="margin-top:10px;">
               <button class="btn btn-primary" id="btnStartNewProject">+ Neues Projekt</button>
+            </div>
+            <div style="margin-top:12px;">
+              ${renderDailyLogQuerySection()}
             </div>
           `;
         }
@@ -1225,7 +1251,6 @@
         const chatWorkflow = getChatWorkflowState(p.id);
         const chatWorkflowSource = sourceChats.find(c => c.id === chatWorkflow.sourceChatId) || null;
         const isArchivedProject = p.status === 'archiviert';
-        const activeProjects = (S.projects || []).filter(x => x && x.status !== 'archiviert');
         const latestAnalysis = S.analyses.filter(a => a.projectId === p.id).sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''))[0];
         const projectImports = getProjectImportVersions(p.id);
 
@@ -1389,23 +1414,6 @@
                 <textarea id="chatWorkflowPromptOutput" style="min-height:220px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(chatWorkflow.prompt || '')}</textarea>
                 <div class="stack-row" style="margin-top:6px;">
                   <button class="btn" id="btnCopyChatWorkflowPrompt">Copy</button>
-                </div>
-              </div>
-            </div>
-          </details>
-
-          <details style="margin-bottom:12px;" open>
-            <summary style="font-weight:700;">Daily-Log-Abfrage</summary>
-            <div style="margin-top:10px;">
-              ${activeProjects.length ? `<div class="mini" style="margin-bottom:8px;">Aktive Projekte im Prompt: ${activeProjects.length}</div>` : '<div class="notice" style="margin-bottom:8px;">Keine aktiven Projekte gefunden.</div>'}
-              <div class="stack-row" style="margin-bottom:8px;">
-                <button class="btn btn-primary" id="btnBuildDailyLogProjectPrompt" ${activeProjects.length ? '' : 'disabled'}>Prompt: Projekte im Daily Log suchen</button>
-              </div>
-              <div class="field">
-                <label for="dailyLogProjectPromptOutput">Prompt-Ausgabe</label>
-                <textarea id="dailyLogProjectPromptOutput" style="min-height:220px;font-family:var(--font-mono);font-size:12px;" placeholder="Prompt wird hier erzeugt...">${escapeHtml((ui.dailyLogQuery && ui.dailyLogQuery.prompt) || '')}</textarea>
-                <div class="stack-row" style="margin-top:6px;">
-                  <button class="btn" id="btnCopyDailyLogProjectPrompt">Copy</button>
                 </div>
               </div>
             </div>
