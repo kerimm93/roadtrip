@@ -506,6 +506,8 @@
         importDraft: { html: '', prompt: '', analysisPrompt: '', cleanupPrompt: '', projectId: '' },
         chatWorkflow: { projectId: '', sourceChatId: '', sprintGoal: '', prompt: '', mode: '' },
         chatWorkflowByProject: {},
+        chatWorkflowHandoff: { projectId: '', sourceChatId: '', rawJson: '' },
+        chatWorkflowHandoffByProject: {},
         dailyLogQuery: { prompt: '' },
         noteReview: { proposals: [], projectId: '', rawText: '', visible: false },
         cleanupReview: { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', visible: false, versionLogged: false }
@@ -819,6 +821,12 @@
           setChatWorkflowSource(projectId, e.target.value || '');
           renderView();
         });
+        if ($('chatWorkflowHandoffJson')) $('chatWorkflowHandoffJson').addEventListener('input', e => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          const handoff = getChatWorkflowHandoffState(projectId);
+          handoff.rawJson = e.target.value;
+        });
         if ($('chatWorkflowSprintGoal')) $('chatWorkflowSprintGoal').addEventListener('input', e => {
           const projectId = ui.activeProjectId || '';
           if (!projectId || projectId === ALL_PROJECTS_KEY) return;
@@ -862,6 +870,23 @@
           st.mode = 'next-sprint';
           st.prompt = buildSprintPromptFromMainChat(projectId, st.sprintGoal || '');
           renderView();
+        });
+        if ($('btnChatWorkflowBuildSprintHandoff')) $('btnChatWorkflowBuildSprintHandoff').addEventListener('click', () => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          const st = getChatWorkflowState(projectId);
+          if (!st.sourceChatId) return alert('Bitte zuerst einen Ausgangschat auswählen.');
+          st.mode = 'sprint-handoff';
+          st.prompt = buildSprintHandoffPrompt(projectId, st.sourceChatId);
+          renderView();
+        });
+        if ($('btnChatWorkflowImportHandoff')) $('btnChatWorkflowImportHandoff').addEventListener('click', () => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          const st = getChatWorkflowState(projectId);
+          const handoff = getChatWorkflowHandoffState(projectId);
+          if (!st.sourceChatId) return alert('Bitte zuerst einen Ausgangschat auswählen.');
+          importSprintHandoffFromJson(projectId, st.sourceChatId, handoff.rawJson || '');
         });
         if ($('btnBuildDailyLogProjectPrompt')) $('btnBuildDailyLogProjectPrompt').addEventListener('click', () => {
           ui.dailyLogQuery.prompt = buildDailyLogProjectPrompt();
@@ -978,6 +1003,7 @@
       function getChatWorkflowState(projectId) {
         if (!projectId || projectId === ALL_PROJECTS_KEY) {
           ui.chatWorkflow = { projectId: projectId || '', sourceChatId: '', sprintGoal: '', prompt: '', mode: '' };
+          ui.chatWorkflowHandoff = { projectId: projectId || '', sourceChatId: '', rawJson: '' };
           return ui.chatWorkflow;
         }
         if (!ui.chatWorkflowByProject || typeof ui.chatWorkflowByProject !== 'object') ui.chatWorkflowByProject = {};
@@ -992,6 +1018,28 @@
         if (!state.sourceChatId || !sourceChats.some(c => c.id === state.sourceChatId)) {
           state.sourceChatId = (sourceChats[0] || {}).id || '';
         }
+        const handoff = getChatWorkflowHandoffState(projectId);
+        if (handoff.sourceChatId !== state.sourceChatId) handoff.sourceChatId = state.sourceChatId || '';
+        return state;
+      }
+
+      function getChatWorkflowHandoffState(projectId) {
+        if (!projectId || projectId === ALL_PROJECTS_KEY) {
+          ui.chatWorkflowHandoff = { projectId: projectId || '', sourceChatId: '', rawJson: '' };
+          return ui.chatWorkflowHandoff;
+        }
+        if (!ui.chatWorkflowHandoffByProject || typeof ui.chatWorkflowHandoffByProject !== 'object') ui.chatWorkflowHandoffByProject = {};
+        const existingState = ui.chatWorkflowHandoffByProject[projectId];
+        const state = (existingState && typeof existingState === 'object')
+          ? existingState
+          : { projectId, sourceChatId: '', rawJson: '' };
+        state.projectId = projectId;
+        if (state.sourceChatId && !getProjectSourceChats(projectId).some(c => c.id === state.sourceChatId)) {
+          state.sourceChatId = '';
+          state.rawJson = '';
+        }
+        ui.chatWorkflowHandoffByProject[projectId] = state;
+        ui.chatWorkflowHandoff = state;
         return state;
       }
 
@@ -1000,7 +1048,11 @@
         const project = S.projects.find(p => p.id === projectId);
         if (!project || project.status === 'archiviert') return;
         const st = getChatWorkflowState(projectId);
+        const prevSourceChatId = st.sourceChatId || '';
         st.sourceChatId = sourceChatId || '';
+        const handoff = getChatWorkflowHandoffState(projectId);
+        if (prevSourceChatId && prevSourceChatId !== st.sourceChatId) handoff.rawJson = '';
+        handoff.sourceChatId = st.sourceChatId;
       }
 
       function clearProjectMainChat(projectId) {
@@ -1071,6 +1123,230 @@
           .map(n => '- ' + shorten(String(n.text || '').trim(), 160));
       }
 
+      function mapHandoffFeatureCategory(category) {
+        const normalized = normalizeText(category);
+        if (!normalized) return 'Workflow';
+        const match = FEATURE_CATEGORIES.find(c => normalizeText(c) === normalized);
+        if (match) return match;
+        if (normalized.includes('workflow')) return 'Workflow';
+        if (normalized.includes('ui')) return 'UI';
+        if (normalized.includes('sync')) return 'Sync';
+        if (normalized.includes('ki') || normalized.includes('ai')) return 'KI';
+        if (normalized.includes('import') || normalized.includes('export')) return 'Import/Export';
+        if (normalized.includes('ansicht') || normalized.includes('view')) return 'Ansicht';
+        if (normalized.includes('darstellung')) return 'Darstellung';
+        if (normalized.includes('datenmodell') || normalized.includes('modell')) return 'Datenmodell';
+        return 'Sonstiges';
+      }
+
+      function mapHandoffFeaturePriority(priority) {
+        const normalized = normalizeText(priority);
+        if (!normalized) return 'mittel';
+        const match = PRIORITIES.find(p => normalizeText(p) === normalized);
+        if (match) return match;
+        if (normalized.includes('krit')) return 'kritisch';
+        if (normalized.includes('hoch') || normalized.includes('high')) return 'hoch';
+        if (normalized.includes('niedrig') || normalized.includes('low')) return 'niedrig';
+        return 'mittel';
+      }
+
+      function mapHandoffChatStatus(status) {
+        const normalized = normalizeText(status);
+        if (!normalized) return '';
+        const match = CHAT_STATUS.find(s => normalizeText(s) === normalized);
+        return match || '';
+      }
+
+      function parseSprintHandoffJson(rawJson) {
+        const extractedJson = extractJsonObjectFromText(rawJson || '');
+        const parsed = JSON.parse(extractedJson);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid-handoff-object');
+        const summary = String(parsed.summary || '').trim();
+        const currentFocus = String(parsed.currentFocus || '').trim();
+        const nextStep = String(parsed.nextStep || '').trim();
+        if (!summary || !currentFocus || !nextStep) throw new Error('handoff-required-fields');
+
+        let openQuestions = [];
+        if (parsed.openQuestions != null) {
+          if (!Array.isArray(parsed.openQuestions)) throw new Error('handoff-open-questions');
+          openQuestions = parsed.openQuestions.map(x => String(x || '').trim()).filter(Boolean);
+        }
+
+        let proposedFeatures = [];
+        if (parsed.proposedFeatures != null) {
+          if (!Array.isArray(parsed.proposedFeatures)) throw new Error('handoff-proposed-features');
+          proposedFeatures = parsed.proposedFeatures.map(item => {
+            if (!item || typeof item !== 'object') return null;
+            const title = String(item.title || '').trim();
+            if (!title) return null;
+            return {
+              title,
+              description: String(item.description || '').trim(),
+              category: mapHandoffFeatureCategory(item.category),
+              priority: mapHandoffFeaturePriority(item.priority),
+              status: 'geplant'
+            };
+          }).filter(Boolean);
+        }
+        return {
+          parsed,
+          normalized: {
+            chatTitle: String(parsed.chatTitle || '').trim(),
+            chatType: normalizeText(parsed.chatType) === 'sprint' ? 'sprint' : '',
+            status: mapHandoffChatStatus(parsed.status),
+            summary,
+            currentFocus,
+            nextStep,
+            openQuestions,
+            proposedFeatures
+          }
+        };
+      }
+
+      function buildSprintHandoffPrompt(projectId, sourceChatId) {
+        const project = S.projects.find(p => p.id === projectId);
+        const sourceChat = S.chats.find(c => c.id === sourceChatId && c.projectId === projectId);
+        if (!project || !sourceChat) return '';
+        const featureLines = getRelevantFeatureTitles(projectId, 8);
+        return [
+          'Erstelle einen kompakten Sprint-Bericht als JSON.',
+          'Antworte AUSSCHLIESSLICH mit gültigem JSON.',
+          'Kein Markdown, keine Code-Fences, kein Erklärtext vor oder nach dem JSON.',
+          '',
+          'Pflichtfelder:',
+          '- summary (String)',
+          '- currentFocus (String)',
+          '- nextStep (String)',
+          '',
+          'Optionale Felder:',
+          '- openQuestions: Array aus Strings',
+          '- proposedFeatures: Array aus Objekten',
+          '',
+          'JSON-Schema (verwende genau diese Feldnamen):',
+          '{',
+          '  "chatTitle": "...",',
+          '  "chatType": "sprint",',
+          '  "status": "aktiv",',
+          '  "summary": "...",',
+          '  "currentFocus": "...",',
+          '  "nextStep": "...",',
+          '  "openQuestions": ["...", "..."],',
+          '  "proposedFeatures": [',
+          '    {',
+          '      "title": "...",',
+          '      "description": "...",',
+          '      "category": "Workflow",',
+          '      "priority": "mittel",',
+          '      "status": "geplant"',
+          '    }',
+          '  ]',
+          '}',
+          '',
+          'Regeln:',
+          '- Nutze für category bevorzugt: ' + FEATURE_CATEGORIES.join(', '),
+          '- Nutze für priority bevorzugt: ' + PRIORITIES.join(', '),
+          '- proposedFeatures[*].status wenn gesetzt nur "geplant"',
+          '',
+          'Projektkontext:',
+          `- Projekttitel: ${project.title || '—'}`,
+          `- Projektsummary: ${project.summary || '—'}`,
+          `- Aktueller Fokus (Projekt): ${project.currentFocus || '—'}`,
+          `- Nächster Projektschritt: ${project.nextStep || '—'}`,
+          '',
+          'Ausgewählter Chat-Kontext:',
+          `- Titel: ${sourceChat.title || '—'}`,
+          `- Typ/Status: ${sourceChat.type || '—'} / ${sourceChat.status || '—'}`,
+          `- URL: ${sourceChat.url || '—'}`,
+          `- Zusammenfassung: ${sourceChat.summary || '—'}`,
+          `- Next Step: ${sourceChat.nextStep || '—'}`,
+          sourceChat.rawReportText ? `- Vorhandener Raw Report:\n${sourceChat.rawReportText}` : '- Vorhandener Raw Report: —',
+          '',
+          'Relevante offene Features:',
+          ...(featureLines.length ? featureLines : ['- Keine offenen Features hinterlegt.'])
+        ].join('\n');
+      }
+
+      function importSprintHandoffFromJson(projectId, sourceChatId, rawJson) {
+        const project = S.projects.find(p => p.id === projectId);
+        const sourceChat = S.chats.find(c => c.id === sourceChatId && c.projectId === projectId);
+        if (!project || !sourceChat) return alert('Projekt oder Ausgangschat wurde nicht gefunden.');
+        if (project.status === 'archiviert') return alert('Archivierte Projekte können keinen Sprint-Bericht importieren.');
+        if (!String(rawJson || '').trim()) return alert('Bitte Sprint-Handoff-JSON einfügen.');
+        let normalized;
+        let extractedJson = '';
+        try {
+          const parsedResult = parseSprintHandoffJson(rawJson);
+          normalized = parsedResult.normalized;
+          extractedJson = extractJsonObjectFromText(rawJson || '');
+        } catch (err) {
+          if (err && err.message === 'invalid-json-not-found') return alert('Ungültiges JSON: Kein JSON-Objekt erkannt.');
+          if (err && err.message === 'invalid-handoff-object') return alert('Ungültiges JSON: Erwartet wird ein JSON-Objekt.');
+          if (err && err.message === 'handoff-required-fields') return alert('Ungültiges JSON: summary, currentFocus und nextStep sind Pflichtfelder.');
+          if (err && err.message === 'handoff-open-questions') return alert('Ungültiges JSON: openQuestions muss ein Array aus Strings sein.');
+          if (err && err.message === 'handoff-proposed-features') return alert('Ungültiges JSON: proposedFeatures muss ein Array aus Objekten sein.');
+          return alert('Sprint-Bericht konnte nicht importiert werden: ' + (err && err.message ? err.message : 'Unbekannter Fehler'));
+        }
+
+        const now = new Date().toISOString();
+
+        sourceChat.summary = normalized.summary;
+        sourceChat.nextStep = normalized.nextStep;
+        sourceChat.rawReportText = extractedJson;
+        sourceChat.updatedAt = now;
+        if (normalized.status) sourceChat.status = normalized.status;
+
+        project.currentFocus = normalized.currentFocus;
+        project.nextStep = normalized.nextStep;
+        project.updatedAt = now;
+
+        const sourceChatTitle = sourceChat.title || normalized.chatTitle || 'Sprint';
+        let createdFeatures = 0;
+        const existingByTitle = new Set(
+          getVisibleFeatures(S.features)
+            .filter(f => f.projectId === projectId)
+            .map(f => normalizeText(f.title || ''))
+            .filter(Boolean)
+        );
+
+        normalized.proposedFeatures.forEach(item => {
+          const normalizedTitle = normalizeText(item.title);
+          if (!normalizedTitle || existingByTitle.has(normalizedTitle)) return;
+          const cleanDescription = String(item.description || '').trim();
+          const originPrefix = `Aus Sprint: ${sourceChatTitle}`;
+          const description = cleanDescription
+            ? `${originPrefix}\n\n${cleanDescription}`
+            : originPrefix;
+          const created = ensureFeatureDefaults({
+            id: uid('f'),
+            projectId,
+            title: item.title,
+            description,
+            category: item.category,
+            priority: item.priority,
+            status: 'geplant',
+            sourceType: 'chat-handoff',
+            sourceChatId: sourceChat.id,
+            sourceChatTitle,
+            sourceNoteIds: [],
+            createdAt: now,
+            updatedAt: now
+          });
+          S.features.push(created);
+          existingByTitle.add(normalizedTitle);
+          createdFeatures++;
+        });
+
+        const handoff = getChatWorkflowHandoffState(projectId);
+        handoff.rawJson = extractedJson;
+        handoff.sourceChatId = sourceChatId;
+        const st = getChatWorkflowState(projectId);
+        st.sourceChatId = sourceChatId;
+        st.mode = 'sprint-handoff-import';
+        save();
+        renderView();
+        alert('Sprint-Bericht importiert. Chat/Projekt aktualisiert. Neue geplante Features: ' + createdFeatures + '.');
+      }
+
       function buildReturnToMainChatPrompt(projectId, sourceChatId) {
         const project = S.projects.find(p => p.id === projectId);
         const sourceChat = S.chats.find(c => c.id === sourceChatId && c.projectId === projectId);
@@ -1112,6 +1388,21 @@
         const project = S.projects.find(p => p.id === projectId);
         const sourceChat = S.chats.find(c => c.id === sourceChatId && c.projectId === projectId);
         if (!project || !sourceChat) return '';
+        let handoffData = null;
+        try {
+          handoffData = parseSprintHandoffJson(sourceChat.rawReportText || '').normalized;
+        } catch (_) {
+          handoffData = null;
+        }
+        const effectiveSummary = (handoffData && handoffData.summary) || sourceChat.summary || '—';
+        const effectiveCurrentFocus = (handoffData && handoffData.currentFocus) || project.currentFocus || '—';
+        const effectiveNextStep = (handoffData && handoffData.nextStep) || sourceChat.nextStep || project.nextStep || '—';
+        const handoffQuestions = handoffData && handoffData.openQuestions && handoffData.openQuestions.length
+          ? handoffData.openQuestions.map(q => '- ' + q)
+          : [];
+        const handoffProposedFeatures = handoffData && handoffData.proposedFeatures && handoffData.proposedFeatures.length
+          ? handoffData.proposedFeatures.map(f => `- ${f.title} (${f.category}, ${f.priority})`)
+          : [];
         const featureLines = getRelevantFeatureTitles(projectId, 8);
         const noteLines = getRelevantUnprocessedNotes(projectId, 5);
         return [
@@ -1121,16 +1412,18 @@
           '## Projektkontext',
           `- Projekttitel: ${project.title || '—'}`,
           `- Projektsummary: ${project.summary || '—'}`,
-          `- Aktueller Fokus: ${project.currentFocus || '—'}`,
-          `- Nächster Schritt: ${project.nextStep || '—'}`,
+          `- Aktueller Fokus: ${effectiveCurrentFocus}`,
+          `- Nächster Schritt: ${effectiveNextStep}`,
           '',
           '## Aktueller Stand aus Ausgangschat',
           `- Ausgangschat: ${sourceChat.title || '—'} (${sourceChat.type || '—'})`,
           `- Status: ${sourceChat.status || '—'}`,
           `- URL: ${sourceChat.url || '—'}`,
-          `- Zusammenfassung: ${sourceChat.summary || '—'}`,
-          `- Next Step im Ausgangschat: ${sourceChat.nextStep || '—'}`,
+          `- Zusammenfassung: ${effectiveSummary}`,
+          `- Next Step im Ausgangschat: ${effectiveNextStep}`,
           sourceChat.rawReportText ? `- Raw Report:\n${sourceChat.rawReportText}` : '- Raw Report: —',
+          ...(handoffQuestions.length ? ['', '## Offene Fragen aus Sprint-Bericht', ...handoffQuestions] : []),
+          ...(handoffProposedFeatures.length ? ['', '## Vorgeschlagene Features aus Sprint-Bericht', ...handoffProposedFeatures] : []),
           '',
           '## Wichtige offene Punkte (Features)',
           ...(featureLines.length ? featureLines : ['- Keine offenen Features hinterlegt.']),
@@ -1264,6 +1557,7 @@
         const projectMainChat = getProjectMainChat(p.id);
         const sourceChats = getProjectSourceChats(p.id);
         const chatWorkflow = getChatWorkflowState(p.id);
+        const chatWorkflowHandoff = getChatWorkflowHandoffState(p.id);
         const chatWorkflowSource = sourceChats.find(c => c.id === chatWorkflow.sourceChatId) || null;
         const isArchivedProject = p.status === 'archiviert';
         const latestAnalysis = S.analyses.filter(a => a.projectId === p.id).sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''))[0];
@@ -1422,7 +1716,15 @@
                 <button class="btn" id="btnChatWorkflowSetMain" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Als Hauptchat setzen</button>
                 <button class="btn" id="btnChatWorkflowBuildReturn" ${isArchivedProject || !chatWorkflow.sourceChatId || !projectMainChat ? 'disabled' : ''}>Prompt: In Hauptchat zurückkehren</button>
                 <button class="btn" id="btnChatWorkflowBuildBootstrap" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Prompt: Hauptchat neu anlegen</button>
+                <button class="btn" id="btnChatWorkflowBuildSprintHandoff" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Prompt: Sprint-Bericht anfordern</button>
                 <button class="btn btn-primary" id="btnChatWorkflowBuildSprint" ${isArchivedProject || !projectMainChat ? 'disabled' : ''}>Prompt: Nächsten Sprintchat starten</button>
+              </div>
+              <div class="field">
+                <label for="chatWorkflowHandoffJson">Sprint-Handoff-JSON</label>
+                <textarea id="chatWorkflowHandoffJson" style="min-height:180px;font-family:var(--font-mono);font-size:12px;" placeholder='{"summary":"...","currentFocus":"...","nextStep":"..."}'>${escapeHtml(chatWorkflowHandoff.rawJson || '')}</textarea>
+                <div class="stack-row" style="margin-top:6px;">
+                  <button class="btn btn-primary" id="btnChatWorkflowImportHandoff" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Sprint-Bericht importieren</button>
+                </div>
               </div>
               <div class="field">
                 <label for="chatWorkflowPromptOutput">Chat-Workflow Prompt-Ausgabe</label>
