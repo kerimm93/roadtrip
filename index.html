@@ -505,6 +505,7 @@
         projectEditMode: false,
         importDraft: { html: '', prompt: '', analysisPrompt: '', cleanupPrompt: '', projectId: '' },
         chatWorkflow: { projectId: '', sourceChatId: '', sprintGoal: '', prompt: '', mode: '' },
+        chatWorkflowByProject: {},
         dailyLogQuery: { prompt: '' },
         noteReview: { proposals: [], projectId: '', rawText: '', visible: false },
         cleanupReview: { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', visible: false, versionLogged: false }
@@ -964,7 +965,7 @@
       }
 
       function getProjectSourceChats(projectId) {
-        return getProjectChats(projectId).filter(c => ['sprint', 'execution', 'branch'].includes(String(c.type || '')));
+        return getProjectChats(projectId);
       }
 
       function getChatWorkflowState(projectId) {
@@ -972,18 +973,25 @@
           ui.chatWorkflow = { projectId: projectId || '', sourceChatId: '', sprintGoal: '', prompt: '', mode: '' };
           return ui.chatWorkflow;
         }
-        if (!ui.chatWorkflow) ui.chatWorkflow = { projectId: '', sourceChatId: '', sprintGoal: '', prompt: '', mode: '' };
-        if (ui.chatWorkflow.projectId !== projectId) {
-          ui.chatWorkflow = { projectId, sourceChatId: '', sprintGoal: '', prompt: '', mode: '' };
-        }
+        if (!ui.chatWorkflowByProject || typeof ui.chatWorkflowByProject !== 'object') ui.chatWorkflowByProject = {};
+        const existingState = ui.chatWorkflowByProject[projectId];
+        const state = (existingState && typeof existingState === 'object')
+          ? existingState
+          : { projectId, sourceChatId: '', sprintGoal: '', prompt: '', mode: '' };
+        state.projectId = projectId;
+        ui.chatWorkflowByProject[projectId] = state;
+        ui.chatWorkflow = state;
         const sourceChats = getProjectSourceChats(projectId);
-        if (!ui.chatWorkflow.sourceChatId || !sourceChats.some(c => c.id === ui.chatWorkflow.sourceChatId)) {
-          ui.chatWorkflow.sourceChatId = (sourceChats[0] || {}).id || '';
+        if (!state.sourceChatId || !sourceChats.some(c => c.id === state.sourceChatId)) {
+          state.sourceChatId = (sourceChats[0] || {}).id || '';
         }
-        return ui.chatWorkflow;
+        return state;
       }
 
       function setChatWorkflowSource(projectId, sourceChatId) {
+        if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+        const project = S.projects.find(p => p.id === projectId);
+        if (!project || project.status === 'archiviert') return;
         const st = getChatWorkflowState(projectId);
         st.sourceChatId = sourceChatId || '';
       }
@@ -1395,7 +1403,7 @@
               <div class="field">
                 <label for="chatWorkflowSourceChat">Ausgangschat</label>
                 <select id="chatWorkflowSourceChat">
-                  ${sourceChats.length ? sourceChats.map(c => `<option value="${escapeAttr(c.id)}" ${chatWorkflow.sourceChatId === c.id ? 'selected' : ''}>${escapeHtml(c.title || 'Ohne Titel')} · ${escapeHtml(c.type)} · ${escapeHtml(c.status || '—')}</option>`).join('') : '<option value="">— Keine Sprint-/Execution-/Branch-Chats vorhanden —</option>'}
+                  ${sourceChats.length ? sourceChats.map(c => `<option value="${escapeAttr(c.id)}" ${chatWorkflow.sourceChatId === c.id ? 'selected' : ''}>${escapeHtml(c.title || 'Ohne Titel')} · ${escapeHtml(c.type)} · ${escapeHtml(c.status || '—')}</option>`).join('') : '<option value="">— Keine Chats vorhanden —</option>'}
                 </select>
                 ${chatWorkflowSource && chatWorkflowSource.url ? `<div class="mini" style="margin-top:4px;">Ausgewählt: <a href="${escapeAttr(chatWorkflowSource.url)}" target="_blank" rel="noopener">${escapeHtml(chatWorkflowSource.url)}</a></div>` : ''}
               </div>
@@ -2953,7 +2961,18 @@
           ui.dailyLogQuery.prompt = text;
         }
         else ui.importDraft.prompt = text;
-        navigator.clipboard.writeText(text).then(() => alert('Text kopiert.'));
+        navigator.clipboard.writeText(text)
+          .then(() => alert('Text kopiert.'))
+          .catch(() => {
+            try {
+              field.focus();
+              field.select();
+              const ok = document.execCommand && document.execCommand('copy');
+              alert(ok ? 'Text kopiert.' : 'Kopieren fehlgeschlagen. Bitte manuell kopieren.');
+            } catch (_) {
+              alert('Kopieren fehlgeschlagen. Bitte manuell kopieren.');
+            }
+          });
       }
 
       function getImportTargetProjectId() {
