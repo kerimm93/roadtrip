@@ -3333,15 +3333,8 @@
             mergedIntoFeatureId: proposal.targetFeatureId || ''
           });
         } else {
-          if (targetFeature) {
-            const marker = `[Dup-Hinweis] ${proposal.incomingTitle || proposal.resolvedTitle || 'Ähnliches Feature'}${proposal.rationale ? ' – ' + proposal.rationale : ''}`;
-            const existingDescription = String(targetFeature.description || '').trim();
-            if (!existingDescription.includes(marker)) {
-              targetFeature.description = existingDescription ? (existingDescription + '\n\n' + marker) : marker;
-              targetFeature.updatedAt = new Date().toISOString();
-            }
-          }
-          alert('Kein duplicateFeatureId vorhanden oder Feature nicht gefunden. Es wurde nichts in den Papierkorb verschoben.');
+          alert('Keine konkrete Dublette gefunden. Es wurde nichts verschoben.');
+          return;
         }
         proposal._done = true;
         save();
@@ -3380,7 +3373,12 @@
             </div>
             ${proposals.length ? `
               <div class="list" style="margin-top:10px;">
-                ${proposals.map(p => `
+                ${proposals.map(p => {
+                  const targetFeature = resolveCleanupTargetFeature(p);
+                  const duplicateFeature = p.duplicateFeatureId ? S.features.find(f => f.id === p.duplicateFeatureId) : null;
+                  const hasTarget = !!targetFeature;
+                  const hasDuplicate = !!duplicateFeature;
+                  return `
                   <div class="item" style="${p._done ? 'opacity:0.45;' : ''}border-left:3px solid ${typeColor[p.type] || 'var(--border)'}">
                     <div class="row-top">
                       <strong>${escapeHtml(p.resolvedTitle || p.incomingTitle || '—')}</strong>
@@ -3393,16 +3391,19 @@
                     ${p.resolvedDescription ? `<div class="item-desc">${escapeHtml(p.resolvedDescription)}</div>` : ''}
                     <div class="mini">Confidence: ${escapeHtml(p.confidence)}</div>
                     ${p.rationale ? `<div class="mini" style="color:var(--ink-dim)">Grund: ${escapeHtml(p.rationale)}</div>` : ''}
+                    ${hasTarget ? `<div class="mini">Ziel: ${escapeHtml(targetFeature.title || '—')}</div>` : `<div class="mini" style="color:var(--accent-2)">Kein bestehendes Feature erkannt – kann als neues Feature übernommen werden.</div>`}
+                    ${p.type === 'duplicate-of' && !hasDuplicate ? '<div class="mini" style="color:var(--ink-dim)">Keine konkrete Dublette zugeordnet.</div>' : ''}
                     ${p._done ? '<div class="mini">✓ erledigt</div>' : `
                       <div class="stack-row">
-                        <button class="btn" data-cleanup-accept-update="${p._idx}">Bestehendes aktualisieren</button>
-                        <button class="btn" data-cleanup-accept-new="${p._idx}">Als neues Feature</button>
-                        ${p.type === 'duplicate-of' ? `<button class="btn" data-cleanup-mark-duplicate="${p._idx}">Dublette in Papierkorb</button>` : ''}
+                        ${hasTarget ? `<button class="btn btn-primary" data-cleanup-accept-update="${p._idx}">Bestehendes aktualisieren</button>` : `<button class="btn btn-primary" data-cleanup-accept-new="${p._idx}">Als neues Feature hinzufügen</button>`}
+                        ${hasTarget ? `<button class="btn" data-cleanup-accept-new="${p._idx}">Trotzdem als neues Feature</button>` : ''}
+                        ${hasDuplicate ? `<button class="btn" data-cleanup-mark-duplicate="${p._idx}">Dublette in Papierkorb</button>` : ''}
                         <button class="btn" data-cleanup-ignore="${p._idx}">Ignorieren</button>
                       </div>
                     `}
                   </div>
-                `).join('')}
+                `;
+                }).join('')}
               </div>
             ` : ''}
           </details>
