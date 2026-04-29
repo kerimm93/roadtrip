@@ -482,10 +482,40 @@
       const VIEWS = ['database', 'project', 'import', 'settings'];
       const APP_TYPES = ['Daily Log', 'Braindump', 'Review', 'Tracker', 'Writing', 'Learning', 'Meta-App', 'Sonstiges'];
       const PROJECT_STATUS = ['aktiv', 'pausiert', 'archiviert'];
-      const FEATURE_STATUS = ['Idee', 'geprüft', 'geplant', 'in Arbeit', 'teilweise umgesetzt', 'umgesetzt'];
       const FEATURE_CATEGORIES = ['UI', 'Workflow', 'Sync', 'KI', 'Import/Export', 'Darstellung', 'Datenmodell', 'Ansicht', 'Sonstiges'];
       const PRIORITIES = ['niedrig', 'mittel', 'hoch', 'kritisch'];
-      const FEATURE_COLUMNS = FEATURE_STATUS;
+      const FEATURE_POOLS = ['planned', 'implemented'];
+      const FEATURE_REVIEW_STATUS = ['needs-review', 'reviewed'];
+      const FEATURE_STATUS_BY_POOL = {
+        planned: ['idea', 'planned', 'selected-for-sprint', 'in-progress', 'blocked', 'done', 'deferred'],
+        implemented: ['detected', 'confirmed', 'manually-added', 'needs-review', 'obsolete']
+      };
+      const FEATURE_STATUS_LABELS = {
+        idea: 'Idee',
+        planned: 'Geplant',
+        'selected-for-sprint': 'Für Sprint ausgewählt',
+        'in-progress': 'In Arbeit',
+        blocked: 'Blockiert',
+        done: 'Erledigt',
+        deferred: 'Zurückgestellt',
+        detected: 'Erkannt',
+        confirmed: 'Bestätigt',
+        'manually-added': 'Manuell ergänzt',
+        'needs-review': 'Review nötig',
+        obsolete: 'Veraltet'
+      };
+      const FEATURE_POOL_LABELS = {
+        planned: 'Geplante Features',
+        implemented: 'Umgesetzte Features'
+      };
+      const LEGACY_STATUS_TO_PLANNED = {
+        idee: 'idea',
+        geprüft: 'planned',
+        geplant: 'planned',
+        'in arbeit': 'in-progress',
+        'teilweise umgesetzt': 'in-progress',
+        umgesetzt: 'done'
+      };
       const TRELLO_LABEL_PREFIX = { project: 'P: ', category: 'C: ', priority: 'Prio: ' };
       const TRELLO_SYNC_START = '--- ROADTRIP_SYNC ---';
       const TRELLO_SYNC_END = '--- /ROADTRIP_SYNC ---';
@@ -499,7 +529,7 @@
         editingProjectId: null,
         analysisDraftFeatures: [],
         activeProjectId: ALL_PROJECTS_KEY,
-        filters: { status: 'alle', category: 'alle', search: '' },
+        filters: { pool: 'alle', status: 'alle', category: 'alle', search: '' },
         showKanban: false,
         showAllProjects: false,
         projectEditMode: false,
@@ -516,6 +546,78 @@
       const $ = (id) => document.getElementById(id);
       const q = (sel, el = document) => el.querySelector(sel);
       const qq = (sel, el = document) => Array.from(el.querySelectorAll(sel));
+
+      function normalizeFeaturePool(value) {
+        const pool = String(value || '').trim().toLowerCase();
+        return FEATURE_POOLS.includes(pool) ? pool : 'planned';
+      }
+
+      function getFeatureStatusesForPool(pool) {
+        const safePool = normalizeFeaturePool(pool);
+        return FEATURE_STATUS_BY_POOL[safePool] || FEATURE_STATUS_BY_POOL.planned;
+      }
+
+      function isValidFeatureStatus(status, pool) {
+        return getFeatureStatusesForPool(pool).includes(String(status || '').trim());
+      }
+
+      function normalizeFeatureStatus(status, pool) {
+        const safePool = normalizeFeaturePool(pool);
+        const raw = String(status || '').trim();
+        const normalized = normalizeText(raw);
+        if (safePool === 'planned') {
+          const migrated = LEGACY_STATUS_TO_PLANNED[normalized] || raw;
+          if (isValidFeatureStatus(migrated, safePool)) return migrated;
+          return FEATURE_STATUS_BY_POOL.planned[0];
+        }
+        if (normalized === 'umgesetzt') return 'confirmed';
+        if (normalized === 'teilweise umgesetzt' || normalized === 'vorbereitet') return 'detected';
+        if (isValidFeatureStatus(raw, safePool)) return raw;
+        return FEATURE_STATUS_BY_POOL.implemented[0];
+      }
+
+      function resolveStatusForPool(status, pool) {
+        const safePool = normalizeFeaturePool(pool);
+        const raw = String(status || '').trim();
+        if (!raw) return '';
+        if (isValidFeatureStatus(raw, safePool)) return raw;
+        const normalized = normalizeText(raw);
+        if (safePool === 'planned') {
+          const migrated = LEGACY_STATUS_TO_PLANNED[normalized];
+          return migrated && isValidFeatureStatus(migrated, safePool) ? migrated : '';
+        }
+        if (normalized === 'umgesetzt') return 'confirmed';
+        if (normalized === 'teilweise umgesetzt' || normalized === 'vorbereitet') return 'detected';
+        return '';
+      }
+
+      function getFeatureStatusLabel(status) {
+        const key = String(status || '').trim();
+        return FEATURE_STATUS_LABELS[key] || key || '—';
+      }
+
+      function getFeaturePoolLabel(pool) {
+        const key = normalizeFeaturePool(pool);
+        return FEATURE_POOL_LABELS[key] || key;
+      }
+
+      function isImplementedFeature(feature) {
+        return normalizeFeaturePool((feature || {}).pool) === 'implemented';
+      }
+
+      function isPlannedFeature(feature) {
+        return normalizeFeaturePool((feature || {}).pool) === 'planned';
+      }
+
+      function getAllFeatureStatuses() {
+        return FEATURE_POOLS.flatMap(pool => getFeatureStatusesForPool(pool));
+      }
+
+      function applyFeatureDefaults(feature) {
+        if (!feature || typeof feature !== 'object') return ensureFeatureDefaults(feature);
+        Object.assign(feature, ensureFeatureDefaults(feature));
+        return feature;
+      }
 
       init();
 
@@ -594,6 +696,8 @@
         S.projects = S.projects.map(ensureProjectDefaults);
         S.features = S.features.map(ensureFeatureDefaults);
         S.chats = S.chats.map(ensureChatDefaults);
+        if (!ui.filters || typeof ui.filters !== 'object') ui.filters = { pool: 'alle', status: 'alle', category: 'alle', search: '' };
+        if (!ui.filters.pool) ui.filters.pool = 'alle';
       }
 
       function save() {
@@ -662,10 +766,14 @@
 
       function renderStats() {
         const visibleFeatures = getVisibleFeatures(S.features);
+        const plannedFeatures = visibleFeatures.filter(isPlannedFeature);
+        const implementedFeatures = visibleFeatures.filter(isImplementedFeature);
         const stats = {
           Projekte: S.projects.filter(p => p.status !== 'archiviert').length,
           Features: visibleFeatures.length,
-          Offene: visibleFeatures.filter(f => ['Idee','geprüft','geplant','in Arbeit','teilweise umgesetzt'].includes(f.status)).length,
+          Geplant: plannedFeatures.length,
+          Umgesetzt: implementedFeatures.length,
+          Offene: plannedFeatures.filter(f => !['done','deferred'].includes(f.status)).length,
           Chats: (S.chats || []).filter(c => c.status === 'aktiv').length
         };
         const el = $('stats');
@@ -713,10 +821,12 @@
       function wireDynamicView() {
         // data-open-project is wired inside renderSidebarProjects()
         const statusFilter = $('filterStatus');
+        const poolFilter = $('filterPool');
         const catFilter = $('filterCategory');
         const search = $('filterSearch');
         const kanbanToggle = $('toggleKanban');
         const allProjectsToggle = $('toggleAllProjects');
+        if (poolFilter) poolFilter.addEventListener('change', e => { ui.filters.pool = e.target.value; renderView(); });
         if (statusFilter) statusFilter.addEventListener('change', e => { ui.filters.status = e.target.value; renderView(); });
         if (catFilter) catFilter.addEventListener('change', e => { ui.filters.category = e.target.value; renderView(); });
         if (search) search.addEventListener('input', e => { ui.filters.search = e.target.value; renderView(); });
@@ -793,6 +903,7 @@
         qq('[data-delete-note]').forEach(btn => btn.addEventListener('click', () => deleteNote(btn.dataset.deleteNote)));
         qq('[data-mark-note]').forEach(btn => btn.addEventListener('click', () => markNoteProcessed(btn.dataset.markNote)));
         qq('[data-status-feature]').forEach(sel => sel.addEventListener('change', e => updateFeatureStatus(sel.dataset.statusFeature, e.target.value)));
+        qq('[data-pool-feature]').forEach(sel => sel.addEventListener('change', e => updateFeaturePool(sel.dataset.poolFeature, e.target.value)));
         qq('[data-prio-feature]').forEach(sel => sel.addEventListener('change', e => updateFeaturePriority(sel.dataset.prioFeature, e.target.value)));
         qq('[data-sync-feature]').forEach(btn => btn.addEventListener('click', () => syncFeatureToTrello(btn.dataset.syncFeature)));
         qq('[data-pull-feature]').forEach(btn => btn.addEventListener('click', () => pullFeatureFromTrello(btn.dataset.pullFeature)));
@@ -960,6 +1071,9 @@
 
       function renderDatabaseView() {
         const features = getFilteredFeatures();
+        const plannedFeatures = features.filter(isPlannedFeature);
+        const implementedFeatures = features.filter(isImplementedFeature);
+        const statusOptions = ['alle'].concat(getAllFeatureStatuses());
         return `
           ${renderContextBanner()}
           <div class="panel-title">
@@ -971,11 +1085,14 @@
           </div>
           <div class="db-toolbar">
             <input id="filterSearch" type="text" value="${escapeAttr(ui.filters.search)}" placeholder="Search features..." />
-            <select id="filterStatus">${['alle'].concat(FEATURE_STATUS).map(s => `<option ${ui.filters.status===s?'selected':''}>${s}</option>`).join('')}</select>
+            <select id="filterPool">${['alle'].concat(FEATURE_POOLS).map(s => `<option value="${s}" ${ui.filters.pool===s?'selected':''}>${s === 'alle' ? 'alle' : getFeaturePoolLabel(s)}</option>`).join('')}</select>
+            <select id="filterStatus">${statusOptions.map(s => `<option value="${s}" ${ui.filters.status===s?'selected':''}>${s === 'alle' ? 'alle' : getFeatureStatusLabel(s)}</option>`).join('')}</select>
             <select id="filterCategory">${['alle'].concat(FEATURE_CATEGORIES).map(s => `<option ${ui.filters.category===s?'selected':''}>${s}</option>`).join('')}</select>
             <label class="pill"><input id="toggleKanban" type="checkbox" ${ui.showKanban?'checked':''} /> Kanban</label>
           </div>
-          ${ui.showKanban ? renderKanban(features) : renderTable(features)}
+          ${ui.showKanban
+            ? (renderKanban(plannedFeatures, { title: getFeaturePoolLabel('planned'), pool: 'planned' }) + renderKanban(implementedFeatures, { title: getFeaturePoolLabel('implemented'), pool: 'implemented' }))
+            : (renderTable(plannedFeatures, { title: getFeaturePoolLabel('planned') }) + renderTable(implementedFeatures, { title: getFeaturePoolLabel('implemented') }))}
         `;
       }
 
@@ -1104,15 +1221,14 @@
       }
 
       function getRelevantFeatureTitles(projectId, maxItems) {
-        const projectFeatures = getVisibleFeatures(S.features).filter(f => f.projectId === projectId);
-        const openStatuses = ['Idee', 'geprüft', 'geplant', 'in Arbeit', 'teilweise umgesetzt'];
+        const projectFeatures = getVisibleFeatures(S.features).filter(f => f.projectId === projectId && isPlannedFeature(f));
         const sorted = projectFeatures.slice().sort((a, b) => {
-          const aOpen = openStatuses.includes(a.status) ? 1 : 0;
-          const bOpen = openStatuses.includes(b.status) ? 1 : 0;
+          const aOpen = ['done', 'deferred'].includes(a.status) ? 0 : 1;
+          const bOpen = ['done', 'deferred'].includes(b.status) ? 0 : 1;
           if (aOpen !== bOpen) return bOpen - aOpen;
           return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
         });
-        return sorted.slice(0, Math.max(1, maxItems || 8)).map(f => `- ${f.title} (${f.status})`);
+        return sorted.slice(0, Math.max(1, maxItems || 8)).map(f => `- ${f.title} (${getFeatureStatusLabel(f.status)})`);
       }
 
       function getRelevantUnprocessedNotes(projectId, maxItems) {
@@ -1184,7 +1300,7 @@
               description: String(item.description || '').trim(),
               category: mapHandoffFeatureCategory(item.category),
               priority: mapHandoffFeaturePriority(item.priority),
-              status: 'geplant'
+              status: 'planned'
             };
           }).filter(Boolean);
         }
@@ -1237,7 +1353,7 @@
           '      "description": "...",',
           '      "category": "Workflow",',
           '      "priority": "mittel",',
-          '      "status": "geplant"',
+          '      "status": "planned"',
           '    }',
           '  ]',
           '}',
@@ -1245,7 +1361,7 @@
           'Regeln:',
           '- Nutze für category bevorzugt: ' + FEATURE_CATEGORIES.join(', '),
           '- Nutze für priority bevorzugt: ' + PRIORITIES.join(', '),
-          '- proposedFeatures[*].status wenn gesetzt nur "geplant"',
+          '- proposedFeatures[*].status wenn gesetzt nur "planned"',
           '',
           'Projektkontext:',
           `- Projekttitel: ${project.title || '—'}`,
@@ -1323,7 +1439,9 @@
             description,
             category: item.category,
             priority: item.priority,
-            status: 'geplant',
+            status: 'planned',
+            pool: 'planned',
+            reviewStatus: 'needs-review',
             sourceType: 'chat-handoff',
             sourceChatId: sourceChat.id,
             sourceChatTitle,
@@ -1940,8 +2058,9 @@
 
       function renderDashboard(projects, features, notes) {
         const recentProjects = projects.slice().sort((a,b) => (b.updatedAt||'').localeCompare(a.updatedAt||'')).slice(0,4);
-        const inProgress = features.filter(f => ['in Arbeit','teilweise umgesetzt'].includes(f.status)).slice(0,6);
-        const waiting = features.filter(f => ['Idee','geprüft','geplant'].includes(f.status)).slice(0,6);
+        const plannedFeatures = features.filter(isPlannedFeature);
+        const inProgress = plannedFeatures.filter(f => ['in-progress','selected-for-sprint'].includes(f.status)).slice(0,6);
+        const waiting = plannedFeatures.filter(f => ['idea','planned','blocked'].includes(f.status)).slice(0,6);
         return `
           <div class="panel-title"><h3>Dashboard</h3><div class="mini">Schneller Überblick über deine aktive App-Landschaft</div></div>
           <div class="grid-cards">
@@ -1965,13 +2084,15 @@
         `;
       }
 
-      function renderKanban(features) {
+      function renderKanban(features, options) {
+        const opts = Object.assign({ title: 'Kanban', pool: 'planned' }, options || {});
+        const statuses = getFeatureStatusesForPool(opts.pool);
         return `
-          <div class="panel-title"><h3>Kanban</h3><div class="mini">Statusorientierte Roadmap-Ansicht</div></div>
+          <div class="panel-title"><h3>Kanban · ${escapeHtml(opts.title)}</h3><div class="mini">Statusorientierte Roadmap-Ansicht</div></div>
           <div class="kanban">
-            ${FEATURE_COLUMNS.map(col => `
+            ${statuses.map(col => `
               <div class="column">
-                <h3>${escapeHtml(col)} · ${features.filter(f => f.status === col).length}</h3>
+                <h3>${escapeHtml(getFeatureStatusLabel(col))} · ${features.filter(f => f.status === col).length}</h3>
                 <div class="list">
                   ${features.filter(f => f.status === col).map(f => `
                     <div class="item">
@@ -1983,9 +2104,10 @@
                       <div class="meta">
                         <span class="pill">${escapeHtml(getProjectTitle(f.projectId))}</span>
                         <span class="pill">${escapeHtml(f.category)}</span>
+                        <span class="pill">${escapeHtml(getFeaturePoolLabel(f.pool))}</span>
                       </div>
                       <div class="stack-row">
-                        <select data-status-feature="${f.id}">${FEATURE_STATUS.map(s => `<option value="${s}" ${s===f.status?'selected':''}>${s}</option>`).join('')}</select>
+                        <select data-status-feature="${f.id}">${getFeatureStatusesForPool(f.pool).map(s => `<option value="${s}" ${s===f.status?'selected':''}>${getFeatureStatusLabel(s)}</option>`).join('')}</select>
                       </div>
                     </div>
                   `).join('') || '<div class="notice">Leer.</div>'}
@@ -1996,15 +2118,17 @@
         `;
       }
 
-      function renderTable(features) {
+      function renderTable(features, options) {
+        const opts = Object.assign({ title: 'Tabelle' }, options || {});
         return `
-          <div class="panel-title"><h3>Tabelle</h3><div class="mini">Filtern, sichten, Prioritäten anpassen</div></div>
+          <div class="panel-title"><h3>${escapeHtml(opts.title)}</h3><div class="mini">Filtern, sichten, Prioritäten anpassen</div></div>
           <div style="overflow:auto">
             <table>
               <thead>
                 <tr>
                   <th>Feature</th>
                   <th>Projekt</th>
+                  <th>Pool</th>
                   <th>Status</th>
                   <th>Priorität</th>
                   <th>Kategorie</th>
@@ -2020,7 +2144,8 @@
                       <span class="mini">${escapeHtml(f.description || '')}</span>
                     </td>
                     <td>${escapeHtml(getProjectTitle(f.projectId))}</td>
-                    <td><select data-status-feature="${f.id}">${FEATURE_STATUS.map(s => `<option value="${s}" ${s===f.status?'selected':''}>${s}</option>`).join('')}</select></td>
+                    <td><select data-pool-feature="${f.id}">${FEATURE_POOLS.map(pool => `<option value="${pool}" ${pool===f.pool?'selected':''}>${getFeaturePoolLabel(pool)}</option>`).join('')}</select></td>
+                    <td><select data-status-feature="${f.id}">${getFeatureStatusesForPool(f.pool).map(s => `<option value="${s}" ${s===f.status?'selected':''}>${getFeatureStatusLabel(s)}</option>`).join('')}</select></td>
                     <td><select data-prio-feature="${f.id}">${PRIORITIES.map(p => `<option value="${p}" ${p===f.priority?'selected':''}>${p}</option>`).join('')}</select></td>
                     <td>${escapeHtml(f.category)}</td>
                     <td>${escapeHtml(f.sourceType || 'manuell')}</td>
@@ -2033,7 +2158,7 @@
                       </div>
                     </td>
                   </tr>
-                `).join('') || '<tr><td colspan="7">Keine Features passend zu deinen Filtern.</td></tr>'}
+                `).join('') || '<tr><td colspan="8">Keine Features passend zu deinen Filtern.</td></tr>'}
               </tbody>
             </table>
           </div>
@@ -2048,16 +2173,18 @@
               <article class="card">
                 <div class="row-top">
                   <h4 class="item-title">${escapeHtml(f.title)}</h4>
-                  <span class="pill">${escapeHtml(f.status)}</span>
+                  <span class="pill">${escapeHtml(getFeatureStatusLabel(f.status))}</span>
                 </div>
                 <div class="item-desc">${escapeHtml(f.description || '')}</div>
                 <div class="meta">
                   <span class="pill">${escapeHtml(getProjectTitle(f.projectId))}</span>
                   <span class="pill">${escapeHtml(f.category)}</span>
                   <span class="pill">${escapeHtml(f.priority)}</span>
+                  <span class="pill">${escapeHtml(getFeaturePoolLabel(f.pool))}</span>
                 </div>
                 <div class="stack-row">
-                  <select data-status-feature="${f.id}">${FEATURE_STATUS.map(s => `<option value="${s}" ${s===f.status?'selected':''}>${s}</option>`).join('')}</select>
+                  <select data-pool-feature="${f.id}">${FEATURE_POOLS.map(pool => `<option value="${pool}" ${pool===f.pool?'selected':''}>${getFeaturePoolLabel(pool)}</option>`).join('')}</select>
+                  <select data-status-feature="${f.id}">${getFeatureStatusesForPool(f.pool).map(s => `<option value="${s}" ${s===f.status?'selected':''}>${getFeatureStatusLabel(s)}</option>`).join('')}</select>
                   <button class="btn" data-sync-feature="${f.id}">${f.trello && f.trello.cardId ? 'Trello updaten' : 'Nach Trello'}</button>
                   ${f.trello && f.trello.cardId ? `<button class="btn" data-pull-feature="${f.id}">Von Trello</button>` : ''}
                   ${f.trello && f.trello.cardId ? `<button class="btn" data-open-trello-card="${f.id}">Öffnen</button>` : ''}
@@ -2126,7 +2253,7 @@
         return `<div class="item"><div class="row-top"><strong>${escapeHtml(p.title)}</strong><span class="pill">${escapeHtml(p.status)}</span></div><div class="mini">${escapeHtml(p.summary || '')}</div></div>`;
       }
       function featureCardMini(f) {
-        return `<div class="item"><strong>${escapeHtml(f.title)}</strong><div class="mini">${escapeHtml(getProjectTitle(f.projectId))} · ${escapeHtml(f.status)}</div></div>`;
+        return `<div class="item"><strong>${escapeHtml(f.title)}</strong><div class="mini">${escapeHtml(getProjectTitle(f.projectId))} · ${escapeHtml(getFeatureStatusLabel(f.status))}</div></div>`;
       }
       function noteCardMini(n) {
         return `<div class="item"><strong>${escapeHtml(shorten(n.text, 70))}</strong><div class="mini">${escapeHtml(getProjectTitle(n.projectId) || 'Ohne Projekt')}</div></div>`;
@@ -2141,12 +2268,18 @@
 
       function getFilteredFeatures() {
         const p = ui.activeProjectId || ALL_PROJECTS_KEY;
+        const pool = ui.filters.pool || 'alle';
         const st = ui.filters.status || 'alle';
         const cat = ui.filters.category || 'alle';
         const term = (ui.filters.search || '').trim().toLowerCase();
         return getVisibleFeatures(S.features).filter(f => {
+          applyFeatureDefaults(f);
           if (!ui.showAllProjects && p !== ALL_PROJECTS_KEY && f.projectId !== p) return false;
-          if (st !== 'alle' && f.status !== st) return false;
+          if (pool !== 'alle' && normalizeFeaturePool(f.pool) !== pool) return false;
+          if (st !== 'alle') {
+            const normalizedFilterStatus = resolveStatusForPool(st, f.pool);
+            if (!normalizedFilterStatus || f.status !== normalizedFilterStatus) return false;
+          }
           if (cat !== 'alle' && f.category !== cat) return false;
           if (term) {
             const blob = [f.title, f.description, f.category, f.priority, getProjectTitle(f.projectId)].join(' ').toLowerCase();
@@ -2334,7 +2467,9 @@
           projectId: n.projectId || '',
           title: title.trim(),
           description: n.text,
-          status: 'Idee',
+          pool: 'planned',
+          reviewStatus: 'needs-review',
+          status: 'idea',
           priority: 'mittel',
           category: 'Workflow',
           sourceType: 'note-analysis',
@@ -2351,8 +2486,23 @@
       function updateFeatureStatus(id, status) {
         const f = S.features.find(x => x.id === id);
         if (!f) return;
-        ensureFeatureDefaults(f);
-        f.status = status;
+        applyFeatureDefaults(f);
+        f.status = normalizeFeatureStatus(status, f.pool);
+        f.updatedAt = new Date().toISOString();
+        markFeatureDirtyRoadtrip(f);
+        save();
+        renderView();
+      }
+
+      function updateFeaturePool(id, pool) {
+        const f = S.features.find(x => x.id === id);
+        if (!f) return;
+        applyFeatureDefaults(f);
+        f.pool = normalizeFeaturePool(pool);
+        if (!isValidFeatureStatus(f.status, f.pool)) {
+          f.status = f.pool === 'implemented' ? 'detected' : 'idea';
+        }
+        if (!FEATURE_REVIEW_STATUS.includes(f.reviewStatus)) f.reviewStatus = 'needs-review';
         f.updatedAt = new Date().toISOString();
         markFeatureDirtyRoadtrip(f);
         save();
@@ -2362,7 +2512,7 @@
       function updateFeaturePriority(id, priority) {
         const f = S.features.find(x => x.id === id);
         if (!f) return;
-        ensureFeatureDefaults(f);
+        applyFeatureDefaults(f);
         f.priority = priority;
         f.updatedAt = new Date().toISOString();
         markFeatureDirtyRoadtrip(f);
@@ -2378,7 +2528,9 @@
           projectId,
           title: title.trim(),
           description: (description || '').trim(),
-          status: 'Idee',
+          pool: 'planned',
+          reviewStatus: 'needs-review',
+          status: 'idea',
           priority: 'mittel',
           category: 'Sonstiges',
           sourceType: 'manual',
@@ -2620,7 +2772,7 @@
           '- type darf nur sein: "new-feature" | "update-feature" | "already-implemented" | "unclear"',
           '- Bei "update-feature": targetFeatureId aus der obigen Liste setzen.',
           '- Bei "already-implemented": ebenfalls targetFeatureId setzen, falls erkennbar.',
-          '- suggestedStatus darf nur sein: Idee|geprüft|geplant|in Arbeit|teilweise umgesetzt|umgesetzt',
+          '- suggestedStatus darf nur sein: idea|planned|selected-for-sprint|in-progress|blocked|done|deferred',
           '- suggestedCategory darf nur sein: UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges',
           '- rationale: ein Satz, warum dieser Vorschlag gemacht wird.',
           '',
@@ -2683,7 +2835,7 @@
           suggestedTitle: String(p.suggestedTitle || '').trim(),
           suggestedDescription: String(p.suggestedDescription || '').trim(),
           suggestedCategory: FEATURE_CATEGORIES.includes(p.suggestedCategory) ? p.suggestedCategory : 'Sonstiges',
-          suggestedStatus: FEATURE_STATUS.includes(p.suggestedStatus) ? p.suggestedStatus : 'Idee',
+          suggestedStatus: normalizeFeatureStatus(p.suggestedStatus, 'planned'),
           rationale: String(p.rationale || '').trim(),
           _done: false
         }));
@@ -2701,7 +2853,9 @@
           title: proposal.suggestedTitle,
           description: proposal.suggestedDescription || '',
           category: proposal.suggestedCategory || 'Sonstiges',
-          status: proposal.suggestedStatus || 'Idee',
+          pool: 'planned',
+          reviewStatus: 'needs-review',
+          status: proposal.suggestedStatus || 'idea',
           priority: 'mittel',
           sourceType: 'note-review',
           sourceNoteIds: [],
@@ -2738,10 +2892,11 @@
         if (proposal.suggestedCategory && proposal.suggestedCategory !== 'Sonstiges' && feature.category === 'Sonstiges') {
           feature.category = proposal.suggestedCategory;
         }
-        if (proposal.suggestedStatus && FEATURE_STATUS.includes(proposal.suggestedStatus)) {
-          if (getFeatureStatusRank(proposal.suggestedStatus) > getFeatureStatusRank(feature.status)) {
-            if (confirm('Status anheben auf "' + proposal.suggestedStatus + '"?')) {
-              feature.status = proposal.suggestedStatus;
+        const proposedStatus = resolveStatusForPool(proposal.suggestedStatus, feature.pool || 'planned');
+        if (proposedStatus && isValidFeatureStatus(proposedStatus, feature.pool || 'planned')) {
+          if (getFeatureStatusRank(proposedStatus, feature.pool) > getFeatureStatusRank(feature.status, feature.pool)) {
+            if (confirm('Status anheben auf "' + proposedStatus + '"?')) {
+              feature.status = proposedStatus;
             }
           }
         }
@@ -2872,7 +3027,7 @@
             '- duplicateFeatureId ist das Feature, das in den Papierkorb verschoben werden soll.',
             '- Bei "duplicate-of" müssen targetFeatureId und duplicateFeatureId gesetzt sein, wenn es eine echte Dublette ist.',
             '- Verwende "duplicate-of" ohne duplicateFeatureId nur bei Unsicherheit; dann confidence auf "niedrig".',
-            '- resolvedStatus darf nur sein: Idee|geprüft|geplant|in Arbeit|teilweise umgesetzt|umgesetzt',
+            '- resolvedStatus darf nur sein: idea|planned|selected-for-sprint|in-progress|blocked|done|deferred',
             '- resolvedCategory darf nur sein: UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges',
             '- confidence darf nur sein: hoch|mittel|niedrig',
             '- rationale: kurzer nachvollziehbarer Grund.',
@@ -2918,7 +3073,7 @@
           '- type darf nur sein: "match-existing" | "update-existing" | "new-feature" | "duplicate-of" | "probably-stale".',
           '- Bei match-existing / update-existing / duplicate-of / probably-stale muss targetFeatureId gesetzt werden, wenn möglich.',
           '- duplicate-of darf nur Vorschlag sein; nichts direkt löschen.',
-          '- resolvedStatus darf nur sein: Idee|geprüft|geplant|in Arbeit|teilweise umgesetzt|umgesetzt',
+          '- resolvedStatus darf nur sein: idea|planned|selected-for-sprint|in-progress|blocked|done|deferred',
           '- resolvedCategory darf nur sein: UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges',
           '- confidence darf nur sein: hoch|mittel|niedrig',
           '- rationale: kurzer nachvollziehbarer Grund.',
@@ -3034,7 +3189,7 @@
           resolvedTitle: String(p.resolvedTitle || '').trim(),
           resolvedDescription: String(p.resolvedDescription || '').trim(),
           resolvedCategory: FEATURE_CATEGORIES.includes(p.resolvedCategory) ? p.resolvedCategory : 'Sonstiges',
-          resolvedStatus: FEATURE_STATUS.includes(p.resolvedStatus) ? p.resolvedStatus : 'Idee',
+          resolvedStatus: normalizeFeatureStatus(p.resolvedStatus, 'planned'),
           confidence: validConfidence.includes(String(p.confidence || '').trim()) ? String(p.confidence || '').trim() : 'mittel',
           rationale: String(p.rationale || '').trim(),
           _done: false
@@ -3109,8 +3264,8 @@
             changes.push('category');
           }
         }
-        const nextStatus = proposal.resolvedStatus;
-        if (nextStatus && FEATURE_STATUS.includes(nextStatus) && nextStatus !== feature.status) {
+        const nextStatus = resolveStatusForPool(proposal.resolvedStatus, feature.pool || 'planned');
+        if (nextStatus && isValidFeatureStatus(nextStatus, feature.pool || 'planned') && nextStatus !== feature.status) {
           if (confirm('Status ändern von "' + feature.status + '" auf "' + nextStatus + '"?')) {
             feature.status = nextStatus;
             changes.push('status');
@@ -3143,7 +3298,9 @@
           title,
           description: proposal.resolvedDescription || 'Aus Cleanup-Review übernommen.',
           category: proposal.resolvedCategory || 'Sonstiges',
-          status: proposal.resolvedStatus || 'geprüft',
+          pool: 'planned',
+          reviewStatus: 'needs-review',
+          status: proposal.resolvedStatus || 'planned',
           priority: 'mittel',
           sourceType: 'cleanup-review',
           sourceNoteIds: [],
@@ -3292,14 +3449,17 @@
 
       function mapJsonAnalysisStatus(status) {
         const normalized = String(status || '').trim().toLowerCase();
-        if (normalized === 'umgesetzt') return 'umgesetzt';
-        if (normalized === 'teilweise umgesetzt') return 'teilweise umgesetzt';
-        if (normalized === 'vorbereitet') return 'geprüft';
-        return 'geprüft';
+        if (normalized === 'umgesetzt') return 'confirmed';
+        if (normalized === 'teilweise umgesetzt') return 'detected';
+        if (normalized === 'vorbereitet') return 'detected';
+        return 'detected';
       }
 
-      function getFeatureStatusRank(status) {
-        const order = ['Idee', 'geprüft', 'geplant', 'in Arbeit', 'teilweise umgesetzt', 'umgesetzt'];
+      function getFeatureStatusRank(status, pool) {
+        const safePool = normalizeFeaturePool(pool);
+        const order = safePool === 'implemented'
+          ? ['detected', 'needs-review', 'manually-added', 'confirmed', 'obsolete']
+          : ['idea', 'planned', 'selected-for-sprint', 'in-progress', 'blocked', 'done', 'deferred'];
         const idx = order.indexOf(status);
         return idx === -1 ? 0 : idx;
       }
@@ -3329,7 +3489,7 @@
         const description = String(item.description || '').trim();
         const category = FEATURE_CATEGORIES.includes(item.category) ? item.category : 'Sonstiges';
         const status = mapJsonAnalysisStatus(item.status);
-        return { title, description, category, status };
+        return { title, description, category, status, pool: 'implemented', reviewStatus: 'needs-review' };
       }
 
       function featureVersionSignature(featureLike) {
@@ -3446,13 +3606,20 @@
         const importedDescription = String(imported.description || '').trim();
         const importedCategory = FEATURE_CATEGORIES.includes(imported.category) ? imported.category : 'Sonstiges';
         const changes = [];
+        applyFeatureDefaults(existing);
 
-        if (importedStatus === 'umgesetzt' && getFeatureStatusRank(existing.status) < getFeatureStatusRank('umgesetzt')) {
-          existing.status = 'umgesetzt';
-          changes.push('status');
-        } else if (importedStatus === 'teilweise umgesetzt' && getFeatureStatusRank(existing.status) < getFeatureStatusRank('teilweise umgesetzt')) {
-          existing.status = 'teilweise umgesetzt';
-          changes.push('status');
+        if (importedStatus === 'confirmed') {
+          const nextStatus = existing.pool === 'implemented' ? 'confirmed' : 'done';
+          if (getFeatureStatusRank(existing.status, existing.pool) < getFeatureStatusRank(nextStatus, existing.pool)) {
+            existing.status = nextStatus;
+            changes.push('status');
+          }
+        } else if (importedStatus === 'detected') {
+          const nextStatus = existing.pool === 'implemented' ? 'detected' : 'in-progress';
+          if (getFeatureStatusRank(existing.status, existing.pool) < getFeatureStatusRank(nextStatus, existing.pool)) {
+            existing.status = nextStatus;
+            changes.push('status');
+          }
         }
 
         const existingDescription = String(existing.description || '').trim();
@@ -3505,6 +3672,8 @@
             title,
             description,
             category,
+            pool: 'implemented',
+            reviewStatus: 'needs-review',
             status: mapJsonAnalysisStatus(item.status),
             priority: 'mittel',
             sourceType: 'html-analysis',
@@ -3655,19 +3824,21 @@
           ui.analysisDraftFeatures.forEach(f => {
             const exists = S.features.some(x => x.projectId === f.projectId && normalizeText(x.title) === normalizeText(f.title));
             if (!exists) {
-              S.features.push({
+              S.features.push(ensureFeatureDefaults({
+                pool: 'implemented',
+                reviewStatus: 'needs-review',
                 id: uid('f'),
                 projectId: f.projectId,
                 title: f.title,
                 description: f.description,
                 category: f.category || 'Sonstiges',
-                status: 'geprüft',
+                status: 'detected',
                 priority: 'mittel',
                 sourceType: 'html-analysis',
                 sourceNoteIds: [],
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
-              });
+              }));
               imported++;
             }
           });
@@ -3693,19 +3864,21 @@
           if (!title) return;
           const exists = S.features.some(x => x.projectId === projectId && normalizeText(x.title) === normalizeText(title));
           if (!exists) {
-            S.features.push({
+            S.features.push(ensureFeatureDefaults({
               id: uid('f'),
               projectId,
               title,
               description: 'Aus Prompt-/Analyseblock übernommen.',
               category: guessCategory(title),
-              status: 'Idee',
+              pool: 'planned',
+              reviewStatus: 'needs-review',
+              status: 'idea',
               priority: 'mittel',
               sourceType: 'manual',
               sourceNoteIds: [],
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString()
-            });
+            }));
             importedLines++;
           }
         });
@@ -4063,6 +4236,7 @@
         }
         if (!Array.isArray(normalized.chats)) normalized.chats = [];
         if (!Array.isArray(normalized.importVersions)) normalized.importVersions = [];
+        normalized.features = normalized.features.map(ensureFeatureDefaults);
         return normalized;
       }
 
@@ -4208,10 +4382,10 @@
         S = defaultState();
         S.projects = [p1, p2];
         S.features = [
-          { id:uid('f'), projectId:p1.id, title:'Fokusmodus für Eingabefeld', description:'Vollbildmodus mit Exit per X oder ESC.', status:'geplant', priority:'hoch', category:'UI', sourceType:'note-analysis', sourceNoteIds:[], createdAt:now, updatedAt:now },
-          { id:uid('f'), projectId:p1.id, title:'Zweiter Gist für Rohdaten-Backup', description:'Separates Gist nur für rohe Karten und Wiederherstellung.', status:'geprüft', priority:'hoch', category:'Sync', sourceType:'note-analysis', sourceNoteIds:[], createdAt:now, updatedAt:now },
-          { id:uid('f'), projectId:p2.id, title:'HTML-Analyse für Projektstand', description:'Aktuelle index.html auslesen und Features/Status erkennen.', status:'in Arbeit', priority:'kritisch', category:'KI', sourceType:'html-analysis', sourceNoteIds:[], createdAt:now, updatedAt:now },
-          { id:uid('f'), projectId:p2.id, title:'Inbox für rohe Notizen', description:'QuickAdd ähnlich zur Daily Log App.', status:'teilweise umgesetzt', priority:'hoch', category:'Workflow', sourceType:'manual', sourceNoteIds:[], createdAt:now, updatedAt:now }
+          { id:uid('f'), projectId:p1.id, title:'Fokusmodus für Eingabefeld', description:'Vollbildmodus mit Exit per X oder ESC.', pool:'planned', reviewStatus:'needs-review', status:'planned', priority:'hoch', category:'UI', sourceType:'note-analysis', sourceNoteIds:[], createdAt:now, updatedAt:now },
+          { id:uid('f'), projectId:p1.id, title:'Zweiter Gist für Rohdaten-Backup', description:'Separates Gist nur für rohe Karten und Wiederherstellung.', pool:'planned', reviewStatus:'needs-review', status:'selected-for-sprint', priority:'hoch', category:'Sync', sourceType:'note-analysis', sourceNoteIds:[], createdAt:now, updatedAt:now },
+          { id:uid('f'), projectId:p2.id, title:'HTML-Analyse für Projektstand', description:'Aktuelle index.html auslesen und Features/Status erkennen.', pool:'planned', reviewStatus:'needs-review', status:'in-progress', priority:'kritisch', category:'KI', sourceType:'manual', sourceNoteIds:[], createdAt:now, updatedAt:now },
+          { id:uid('f'), projectId:p2.id, title:'Inbox für rohe Notizen', description:'QuickAdd ähnlich zur Daily Log App.', pool:'implemented', reviewStatus:'needs-review', status:'detected', priority:'hoch', category:'Workflow', sourceType:'html-analysis', sourceNoteIds:[], createdAt:now, updatedAt:now }
         ].map(ensureFeatureDefaults);
         S.notes = [
           { id:uid('n'), projectId:p2.id, text:'Ansichten: Kanban, Tabelle, Karten und klare Projektansicht. E-Ink muss sauber und ruhig sein.', processed:false, createdAt:now },
@@ -4287,12 +4461,16 @@
 
 
       function ensureFeatureDefaults(feature) {
+        const input = feature || {};
+        const hadPool = !!input.pool;
         const clone = Object.assign({
           id: uid('f'),
           projectId: '',
           title: '',
           description: '',
-          status: 'Idee',
+          pool: 'planned',
+          reviewStatus: 'needs-review',
+          status: 'idea',
           priority: 'mittel',
           category: 'Sonstiges',
           sourceType: 'manual',
@@ -4303,7 +4481,11 @@
           mergedIntoFeatureId: '',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
-        }, feature || {});
+        }, input);
+        clone.pool = normalizeFeaturePool(clone.pool);
+        if (!hadPool) clone.pool = 'planned';
+        clone.reviewStatus = FEATURE_REVIEW_STATUS.includes(clone.reviewStatus) ? clone.reviewStatus : 'needs-review';
+        clone.status = normalizeFeatureStatus(clone.status, clone.pool);
         clone.trello = Object.assign({
           enabled: false,
           boardId: '',
@@ -4324,6 +4506,8 @@
             title: '',
             description: '',
             status: '',
+            pool: '',
+            reviewStatus: '',
             priority: '',
             category: '',
             projectId: '',
@@ -4334,6 +4518,8 @@
           title: '',
           description: '',
           status: '',
+          pool: '',
+          reviewStatus: '',
           priority: '',
           category: '',
           projectId: '',
@@ -4359,7 +4545,7 @@
       function moveFeatureToTrash(featureId, options) {
         const feature = S.features.find(x => x.id === featureId);
         if (!feature) return null;
-        Object.assign(feature, ensureFeatureDefaults(feature));
+        applyFeatureDefaults(feature);
         const opts = Object.assign({
           reason: '',
           workflow: '',
@@ -4404,6 +4590,8 @@
           title: String(feature.title || ''),
           description: String(feature.description || ''),
           status: String(feature.status || ''),
+          pool: String(feature.pool || ''),
+          reviewStatus: String(feature.reviewStatus || ''),
           priority: String(feature.priority || ''),
           category: String(feature.category || ''),
           projectId: String(feature.projectId || ''),
@@ -4412,7 +4600,7 @@
       }
 
       function markFeatureDirtyRoadtrip(feature) {
-        ensureFeatureDefaults(feature);
+        applyFeatureDefaults(feature);
         feature.trello.enabled = true;
         if (feature.trello.cardId) {
           feature.trello.syncState = 'dirty-roadtrip';
@@ -4434,7 +4622,7 @@
       }
 
       function getTrelloSyncBadge(feature) {
-        ensureFeatureDefaults(feature);
+        applyFeatureDefaults(feature);
         const state = feature.trello.syncState || 'unlinked';
         if (state === 'linked' && feature.trello.lastSyncedAt) return 'verbunden · ' + formatDateTime(feature.trello.lastSyncedAt);
         if (state === 'dirty-roadtrip') return 'lokal geändert';
@@ -4466,7 +4654,7 @@
       }
 
       function buildRoadtripSyncBlock(feature) {
-        ensureFeatureDefaults(feature);
+        applyFeatureDefaults(feature);
         const lines = [
           TRELLO_SYNC_START,
           'schemaVersion: 1',
@@ -4668,11 +4856,10 @@
         }
 
         // ── status: Trello wins when changed ──
-        if (trelloStatus && FEATURE_STATUS.includes(trelloStatus)) {
-          if (trelloStatus !== snapStatus) {
-            feature.status = trelloStatus;
-            changed.push('status');
-          }
+        const resolvedTrelloStatus = resolveStatusForPool(trelloStatus, feature.pool || 'planned');
+        if (resolvedTrelloStatus && resolvedTrelloStatus !== snapStatus) {
+          feature.status = resolvedTrelloStatus;
+          changed.push('status');
         }
 
         // ── priority: same 3-way logic as title/description ──
@@ -4726,7 +4913,7 @@
         const silent = !!(options && options.silent);
         const feature = S.features.find(x => x.id === featureId);
         if (!feature) return { ok: false, error: 'feature-not-found', featureId };
-        ensureFeatureDefaults(feature);
+        applyFeatureDefaults(feature);
 
         if (!feature.trello || !feature.trello.cardId) {
           if (!silent) alert('Dieses Feature hat noch keine Trello-Verknüpfung. Erst nach Trello pushen.');
@@ -4829,13 +5016,13 @@
         const silent = !!(options && options.silent);
         const feature = S.features.find(x => x.id === featureId);
         if (!feature) return;
-        ensureFeatureDefaults(feature);
+        applyFeatureDefaults(feature);
 
         try {
           validateTrelloConfig();
           const projectTitle = getProjectTitle(feature.projectId);
           const [list, projectLabel, categoryLabel, priorityLabel] = await Promise.all([
-            ensureTrelloListByName(feature.status || 'Idee'),
+            ensureTrelloListByName(feature.status || 'idea'),
             ensureTrelloLabelByName(getProjectLabelName(projectTitle), 'blue'),
             ensureTrelloLabelByName(getCategoryLabelName(feature.category), 'green'),
             ensureTrelloLabelByName(getPriorityLabelName(feature.priority), 'red')
