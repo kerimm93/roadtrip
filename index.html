@@ -1955,7 +1955,7 @@
             <textarea id="promptOutput" style="min-height:220px">${escapeHtml(ui.importDraft.prompt || '')}</textarea>
           </div>
           <div class="stack-row">
-            <button class="btn btn-primary" id="btnImportJsonResult">Analyse-JSON abgleichen</button>
+            <button class="btn btn-primary" id="btnImportJsonResult">Aktuellen Code auf umgesetzte Features prüfen</button>
             <button class="btn" id="btnBuildCleanupPrompt">Cleanup-Prompt bauen</button>
             <button class="btn" id="btnFeatureFromPrompt">Fallback: Zeilen importieren</button>
           </div>
@@ -3298,9 +3298,11 @@
           title,
           description: proposal.resolvedDescription || 'Aus Cleanup-Review übernommen.',
           category: proposal.resolvedCategory || 'Sonstiges',
-          pool: 'planned',
+          pool: ui.cleanupReview.mode === 'import-cleanup' ? 'implemented' : 'planned',
           reviewStatus: 'needs-review',
-          status: proposal.resolvedStatus || 'planned',
+          status: ui.cleanupReview.mode === 'import-cleanup'
+            ? mapJsonAnalysisStatus(proposal.resolvedStatus || 'detected')
+            : (proposal.resolvedStatus || 'planned'),
           priority: 'mittel',
           sourceType: 'cleanup-review',
           sourceNoteIds: [],
@@ -3608,15 +3610,23 @@
         const importedCategory = FEATURE_CATEGORIES.includes(imported.category) ? imported.category : 'Sonstiges';
         const changes = [];
         applyFeatureDefaults(existing);
+        if (existing.pool !== 'implemented') {
+          existing.pool = 'implemented';
+          changes.push('pool');
+        }
+        if (existing.reviewStatus !== 'needs-review') {
+          existing.reviewStatus = 'needs-review';
+          changes.push('reviewStatus');
+        }
 
         if (importedStatus === 'confirmed') {
-          const nextStatus = existing.pool === 'implemented' ? 'confirmed' : 'done';
+          const nextStatus = 'confirmed';
           if (getFeatureStatusRank(existing.status, existing.pool) < getFeatureStatusRank(nextStatus, existing.pool)) {
             existing.status = nextStatus;
             changes.push('status');
           }
         } else if (importedStatus === 'detected') {
-          const nextStatus = existing.pool === 'implemented' ? 'detected' : 'in-progress';
+          const nextStatus = 'detected';
           if (getFeatureStatusRank(existing.status, existing.pool) < getFeatureStatusRank(nextStatus, existing.pool)) {
             existing.status = nextStatus;
             changes.push('status');
