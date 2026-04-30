@@ -487,7 +487,7 @@
       const FEATURE_POOLS = ['planned', 'implemented'];
       const FEATURE_REVIEW_STATUS = ['needs-review', 'reviewed'];
       const FEATURE_STATUS_BY_POOL = {
-        planned: ['idea', 'planned', 'selected-for-sprint', 'in-progress', 'blocked', 'done', 'deferred'],
+        planned: ['idea', 'planned', 'selected-for-sprint', 'in-progress', 'blocked', 'deferred'],
         implemented: ['detected', 'confirmed', 'manually-added', 'needs-review', 'obsolete']
       };
       const FEATURE_STATUS_LABELS = {
@@ -496,7 +496,6 @@
         'selected-for-sprint': 'Für Sprint ausgewählt',
         'in-progress': 'In Arbeit',
         blocked: 'Blockiert',
-        done: 'Erledigt',
         deferred: 'Zurückgestellt',
         detected: 'Erkannt',
         confirmed: 'Bestätigt',
@@ -513,8 +512,22 @@
         geprüft: 'planned',
         geplant: 'planned',
         'in arbeit': 'in-progress',
-        'teilweise umgesetzt': 'in-progress',
-        umgesetzt: 'done'
+        begonnen: 'in-progress',
+        offen: 'planned',
+        backlog: 'planned'
+      };
+      const LEGACY_IMPLEMENTED_STATUS_TO_STATUS = {
+        erledigt: 'confirmed',
+        umgesetzt: 'confirmed',
+        done: 'confirmed',
+        complete: 'confirmed',
+        completed: 'confirmed',
+        fertig: 'confirmed',
+        'teilweise umgesetzt': 'detected',
+        vorbereitet: 'detected',
+        implemented: 'confirmed',
+        confirmed: 'confirmed',
+        detected: 'detected'
       };
       const TRELLO_LABEL_PREFIX = { project: 'P: ', category: 'C: ', priority: 'Prio: ' };
       const TRELLO_SYNC_START = '--- ROADTRIP_SYNC ---';
@@ -570,8 +583,7 @@
           if (isValidFeatureStatus(migrated, safePool)) return migrated;
           return FEATURE_STATUS_BY_POOL.planned[0];
         }
-        if (normalized === 'umgesetzt') return 'confirmed';
-        if (normalized === 'teilweise umgesetzt' || normalized === 'vorbereitet') return 'detected';
+        if (LEGACY_IMPLEMENTED_STATUS_TO_STATUS[normalized]) return LEGACY_IMPLEMENTED_STATUS_TO_STATUS[normalized];
         if (isValidFeatureStatus(raw, safePool)) return raw;
         return FEATURE_STATUS_BY_POOL.implemented[0];
       }
@@ -586,9 +598,21 @@
           const migrated = LEGACY_STATUS_TO_PLANNED[normalized];
           return migrated && isValidFeatureStatus(migrated, safePool) ? migrated : '';
         }
-        if (normalized === 'umgesetzt') return 'confirmed';
-        if (normalized === 'teilweise umgesetzt' || normalized === 'vorbereitet') return 'detected';
+        if (LEGACY_IMPLEMENTED_STATUS_TO_STATUS[normalized]) return LEGACY_IMPLEMENTED_STATUS_TO_STATUS[normalized];
         return '';
+      }
+
+      function resolveLegacyImplementedStatus(status) {
+        const normalized = normalizeText(status);
+        return LEGACY_IMPLEMENTED_STATUS_TO_STATUS[normalized] || '';
+      }
+
+      function normalizeFeaturePoolAndStatus(pool, status) {
+        let nextPool = normalizeFeaturePool(pool);
+        const legacyImplementedStatus = resolveLegacyImplementedStatus(status);
+        if (legacyImplementedStatus) nextPool = 'implemented';
+        const nextStatus = legacyImplementedStatus || normalizeFeatureStatus(status, nextPool);
+        return { pool: nextPool, status: nextStatus };
       }
 
       function getFeatureStatusLabel(status) {
@@ -773,7 +797,7 @@
           Features: visibleFeatures.length,
           Geplant: plannedFeatures.length,
           Umgesetzt: implementedFeatures.length,
-          Offene: plannedFeatures.filter(f => !['done','deferred'].includes(f.status)).length,
+          Offene: plannedFeatures.filter(f => !['deferred'].includes(f.status)).length,
           Chats: (S.chats || []).filter(c => c.status === 'aktiv').length
         };
         const el = $('stats');
@@ -1223,8 +1247,8 @@
       function getRelevantFeatureTitles(projectId, maxItems) {
         const projectFeatures = getVisibleFeatures(S.features).filter(f => f.projectId === projectId && isPlannedFeature(f));
         const sorted = projectFeatures.slice().sort((a, b) => {
-          const aOpen = ['done', 'deferred'].includes(a.status) ? 0 : 1;
-          const bOpen = ['done', 'deferred'].includes(b.status) ? 0 : 1;
+          const aOpen = ['deferred'].includes(a.status) ? 0 : 1;
+          const bOpen = ['deferred'].includes(b.status) ? 0 : 1;
           if (aOpen !== bOpen) return bOpen - aOpen;
           return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
         });
@@ -2499,10 +2523,14 @@
         if (!f) return;
         applyFeatureDefaults(f);
         f.pool = normalizeFeaturePool(pool);
-        if (!isValidFeatureStatus(f.status, f.pool)) {
-          f.status = f.pool === 'implemented' ? 'detected' : 'idea';
+        const normalizedStatus = resolveStatusForPool(f.status, f.pool);
+        if (normalizedStatus) {
+          f.status = normalizedStatus;
+        } else {
+          f.status = f.pool === 'implemented' ? 'detected' : 'planned';
         }
-        if (!FEATURE_REVIEW_STATUS.includes(f.reviewStatus)) f.reviewStatus = 'needs-review';
+        f.reviewStatus = FEATURE_REVIEW_STATUS.includes(f.reviewStatus) ? f.reviewStatus : 'needs-review';
+        if (f.pool === 'implemented' || f.pool === 'planned') f.reviewStatus = 'needs-review';
         f.updatedAt = new Date().toISOString();
         markFeatureDirtyRoadtrip(f);
         save();
@@ -2772,7 +2800,7 @@
           '- type darf nur sein: "new-feature" | "update-feature" | "already-implemented" | "unclear"',
           '- Bei "update-feature": targetFeatureId aus der obigen Liste setzen.',
           '- Bei "already-implemented": ebenfalls targetFeatureId setzen, falls erkennbar.',
-          '- suggestedStatus darf nur sein: idea|planned|selected-for-sprint|in-progress|blocked|done|deferred',
+          '- suggestedStatus darf nur sein: idea|planned|selected-for-sprint|in-progress|blocked|deferred',
           '- suggestedCategory darf nur sein: UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges',
           '- rationale: ein Satz, warum dieser Vorschlag gemacht wird.',
           '',
@@ -3027,7 +3055,7 @@
             '- duplicateFeatureId ist das Feature, das in den Papierkorb verschoben werden soll.',
             '- Bei "duplicate-of" müssen targetFeatureId und duplicateFeatureId gesetzt sein, wenn es eine echte Dublette ist.',
             '- Verwende "duplicate-of" ohne duplicateFeatureId nur bei Unsicherheit; dann confidence auf "niedrig".',
-            '- resolvedStatus darf nur sein: idea|planned|selected-for-sprint|in-progress|blocked|done|deferred',
+            '- resolvedStatus darf nur sein: idea|planned|selected-for-sprint|in-progress|blocked|deferred',
             '- resolvedCategory darf nur sein: UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges',
             '- confidence darf nur sein: hoch|mittel|niedrig',
             '- rationale: kurzer nachvollziehbarer Grund.',
@@ -3073,7 +3101,7 @@
           '- type darf nur sein: "match-existing" | "update-existing" | "new-feature" | "duplicate-of" | "probably-stale".',
           '- Bei match-existing / update-existing / duplicate-of / probably-stale muss targetFeatureId gesetzt werden, wenn möglich.',
           '- duplicate-of darf nur Vorschlag sein; nichts direkt löschen.',
-          '- resolvedStatus darf nur sein: idea|planned|selected-for-sprint|in-progress|blocked|done|deferred',
+          '- resolvedStatus darf nur sein: idea|planned|selected-for-sprint|in-progress|blocked|deferred',
           '- resolvedCategory darf nur sein: UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges',
           '- confidence darf nur sein: hoch|mittel|niedrig',
           '- rationale: kurzer nachvollziehbarer Grund.',
@@ -3451,18 +3479,15 @@
       }
 
       function mapJsonAnalysisStatus(status) {
-        const normalized = String(status || '').trim().toLowerCase();
-        if (normalized === 'umgesetzt') return 'confirmed';
-        if (normalized === 'teilweise umgesetzt') return 'detected';
-        if (normalized === 'vorbereitet') return 'detected';
-        return 'detected';
+        const mapped = resolveLegacyImplementedStatus(status);
+        return mapped || 'detected';
       }
 
       function getFeatureStatusRank(status, pool) {
         const safePool = normalizeFeaturePool(pool);
         const order = safePool === 'implemented'
           ? ['detected', 'needs-review', 'manually-added', 'confirmed', 'obsolete']
-          : ['idea', 'planned', 'selected-for-sprint', 'in-progress', 'blocked', 'done', 'deferred'];
+          : ['idea', 'planned', 'selected-for-sprint', 'in-progress', 'blocked', 'deferred'];
         const idx = order.indexOf(status);
         return idx === -1 ? 0 : idx;
       }
@@ -4493,10 +4518,11 @@
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         }, input);
-        clone.pool = normalizeFeaturePool(clone.pool);
-        if (!hadPool) clone.pool = 'planned';
+        const normalizedPoolAndStatus = normalizeFeaturePoolAndStatus(clone.pool, clone.status);
+        clone.pool = normalizedPoolAndStatus.pool;
+        if (!hadPool && clone.pool !== 'implemented') clone.pool = 'planned';
         clone.reviewStatus = FEATURE_REVIEW_STATUS.includes(clone.reviewStatus) ? clone.reviewStatus : 'needs-review';
-        clone.status = normalizeFeatureStatus(clone.status, clone.pool);
+        clone.status = normalizeFeatureStatus(normalizedPoolAndStatus.status, clone.pool);
         clone.trello = Object.assign({
           enabled: false,
           boardId: '',
