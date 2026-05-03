@@ -1141,13 +1141,27 @@
           .sort((a, b) => String(b.updatedAt || b.startedAt || '').localeCompare(String(a.updatedAt || a.startedAt || '')));
       }
 
+      function findProjectMainChatCandidate(projectId) {
+        if (!projectId) return null;
+        return (S.chats || [])
+          .filter(c => c && c.projectId === projectId && c.type === 'project-main')
+          .sort((a, b) => String(b.updatedAt || b.startedAt || '').localeCompare(String(a.updatedAt || a.startedAt || '')))[0] || null;
+      }
+
       function getProjectMainChat(projectId) {
         if (!projectId) return null;
         const project = S.projects.find(x => x.id === projectId);
-        if (!project || !project.mainChatId) return null;
-        const mainChat = (S.chats || []).find(c => c && c.id === project.mainChatId && c.projectId === projectId);
-        if (!mainChat) return null;
-        return ensureChatDefaults(mainChat);
+        if (!project) return null;
+        if (project.mainChatId) {
+          const byId = (S.chats || []).find(c => c && c.id === project.mainChatId && c.projectId === projectId);
+          if (byId) return ensureChatDefaults(byId);
+        }
+        const found = findProjectMainChatCandidate(projectId);
+        if (!found) return null;
+        project.mainChatId = found.id;
+        found.mainChatId = found.id;
+        if (!String(project.mainChatUrl || '').trim() && String(found.url || '').trim()) project.mainChatUrl = found.url.trim();
+        return ensureChatDefaults(found);
       }
 
       function getProjectSourceChats(projectId) {
@@ -1227,14 +1241,17 @@
         const project = S.projects.find(x => x.id === projectId);
         const chat = S.chats.find(x => x.id === chatId && x.projectId === projectId);
         if (!project || !chat) return false;
+        const now = new Date().toISOString();
+        chat.type = 'project-main';
+        chat.mainChatId = chat.id;
         project.mainChatId = chat.id;
-        project.mainChatUrl = '';
         if (chat.url && chat.url.trim()) project.mainChatUrl = chat.url.trim();
         (S.chats || []).forEach(c => {
           if (!c || c.projectId !== projectId) return;
           c.mainChatId = chat.id;
         });
-        project.updatedAt = new Date().toISOString();
+        project.updatedAt = now;
+        chat.updatedAt = now;
         return true;
       }
 
@@ -1308,6 +1325,60 @@
         if (!normalized) return '';
         const match = CHAT_STATUS.find(s => normalizeText(s) === normalized);
         return match || '';
+      }
+
+      function appendHandoffToChat(chat, rawHandoffText, now) {
+        if (!chat) return;
+        if (!Array.isArray(chat.handoffHistory)) chat.handoffHistory = [];
+        const raw = String(rawHandoffText || '');
+        chat.rawHandoffText = raw || chat.rawHandoffText || '';
+        chat.handoffImportedAt = now;
+        chat.handoffHistory.push({ importedAt: now, raw });
+        if (chat.handoffHistory.length > 10) chat.handoffHistory = chat.handoffHistory.slice(chat.handoffHistory.length - 10);
+        if (!chat.rawReportText) chat.rawReportText = raw;
+      }
+
+      function ensureProjectMainChatForHandoff(projectId, sourceChatId, normalized, rawHandoffText, now) {
+        const project = S.projects.find(p => p.id === projectId);
+        if (!project) return null;
+        const sourceChat = sourceChatId ? S.chats.find(c => c && c.id === sourceChatId && c.projectId === projectId) : null;
+        let mainChat = getProjectMainChat(projectId);
+        if (!mainChat) {
+          mainChat = ensureChatDefaults({
+            id: uid('ch'),
+            projectId,
+            title: project.title ? project.title + ' · Hauptchat' : 'Projekt-Hauptchat',
+            type: 'project-main',
+            status: 'aktiv',
+            url: project.mainChatUrl || '',
+            summary: normalized.summary || project.summary || '',
+            nextStep: normalized.nextStep || project.nextStep || '',
+            rawReportText: rawHandoffText || '',
+            rawHandoffText: rawHandoffText || '',
+            sourceChatId: sourceChat ? sourceChat.id : '',
+            parentChatId: sourceChat ? sourceChat.id : '',
+            startedAt: now,
+            updatedAt: now
+          });
+          mainChat.mainChatId = mainChat.id;
+          appendHandoffToChat(mainChat, rawHandoffText, now);
+          S.chats.push(mainChat);
+          project.mainChatId = mainChat.id;
+          if (mainChat.url && mainChat.url.trim()) project.mainChatUrl = mainChat.url.trim();
+          return mainChat;
+        }
+        mainChat.type = 'project-main';
+        mainChat.status = mainChat.status || 'aktiv';
+        mainChat.summary = normalized.summary || mainChat.summary || project.summary || '';
+        mainChat.nextStep = normalized.nextStep || mainChat.nextStep || project.nextStep || '';
+        mainChat.sourceChatId = sourceChat ? sourceChat.id : mainChat.sourceChatId || '';
+        if (!mainChat.parentChatId && sourceChat) mainChat.parentChatId = sourceChat.id;
+        mainChat.mainChatId = mainChat.id;
+        appendHandoffToChat(mainChat, rawHandoffText, now);
+        mainChat.updatedAt = now;
+        project.mainChatId = mainChat.id;
+        if (mainChat.url && mainChat.url.trim()) project.mainChatUrl = mainChat.url.trim();
+        return mainChat;
       }
 
       function parseSprintHandoffJson(rawJson) {
@@ -1450,6 +1521,7 @@
 
         project.currentFocus = normalized.currentFocus;
         project.nextStep = normalized.nextStep;
+        const mainChat = ensureProjectMainChatForHandoff(projectId, sourceChatId, normalized, extractedJson, now);
         project.updatedAt = now;
 
         const sourceChatTitle = sourceChat.title || normalized.chatTitle || 'Sprint';
@@ -1497,16 +1569,18 @@
         const st = getChatWorkflowState(projectId);
         st.sourceChatId = sourceChatId;
         st.mode = 'sprint-handoff-import';
+        st.prompt = buildReturnToMainChatPrompt(projectId, sourceChatId) || buildMainChatBootstrapPrompt(projectId, sourceChatId);
         save();
         renderView();
-        alert('Sprint-Bericht importiert. Chat/Projekt aktualisiert. Neue geplante Features: ' + createdFeatures + '.');
+        alert('Sprint-Bericht importiert. Projekt und Hauptchat-Kontext aktualisiert. Neue geplante Features: ' + createdFeatures + '.');
       }
 
       function buildReturnToMainChatPrompt(projectId, sourceChatId) {
         const project = S.projects.find(p => p.id === projectId);
         const sourceChat = S.chats.find(c => c.id === sourceChatId && c.projectId === projectId);
         const mainChat = getProjectMainChat(projectId);
-        if (!project || !sourceChat || !mainChat) return '';
+        if (!project || !sourceChat) return '';
+        if (!mainChat) return 'Kein interner Hauptchat-Kontext gefunden. Importiere zuerst ein Sprint-Handoff oder setze einen Hauptchat.';
         const featureLines = getRelevantFeatureTitles(projectId, 8);
         const noteLines = getRelevantUnprocessedNotes(projectId, 5);
         return [
@@ -1517,13 +1591,15 @@
           `- Projektsummary: ${project.summary || '—'}`,
           `- Aktueller Fokus: ${project.currentFocus || '—'}`,
           `- Nächster Schritt (Projekt): ${project.nextStep || '—'}`,
-          `- Hauptchat: ${mainChat.title || '—'}${mainChat.url ? ' (' + mainChat.url + ')' : ''}`,
+          `- Hauptchat: ${mainChat.title || '—'}`,
+          `- Hauptchat-URL: ${mainChat.url || project.mainChatUrl || 'OFFEN'}`,
           '',
           '## Was im Sprintchat passiert ist',
           `- Ausgangschat: ${sourceChat.title || '—'}`,
           `- Typ/Status: ${sourceChat.type || '—'} / ${sourceChat.status || '—'}`,
           `- URL: ${sourceChat.url || '—'}`,
-          `- Zusammenfassung: ${sourceChat.summary || '—'}`,
+          `- Zusammenfassung (Ausgangschat): ${sourceChat.summary || '—'}`,
+          `- Hauptchat-Summary: ${mainChat.summary || '—'}`,
           `- Nächster Schritt aus dem Ausgangschat: ${sourceChat.nextStep || '—'}`,
           sourceChat.rawReportText ? `- Raw Report:\n${sourceChat.rawReportText}` : '- Raw Report: —',
           '',
@@ -1542,6 +1618,7 @@
       function buildMainChatBootstrapPrompt(projectId, sourceChatId) {
         const project = S.projects.find(p => p.id === projectId);
         const sourceChat = S.chats.find(c => c.id === sourceChatId && c.projectId === projectId);
+        const mainChat = getProjectMainChat(projectId);
         if (!project || !sourceChat) return '';
         let handoffData = null;
         try {
@@ -1562,13 +1639,16 @@
         const noteLines = getRelevantUnprocessedNotes(projectId, 5);
         return [
           'Bitte arbeite mit mir den zentralen Hauptchat für dieses Projekt auf.',
-          'Dieser Chat soll ab jetzt der zentrale Kontextchat für das Projekt sein.',
+          'Roadtrip hat intern einen Hauptchat-Kontext vorbereitet oder bereitet ihn gerade vor.',
+          'Eine externe ChatGPT-/Claude-Hauptchat-URL kann Roadtrip nicht automatisch erzeugen.',
+          'Wenn noch keine URL vorhanden ist, erstelle den Hauptchat extern und trage die URL danach in Roadtrip ein.',
           '',
           '## Projektkontext',
           `- Projekttitel: ${project.title || '—'}`,
           `- Projektsummary: ${project.summary || '—'}`,
           `- Aktueller Fokus: ${effectiveCurrentFocus}`,
           `- Nächster Schritt: ${effectiveNextStep}`,
+          `- Hauptchat-URL: ${project.mainChatUrl || (mainChat && mainChat.url) || 'OFFEN – nach Erstellung in Roadtrip eintragen'}`,
           '',
           '## Aktueller Stand aus Ausgangschat',
           `- Ausgangschat: ${sourceChat.title || '—'} (${sourceChat.type || '—'})`,
@@ -1594,8 +1674,9 @@
 
       function buildSprintPromptFromMainChat(projectId, sprintGoal) {
         const project = S.projects.find(p => p.id === projectId);
+        if (!project) return '';
         const mainChat = getProjectMainChat(projectId);
-        if (!project || !mainChat) return '';
+        if (!mainChat) return 'Kein interner project-main-Chat vorhanden. Importiere zuerst ein Sprint-Handoff oder lege einen Hauptchat an.';
         const featureLines = getRelevantFeatureTitles(projectId, 8);
         const cleanGoal = String(sprintGoal || '').trim();
         return [
@@ -1609,7 +1690,7 @@
           '',
           '## Hauptchat-Kontext',
           `- Hauptchat: ${mainChat.title || '—'}`,
-          `- URL: ${mainChat.url || project.mainChatUrl || '—'}`,
+          `- URL: ${mainChat.url || project.mainChatUrl || 'OFFEN – in Roadtrip nachtragen'}`,
           `- Hauptchat-Summary: ${mainChat.summary || '—'}`,
           `- Hauptchat-Next Step: ${mainChat.nextStep || '—'}`,
           '',
@@ -1850,11 +1931,17 @@
                     <strong>${escapeHtml(projectMainChat.title || 'Ohne Titel')}</strong>
                     <div class="stack-row" style="gap:4px;">${renderChatTypeBadge(projectMainChat.type)}${renderChatStatusBadge(projectMainChat.status)}</div>
                   </div>
+                  <div class="stack-row" style="margin-top:6px;gap:6px;">
+                    <span class="pill">✅ Hauptchat-Kontext vorhanden</span>
+                    ${(!projectMainChat.url && !p.mainChatUrl) ? '<span class="pill">⚠ Hauptchat-URL offen</span>' : ''}
+                  </div>
+                  ${projectMainChat.summary ? `<div class="item-desc" style="margin-top:6px;">${escapeHtml(projectMainChat.summary)}</div>` : ''}
+                  ${projectMainChat.nextStep ? `<div class="mini" style="color:var(--accent);margin-top:4px;">→ ${escapeHtml(projectMainChat.nextStep)}</div>` : ''}
                   <div class="stack-row" style="margin-top:6px;">
                     ${projectMainChat.url ? `<a href="${escapeAttr(projectMainChat.url)}" target="_blank" rel="noopener" class="btn">Öffnen</a>` : ''}
                     <button class="btn" data-edit-chat="${projectMainChat.id}">Bearbeiten</button>
                   </div>
-                ` : `<div class="notice" style="margin:0;">Noch kein Hauptchat gesetzt.</div>`}
+                ` : `<div class="notice" style="margin:0;">Noch kein interner Hauptchat-Kontext vorhanden. Sprint-Handoff importieren oder Hauptchat setzen.</div>`}
               </div>
               <div class="field">
                 <label for="chatWorkflowSourceChat">Ausgangschat</label>
@@ -4501,6 +4588,10 @@
           summary: '',
           nextStep: '',
           rawReportText: '',
+          rawHandoffText: '',
+          handoffImportedAt: '',
+          handoffHistory: [],
+          sourceChatId: '',
           parentChatId: '',
           mainChatId: '',
           startedAt: new Date().toISOString(),
