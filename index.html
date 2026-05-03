@@ -637,6 +637,18 @@
         return FEATURE_POOLS.flatMap(pool => getFeatureStatusesForPool(pool));
       }
 
+      function getStatusFilterOptionsForPool(pool) {
+        const selectedPool = String(pool || '').trim().toLowerCase();
+        if (selectedPool === 'alle') return getAllFeatureStatuses();
+        return getFeatureStatusesForPool(selectedPool);
+      }
+
+      function ensureValidStatusFilterForPool(pool) {
+        const currentStatus = String(ui.filters.status || 'alle').trim();
+        if (currentStatus === 'alle') return;
+        if (!getStatusFilterOptionsForPool(pool).includes(currentStatus)) ui.filters.status = 'alle';
+      }
+
       function applyFeatureDefaults(feature) {
         if (!feature || typeof feature !== 'object') return ensureFeatureDefaults(feature);
         Object.assign(feature, ensureFeatureDefaults(feature));
@@ -850,8 +862,8 @@
         const search = $('filterSearch');
         const kanbanToggle = $('toggleKanban');
         const allProjectsToggle = $('toggleAllProjects');
-        if (poolFilter) poolFilter.addEventListener('change', e => { ui.filters.pool = e.target.value; renderView(); });
-        if (statusFilter) statusFilter.addEventListener('change', e => { ui.filters.status = e.target.value; renderView(); });
+        if (poolFilter) poolFilter.addEventListener('change', e => { ui.filters.pool = e.target.value; ensureValidStatusFilterForPool(ui.filters.pool); renderView(); });
+        if (statusFilter) statusFilter.addEventListener('change', e => { ui.filters.status = e.target.value; ensureValidStatusFilterForPool(ui.filters.pool); renderView(); });
         if (catFilter) catFilter.addEventListener('change', e => { ui.filters.category = e.target.value; renderView(); });
         if (search) search.addEventListener('input', e => { ui.filters.search = e.target.value; renderView(); });
         if (kanbanToggle) kanbanToggle.addEventListener('change', e => { ui.showKanban = e.target.checked; renderView(); });
@@ -1097,7 +1109,8 @@
         const features = getFilteredFeatures();
         const plannedFeatures = features.filter(isPlannedFeature);
         const implementedFeatures = features.filter(isImplementedFeature);
-        const statusOptions = ['alle'].concat(getAllFeatureStatuses());
+        ensureValidStatusFilterForPool(ui.filters.pool);
+        const statusOptions = ['alle'].concat(getStatusFilterOptionsForPool(ui.filters.pool));
         return `
           ${renderContextBanner()}
           <div class="panel-title">
