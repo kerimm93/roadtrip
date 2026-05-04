@@ -739,6 +739,7 @@
       function save() {
         S._lastLocalSaveAt = new Date().toISOString();
         ensureDefaults();
+        let stateSaved = false;
         try {
           const payload = JSON.stringify(S);
           if (!payload || payload.length < 10) throw new Error('suspiciously small payload');
@@ -746,19 +747,82 @@
           const verifyRaw = localStorage.getItem(LKEY);
           if (!verifyRaw) throw new Error('localStorage write verification failed');
           JSON.parse(verifyRaw);
+          stateSaved = true;
+          if (typeof S._lastSaveError === 'string' && S._lastSaveError) S._lastSaveError = '';
         } catch (e) {
           console.error('[save] State save failed:', e);
-          alert('Warnung: Lokales Speichern fehlgeschlagen. ' + e.message);
+          const msg = String((e && e.message) || '');
+          const quotaLike = (e && e.name === 'QuotaExceededError') || /quota|exceeded/i.test(msg);
+          if (quotaLike) {
+            S._lastSaveError = 'quota-exceeded';
+            alert('⚠ Lokales Speichern fehlgeschlagen: Browser-Speicher voll. Bitte sofort Notfall-Export erstellen. Nicht neu laden.');
+            const shouldExport = confirm('Soll jetzt ein vollständiger Notfall-Export aus dem aktuellen Arbeitsspeicher erstellt werden?');
+            if (shouldExport) exportFullEmergencyJson();
+          } else {
+            S._lastSaveError = msg || 'save-failed';
+            alert('Warnung: Lokales Speichern fehlgeschlagen. ' + msg);
+          }
         }
         try {
           localStorage.setItem(CONFIG_KEY, JSON.stringify(C));
         } catch (e) {
           console.error('[save] Config save failed:', e);
         }
-        const lbl = $('lastSavedLabel');
-        if (lbl) lbl.textContent = 'Gespeichert: ' + formatDateTime(S._lastLocalSaveAt);
+        if (stateSaved) {
+          const lbl = $('lastSavedLabel');
+          if (lbl) lbl.textContent = 'Gespeichert: ' + formatDateTime(S._lastLocalSaveAt);
+        }
+        if (typeof updateStorageDisplay === 'function') updateStorageDisplay();
         renderStats();
         renderSidebarProjects();
+        return stateSaved;
+      }
+
+      function getByteSize(value) {
+        try {
+          const payload = typeof value === 'string' ? value : JSON.stringify(value);
+          return new Blob([payload]).size;
+        } catch (err) {
+          return String(value == null ? '' : value).length * 2;
+        }
+      }
+
+      function getRoadtripStorageReport(targetState) {
+        const base = targetState || S || {};
+        const json = JSON.stringify(base || {});
+        const totalBytes = getByteSize(json);
+        const keys = ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'appVersions', 'imports'];
+        const areas = keys
+          .filter(key => Object.prototype.hasOwnProperty.call(base, key))
+          .map(key => {
+            const bytes = getByteSize(base[key]);
+            return { key, bytes, mb: bytes / (1024 * 1024) };
+          })
+          .sort((a, b) => b.bytes - a.bytes);
+        return { totalBytes, totalMb: totalBytes / (1024 * 1024), areas };
+      }
+
+      function updateStorageDisplay() {
+        try {
+          const wrap = $('storageDiagWrap');
+          const total = $('storageDiagTotal');
+          const bar = $('storageDiagBar');
+          const top = $('storageDiagTop');
+          const warn = $('storageDiagWarn');
+          if (!wrap || !total || !bar || !top || !warn) return;
+          const report = getRoadtripStorageReport();
+          const limitBytes = 5 * 1024 * 1024;
+          const ratio = Math.max(0, Math.min(1, report.totalBytes / limitBytes));
+          const pct = ratio * 100;
+          total.textContent = `Gesamtgröße: ${report.totalMb.toFixed(2)} MB`;
+          bar.style.width = pct.toFixed(1) + '%';
+          bar.style.background = pct < 50 ? '#22c55e' : (pct <= 80 ? '#f59e0b' : '#ef4444');
+          top.innerHTML = report.areas.slice(0, 5).map(a => `<div class="mini">${escapeHtml(a.key)}: ${a.mb.toFixed(2)} MB</div>`).join('') || '<div class="mini">Keine Bereiche gefunden.</div>';
+          warn.textContent = pct > 80 ? '⚠ Speicher fast voll. Bitte JSON exportieren oder Rohdaten komprimieren.' : '';
+          wrap.style.display = 'block';
+        } catch (err) {
+          console.warn('[updateStorageDisplay] failed:', err);
+        }
       }
 
       function wireBasics() {
@@ -878,6 +942,10 @@
         if ($('btnGistPush')) $('btnGistPush').addEventListener('click', gistPush);
         if ($('btnGistPull')) $('btnGistPull').addEventListener('click', gistPull);
         if ($('btnGistRawBackup')) $('btnGistRawBackup').addEventListener('click', gistRawBackup);
+        if ($('btnEmergencyExportFull')) $('btnEmergencyExportFull').addEventListener('click', exportFullEmergencyJson);
+        if ($('btnCompactExport')) $('btnCompactExport').addEventListener('click', exportCompactJson);
+        if ($('btnCompactRawData')) $('btnCompactRawData').addEventListener('click', compactRoadtripRawData);
+        updateStorageDisplay();
         updateGistStatusUI();
         if ($('openAiModel')) $('openAiModel').addEventListener('input', e => { C.openAiModel = e.target.value; save(); });
         if ($('trelloKey')) $('trelloKey').addEventListener('input', e => { C.trelloKey = e.target.value; save(); });
@@ -2165,6 +2233,21 @@
           <div class="field"><label for="rawGistToken">Backup Token</label><input id="rawGistToken" type="password" value="${escapeAttr(C.rawGistToken || '')}" /></div>
           <div class="stack-row" style="margin-bottom:8px;">
             <button class="btn" id="btnGistRawBackup">📦 Raw-Backup zum Gist</button>
+          </div>
+          <hr style="border:none;border-top:1px solid var(--border);margin:12px 0;">
+          <div class="panel-title" style="margin-top:8px;"><h3>Daten & Speicher</h3><div class="mini">Diagnose und Notfall-Werkzeuge</div></div>
+          <div id="storageDiagWrap" class="notice" style="display:block;">
+            <div id="storageDiagTotal" style="margin-bottom:6px;">Gesamtgröße: 0.00 MB</div>
+            <div style="height:10px;border-radius:999px;background:var(--surface-3);overflow:hidden;margin-bottom:8px;">
+              <div id="storageDiagBar" style="height:100%;width:0%;background:#22c55e;"></div>
+            </div>
+            <div id="storageDiagTop" style="display:grid;gap:4px;"></div>
+            <div id="storageDiagWarn" style="margin-top:8px;color:#f59e0b;font-weight:600;"></div>
+          </div>
+          <div class="stack-row" style="margin:8px 0;">
+            <button class="btn btn-danger" id="btnEmergencyExportFull">Notfall-Export vollständig</button>
+            <button class="btn" id="btnCompactExport">Kompakt-Export</button>
+            <button class="btn" id="btnCompactRawData">Rohdaten komprimieren</button>
           </div>
           <hr style="border:none;border-top:1px solid var(--border);margin:12px 0;">
           <div class="field"><label for="openAiModel">OpenAI Model</label><input id="openAiModel" type="text" value="${escapeAttr(C.openAiModel || '')}" /></div>
@@ -4484,6 +4567,83 @@
 
       function exportJson() {
         downloadJson('roadtrip_export.json', S);
+      }
+
+      function dateStamp() {
+        return new Date().toISOString().slice(0, 10);
+      }
+
+      function exportFullEmergencyJson() {
+        downloadJson(`roadtrip-emergency-full-${dateStamp()}.json`, {
+          version: 'roadtrip-emergency-full-v1',
+          exportedAt: new Date().toISOString(),
+          S: S
+        });
+      }
+
+      function compactCloneData(target) {
+        const maxRawFieldChars = 100 * 1024;
+        const minKnownRawChars = 2000;
+        const keysToTrim = new Set(['rawHtml', 'fullHtml', 'sourceHtml', 'html', 'rawCode', 'sourceCode', 'rawPrompt', 'rawResponse', 'responseText', 'rawAnalysis', 'analysisText', 'largeText', 'fullText']);
+        const maybeLargeKeys = new Set(['code', 'prompt']);
+        const stats = { fieldsTouched: 0 };
+        const walk = (node) => {
+          if (!node || typeof node !== 'object') return;
+          if (Array.isArray(node)) return node.forEach(walk);
+          Object.keys(node).forEach(key => {
+            const val = node[key];
+            if (Array.isArray(val) || (val && typeof val === 'object')) walk(val);
+            if (typeof val !== 'string') return;
+            const isKnownRaw = keysToTrim.has(key) && val.length > minKnownRawChars;
+            const isLikelyRaw = maybeLargeKeys.has(key) && val.length > 8000;
+            if (isKnownRaw || isLikelyRaw) {
+              node[key] = `[komprimiert am ${new Date().toISOString()} — ursprüngliche Länge: ${val.length} Zeichen]`;
+              stats.fieldsTouched += 1;
+            }
+            if ((key === 'rawReportText' || key === 'rawHandoffText') && val.length > maxRawFieldChars) {
+              node[key] = `[komprimiert am ${new Date().toISOString()} — ursprüngliche Länge: ${val.length} Zeichen]`;
+              stats.fieldsTouched += 1;
+            }
+          });
+          if (Array.isArray(node.handoffHistory) && node.handoffHistory.length > 3) {
+            node.handoffHistory = node.handoffHistory.slice(node.handoffHistory.length - 3);
+            stats.fieldsTouched += 1;
+          }
+        };
+        walk(target);
+        return stats;
+      }
+
+      function exportCompactJson() {
+        const cloned = JSON.parse(JSON.stringify(S));
+        compactCloneData(cloned);
+        downloadJson(`roadtrip-compact-${dateStamp()}.json`, {
+          version: 'roadtrip-compact-v1',
+          exportedAt: new Date().toISOString(),
+          compacted: true,
+          S: cloned
+        });
+      }
+
+      function compactRoadtripRawData() {
+        const before = getRoadtripStorageReport(S);
+        const preview = JSON.parse(JSON.stringify(S));
+        const previewStats = compactCloneData(preview);
+        const after = getRoadtripStorageReport(preview);
+        const savedBytes = before.totalBytes - after.totalBytes;
+        if (savedBytes <= 0 || previewStats.fieldsTouched <= 0) return alert('Keine großen Rohdaten gefunden.');
+        const msg = `Rohdaten komprimieren?\n\nVorher: ${before.totalMb.toFixed(2)} MB\nNachher: ${after.totalMb.toFixed(2)} MB\nErsparnis: ${(savedBytes / 1024).toFixed(1)} KB\nBetroffene Felder: ${previewStats.fieldsTouched}`;
+        if (!confirm(msg)) return;
+        compactCloneData(S);
+        const saved = save();
+        updateStorageDisplay();
+        if (saved) {
+          alert(`✓ Rohdaten komprimiert und gespeichert. Ersparnis: ${(savedBytes / 1024).toFixed(1)} KB.`);
+        } else {
+          alert('⚠ Rohdaten wurden im aktuellen Arbeitsspeicher komprimiert, aber noch nicht erfolgreich gespeichert. Bitte sofort vollständigen Notfall-Export erstellen und nicht neu laden.');
+          const shouldExport = confirm('Soll jetzt ein vollständiger Notfall-Export aus dem aktuellen Arbeitsspeicher erstellt werden?');
+          if (shouldExport) exportFullEmergencyJson();
+        }
       }
 
       function exportRawNotes() {
