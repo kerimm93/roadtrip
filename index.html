@@ -4446,10 +4446,21 @@
         renderAll();
       }
 
-      function normalizeImportedState(raw) {
+      function detectImportedState(raw) {
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-        const candidate = raw.state && typeof raw.state === 'object' && !Array.isArray(raw.state) ? raw.state : raw;
-        const normalized = Object.assign(defaultState(), candidate);
+        const isPlainObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
+        const labelWrappedExport = (wrapper) => (wrapper.compacted || String(wrapper.version || '').includes('compact')) ? 'Compact Export' : 'Emergency Export';
+
+        if (isPlainObject(raw.S)) return { candidate: raw.S, format: labelWrappedExport(raw) };
+        if (isPlainObject(raw.state) && isPlainObject(raw.state.S)) return { candidate: raw.state.S, format: labelWrappedExport(raw.state) };
+        if (isPlainObject(raw.state)) return { candidate: raw.state, format: 'Roadtrip State' };
+        return { candidate: raw, format: 'Roadtrip State' };
+      }
+
+      function normalizeImportedState(raw) {
+        const detected = detectImportedState(raw);
+        if (!detected) return null;
+        const normalized = Object.assign(defaultState(), detected.candidate);
         if (!Array.isArray(normalized.projects) || !Array.isArray(normalized.features) || !Array.isArray(normalized.notes) || !Array.isArray(normalized.analyses)) {
           return null;
         }
@@ -4460,6 +4471,7 @@
       }
 
       function showImportDialog(parsedState) {
+        const detected = detectImportedState(parsedState);
         const normalized = normalizeImportedState(parsedState);
         if (!normalized) return alert('Import fehlgeschlagen: JSON enthält keinen gültigen Roadtrip-State.');
         _importDraftData = normalized;
@@ -4477,7 +4489,8 @@
         modal.innerHTML = `
           <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;max-width:480px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow);">
             <h3 style="margin:0 0 8px;">JSON Import</h3>
-            <p class="mini" style="margin:0 0 16px;">Wähle, was importiert werden soll und wie.</p>
+            <p class="mini" style="margin:0 0 6px;">Wähle, was importiert werden soll und wie.</p>
+            <div class="mini" style="margin:0 0 16px;">Format: ${detected ? detected.format : 'Roadtrip State'}</div>
             <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:16px;">
               <div class="mini" style="margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;">Im Export enthalten:</div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
