@@ -2094,10 +2094,10 @@
               ${updates.length ? `<div class="list" style="margin-bottom:8px;">${updates.map(update => `
                 <div class="item">
                   <div class="row-top"><strong>${escapeHtml(update._projectTitle || 'Unbekanntes Projekt')}</strong><span class="pill">confidence: ${escapeHtml(update.confidence || 'mittel')}</span></div>
-                  ${update.focusUpdate ? `<div class="mini" style="margin-top:6px;"><strong>Fokus:</strong> ${escapeHtml(update.focusUpdate)}</div><div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-focus="${update._idx}" ${update._focusDone || update._focusIgnored ? 'disabled' : ''}>Fokus übernehmen</button><button class="btn" data-multi-ignore="focus|${update._idx}|-1" ${update._focusDone || update._focusIgnored ? 'disabled' : ''}>Ignorieren</button></div>` : ''}
-                  ${update.nextStep ? `<div class="mini" style="margin-top:6px;"><strong>Nächster Schritt:</strong> ${escapeHtml(update.nextStep)}</div><div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-next-step="${update._idx}" ${update._nextStepDone || update._nextStepIgnored ? 'disabled' : ''}>Next Step übernehmen</button><button class="btn" data-multi-ignore="next-step|${update._idx}|-1" ${update._nextStepDone || update._nextStepIgnored ? 'disabled' : ''}>Ignorieren</button></div>` : ''}
-                  ${update.notes && update.notes.length ? `<div style="margin-top:8px;"><strong>Notes</strong><div class="list" style="margin-top:6px;">${update.notes.map(note => `<div class="item"><div>${escapeHtml(note.text || '')}</div><div class="mini">${escapeHtml(note.type || 'note')} · ${escapeHtml(note.confidence || 'mittel')}</div><div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-note="${update._idx}|${note._idx}" ${note._done || note._ignored ? 'disabled' : ''}>Als Note übernehmen</button><button class="btn" data-multi-ignore="note|${update._idx}|${note._idx}" ${note._done || note._ignored ? 'disabled' : ''}>Ignorieren</button></div></div>`).join('')}</div></div>` : ''}
-                  ${update.proposedFeatures && update.proposedFeatures.length ? `<div style="margin-top:8px;"><strong>Proposed Features</strong><div class="list" style="margin-top:6px;">${update.proposedFeatures.map(feature => `<div class="item"><div><strong>${escapeHtml(feature.title || 'Ohne Titel')}</strong></div><div class="mini">${escapeHtml(feature.category || 'Sonstiges')} · ${escapeHtml(feature.priority || 'mittel')} · ${escapeHtml(feature.status || 'idea')}</div>${feature.description ? `<div class="mini">${escapeHtml(shorten(feature.description, 220))}</div>` : ''}<div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-feature="${update._idx}|${feature._idx}" ${feature._done || feature._ignored ? 'disabled' : ''}>Als Feature übernehmen</button><button class="btn" data-multi-ignore="feature|${update._idx}|${feature._idx}" ${feature._done || feature._ignored ? 'disabled' : ''}>Ignorieren</button></div></div>`).join('')}</div></div>` : ''}
+                  ${update.focusUpdate ? `<div class="mini" style="margin-top:6px;"><strong>Fokus:</strong> ${escapeHtml(update.focusUpdate)}</div><div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-focus="${update._idx}" ${update._focusDone || update._focusIgnored ? 'disabled' : ''}>${update._focusDone ? '✓ Fokus übernommen' : 'Fokus übernehmen'}</button><button class="btn" data-multi-ignore="focus|${update._idx}|-1" ${update._focusDone || update._focusIgnored ? 'disabled' : ''}>${update._focusIgnored ? '✓ Ignoriert' : 'Ignorieren'}</button>${update._focusDone ? '<span class="pill" style="background:var(--green);color:#0d2615;">übernommen</span>' : ''}${update._focusIgnored ? '<span class="pill">ignoriert</span>' : ''}</div>` : ''}
+                  ${update.nextStep ? `<div class="mini" style="margin-top:6px;"><strong>Nächster Schritt:</strong> ${escapeHtml(update.nextStep)}</div><div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-next-step="${update._idx}" ${update._nextStepDone || update._nextStepIgnored ? 'disabled' : ''}>${update._nextStepDone ? '✓ Next Step übernommen' : 'Next Step übernehmen'}</button><button class="btn" data-multi-ignore="next-step|${update._idx}|-1" ${update._nextStepDone || update._nextStepIgnored ? 'disabled' : ''}>${update._nextStepIgnored ? '✓ Ignoriert' : 'Ignorieren'}</button>${update._nextStepDone ? '<span class="pill" style="background:var(--green);color:#0d2615;">übernommen</span>' : ''}${update._nextStepIgnored ? '<span class="pill">ignoriert</span>' : ''}</div>` : ''}
+                  ${update.notes && update.notes.length ? `<div style="margin-top:8px;"><strong>Notes</strong><div class="list" style="margin-top:6px;">${update.notes.map(note => `<div class="item" style="${note._done || note._ignored ? 'opacity:.72;' : ''}"><div>${escapeHtml(note.text || '')}</div><div class="mini">${escapeHtml(note.type || 'note')} · ${escapeHtml(note.confidence || 'mittel')}</div><div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-note="${update._idx}|${note._idx}" ${note._done || note._ignored ? 'disabled' : ''}>${note._done ? '✓ Note übernommen' : 'Als Note übernehmen'}</button><button class="btn" data-multi-ignore="note|${update._idx}|${note._idx}" ${note._done || note._ignored ? 'disabled' : ''}>${note._ignored ? '✓ Ignoriert' : 'Ignorieren'}</button>${note._done ? '<span class="pill" style="background:var(--green);color:#0d2615;">übernommen</span>' : ''}${note._ignored ? '<span class="pill">ignoriert</span>' : ''}</div></div>`).join('')}</div></div>` : ''}
+                  ${update.proposedFeatures && update.proposedFeatures.length ? `<div style="margin-top:8px;"><strong>Proposed Features</strong><div class="list" style="margin-top:6px;">${update.proposedFeatures.map(feature => `<div class="item" style="${feature._done || feature._ignored ? 'opacity:.72;' : ''}"><div><strong>${escapeHtml(feature.title || 'Ohne Titel')}</strong></div><div class="mini">${escapeHtml(feature.category || 'Sonstiges')} · ${escapeHtml(feature.priority || 'mittel')} · ${escapeHtml(feature.status || 'idea')}</div>${feature.description ? `<div class="mini">${escapeHtml(shorten(feature.description, 220))}</div>` : ''}<div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-feature="${update._idx}|${feature._idx}" ${feature._done || feature._ignored ? 'disabled' : ''}>${feature._done ? '✓ Feature übernommen' : 'Als Feature übernehmen'}</button><button class="btn" data-multi-ignore="feature|${update._idx}|${feature._idx}" ${feature._done || feature._ignored ? 'disabled' : ''}>${feature._ignored ? '✓ Ignoriert' : 'Ignorieren'}</button>${feature._done ? '<span class="pill" style="background:var(--green);color:#0d2615;">übernommen</span>' : ''}${feature._ignored ? '<span class="pill">ignoriert</span>' : ''}</div></div>`).join('')}</div></div>` : ''}
                 </div>`).join('')}</div>` : '<div class="mini">Noch keine geladenen Vorschläge.</div>'}
               ${unmatched.length ? `<details open><summary>Unmatched Notes (${unmatched.length})</summary><div class="list" style="margin-top:8px;">${unmatched.map(item => `<div class="item"><div>${escapeHtml(item.text || '')}</div><div class="mini">${escapeHtml(item.reason || 'ohne Grund')}</div></div>`).join('')}</div></details>` : ''}
             </div>
@@ -3486,16 +3486,25 @@
       function ignoreMultiProjectProposal(kind, updateIdx, itemIdx) {
         const update = (ui.multiProjectImport.updates || []).find(x => x._idx === updateIdx);
         if (!update) return;
-        if (kind === 'focus') update._focusIgnored = true;
-        if (kind === 'next-step') update._nextStepIgnored = true;
+        if (kind === 'focus') {
+          if (update._focusDone || update._focusIgnored) return;
+          update._focusIgnored = true;
+        }
+        if (kind === 'next-step') {
+          if (update._nextStepDone || update._nextStepIgnored) return;
+          update._nextStepIgnored = true;
+        }
         if (kind === 'note') {
           const note = (update.notes || []).find(n => n._idx === itemIdx);
-          if (note) note._ignored = true;
+          if (!note || note._done || note._ignored) return;
+          note._ignored = true;
         }
         if (kind === 'feature') {
           const feature = (update.proposedFeatures || []).find(f => f._idx === itemIdx);
-          if (feature) feature._ignored = true;
+          if (!feature || feature._done || feature._ignored) return;
+          feature._ignored = true;
         }
+        save();
         renderView();
       }
 
