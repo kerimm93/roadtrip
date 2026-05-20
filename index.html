@@ -552,6 +552,7 @@
         chatWorkflowHandoff: { projectId: '', sourceChatId: '', rawJson: '' },
         chatWorkflowHandoffByProject: {},
         dailyLogQuery: { prompt: '' },
+        multiProjectImport: { rawText: '', prompt: '', resultJson: '', summary: '', updates: [], unmatchedNotes: [], visible: false },
         noteReview: { proposals: [], projectId: '', rawText: '', visible: false },
         cleanupReview: { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', visible: false, versionLogged: false }
       };
@@ -734,6 +735,7 @@
         S.chats = S.chats.map(ensureChatDefaults);
         if (!ui.filters || typeof ui.filters !== 'object') ui.filters = { pool: 'alle', status: 'alle', category: 'alle', search: '' };
         if (!ui.filters.pool) ui.filters.pool = 'alle';
+        if (!ui.multiProjectImport || typeof ui.multiProjectImport !== 'object') ui.multiProjectImport = { rawText: '', prompt: '', resultJson: '', summary: '', updates: [], unmatchedNotes: [], visible: false };
       }
 
       function save() {
@@ -977,6 +979,25 @@
         if ($('btnBuildReviewPrompt')) $('btnBuildReviewPrompt').addEventListener('click', buildNoteReviewPrompt);
         if ($('btnLoadNoteReview')) $('btnLoadNoteReview').addEventListener('click', loadNoteReviewProposals);
         if ($('btnClearNoteReview')) $('btnClearNoteReview').addEventListener('click', clearNoteReview);
+        if ($('multiProjectRawNotesInput')) $('multiProjectRawNotesInput').addEventListener('input', e => { ui.multiProjectImport.rawText = e.target.value; });
+        if ($('multiProjectPromptOutput')) $('multiProjectPromptOutput').addEventListener('input', e => { ui.multiProjectImport.prompt = e.target.value; });
+        if ($('multiProjectResultJsonInput')) $('multiProjectResultJsonInput').addEventListener('input', e => { ui.multiProjectImport.resultJson = e.target.value; });
+        if ($('btnBuildMultiProjectNotesPrompt')) $('btnBuildMultiProjectNotesPrompt').addEventListener('click', () => {
+          ui.multiProjectImport.prompt = buildMultiProjectNotesPrompt(ui.multiProjectImport.rawText || '');
+          ui.multiProjectImport.visible = true;
+          renderView();
+        });
+        if ($('btnCopyMultiProjectNotesPrompt')) $('btnCopyMultiProjectNotesPrompt').addEventListener('click', () => copyPrompt('multiProjectPromptOutput'));
+        if ($('btnLoadMultiProjectReview')) $('btnLoadMultiProjectReview').addEventListener('click', loadMultiProjectReviewProposals);
+        if ($('btnClearMultiProjectReview')) $('btnClearMultiProjectReview').addEventListener('click', clearMultiProjectReview);
+        qq('[data-multi-accept-focus]').forEach(btn => btn.addEventListener('click', () => acceptMultiProjectFocusUpdate(+btn.dataset.multiAcceptFocus)));
+        qq('[data-multi-accept-next-step]').forEach(btn => btn.addEventListener('click', () => acceptMultiProjectNextStepUpdate(+btn.dataset.multiAcceptNextStep)));
+        qq('[data-multi-accept-note]').forEach(btn => btn.addEventListener('click', () => { const [u, n] = String(btn.dataset.multiAcceptNote || '').split('|').map(Number); acceptMultiProjectNote(u, n); }));
+        qq('[data-multi-accept-feature]').forEach(btn => btn.addEventListener('click', () => { const [u, f] = String(btn.dataset.multiAcceptFeature || '').split('|').map(Number); acceptMultiProjectFeature(u, f); }));
+        qq('[data-multi-ignore]').forEach(btn => btn.addEventListener('click', () => {
+          const [kind, updateIdx, itemIdx] = String(btn.dataset.multiIgnore || '').split('|');
+          ignoreMultiProjectProposal(kind, Number(updateIdx), Number(itemIdx));
+        }));
         qq('[data-review-accept-new]').forEach(btn => btn.addEventListener('click', () => acceptNoteProposalAsNew(+btn.dataset.reviewAcceptNew)));
         qq('[data-review-accept-update]').forEach(btn => btn.addEventListener('click', () => acceptNoteProposalAsUpdate(+btn.dataset.reviewAcceptUpdate)));
         qq('[data-review-ignore]').forEach(btn => btn.addEventListener('click', () => ignoreNoteProposal(+btn.dataset.reviewIgnore)));
@@ -1990,6 +2011,100 @@
         `;
       }
 
+      function buildMultiProjectNotesPrompt(rawText) {
+        const activeProjects = (S.projects || []).filter(p => p && p.status !== 'archiviert');
+        const cleanedRawText = String(rawText || '').trim();
+        const projectContext = activeProjects.map(p => ({
+          projectId: p.id || '',
+          title: p.title || '',
+          summary: p.summary || '',
+          currentFocus: p.currentFocus || '',
+          nextStep: p.nextStep || ''
+        }));
+        const schema = {
+          projectUpdates: [
+            {
+              projectTitle: 'Projektname',
+              projectId: 'optional wenn bekannt',
+              confidence: 'hoch|mittel|niedrig',
+              focusUpdate: 'optional',
+              nextStep: 'optional',
+              notes: [{ text: '...', type: 'note|idea|bug|decision|open-question', confidence: 'hoch|mittel|niedrig' }],
+              proposedFeatures: [{ title: '...', description: '...', category: 'UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges', priority: 'niedrig|mittel|hoch|kritisch', status: 'idea|planned' }]
+            }
+          ],
+          unmatchedNotes: [{ text: '...', reason: '...' }],
+          summary: '...'
+        };
+        return [
+          'Du bist ein Parser für Multi-Projekt-Notizen.',
+          'Arbeite ausschließlich mit den aktiven Projekten aus dem Kontext.',
+          '',
+          'Aktive Projekte (Source of Truth):',
+          JSON.stringify(projectContext, null, 2),
+          '',
+          'Markdown/Freitext-Notizen:',
+          cleanedRawText || '(leer)',
+          '',
+          'Aufgabe:',
+          '- Ordne Notizen den Projekten zu.',
+          '- Keine erfundenen Projekte.',
+          '- Wenn Zuordnung unsicher ist: confidence "niedrig" oder unmatchedNotes.',
+          '- proposedFeatures nur für echte Feature-Ideen, nicht für allgemeine Notizen.',
+          '- focusUpdate und nextStep nur setzen, wenn aus dem Text klar ableitbar.',
+          '',
+          'Antworte ausschließlich als gültiges JSON im folgenden Schema:',
+          JSON.stringify(schema, null, 2),
+          '',
+          'Kein Markdown, keine Code-Fences, kein Erklärtext.'
+        ].join('\n');
+      }
+
+      function renderMultiProjectNotesImportSection() {
+        const st = ui.multiProjectImport || {};
+        const updates = Array.isArray(st.updates) ? st.updates : [];
+        const unmatched = Array.isArray(st.unmatchedNotes) ? st.unmatchedNotes : [];
+        const summary = String(st.summary || '').trim();
+        return `
+          <details style="margin-bottom:12px;" ${st.visible ? 'open' : ''}>
+            <summary style="font-weight:700;">Multi-Projekt-Notizenimport</summary>
+            <div style="margin-top:10px;">
+              <div class="mini" style="margin-bottom:8px;">Markdown/Freitext einfügen, KI-Prompt erzeugen, JSON laden und Vorschläge pro Projekt manuell übernehmen.</div>
+              <div class="field">
+                <label for="multiProjectRawNotesInput">Markdown/Freitext</label>
+                <textarea id="multiProjectRawNotesInput" style="min-height:160px;font-family:var(--font-mono);font-size:12px;" placeholder="Notizen aus mehreren Projekten einfügen...">${escapeHtml(st.rawText || '')}</textarea>
+              </div>
+              <div class="stack-row" style="margin-bottom:8px;">
+                <button class="btn btn-primary" id="btnBuildMultiProjectNotesPrompt">Bereinigungsprompt bauen</button>
+              </div>
+              <div class="field">
+                <label for="multiProjectPromptOutput">Prompt-Ausgabe</label>
+                <textarea id="multiProjectPromptOutput" style="min-height:220px;font-family:var(--font-mono);font-size:12px;" placeholder="Prompt wird hier erzeugt...">${escapeHtml(st.prompt || '')}</textarea>
+                <div class="stack-row" style="margin-top:6px;"><button class="btn" id="btnCopyMultiProjectNotesPrompt">Copy</button></div>
+              </div>
+              <div class="field">
+                <label for="multiProjectResultJsonInput">KI-Ergebnis (JSON)</label>
+                <textarea id="multiProjectResultJsonInput" style="min-height:180px;font-family:var(--font-mono);font-size:12px;" placeholder='{"projectUpdates":[...],"unmatchedNotes":[...],"summary":"..."}'>${escapeHtml(st.resultJson || '')}</textarea>
+              </div>
+              <div class="stack-row" style="margin-bottom:8px;">
+                <button class="btn btn-primary" id="btnLoadMultiProjectReview">Multi-Projekt-Vorschläge laden</button>
+                <button class="btn" id="btnClearMultiProjectReview">Review schließen</button>
+              </div>
+              ${summary ? `<div class="notice" style="margin-bottom:8px;"><strong>Summary:</strong> ${escapeHtml(summary)}</div>` : ''}
+              ${updates.length ? `<div class="list" style="margin-bottom:8px;">${updates.map(update => `
+                <div class="item">
+                  <div class="row-top"><strong>${escapeHtml(update._projectTitle || 'Unbekanntes Projekt')}</strong><span class="pill">confidence: ${escapeHtml(update.confidence || 'mittel')}</span></div>
+                  ${update.focusUpdate ? `<div class="mini" style="margin-top:6px;"><strong>Fokus:</strong> ${escapeHtml(update.focusUpdate)}</div><div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-focus="${update._idx}" ${update._focusDone || update._focusIgnored ? 'disabled' : ''}>Fokus übernehmen</button><button class="btn" data-multi-ignore="focus|${update._idx}|-1" ${update._focusDone || update._focusIgnored ? 'disabled' : ''}>Ignorieren</button></div>` : ''}
+                  ${update.nextStep ? `<div class="mini" style="margin-top:6px;"><strong>Nächster Schritt:</strong> ${escapeHtml(update.nextStep)}</div><div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-next-step="${update._idx}" ${update._nextStepDone || update._nextStepIgnored ? 'disabled' : ''}>Next Step übernehmen</button><button class="btn" data-multi-ignore="next-step|${update._idx}|-1" ${update._nextStepDone || update._nextStepIgnored ? 'disabled' : ''}>Ignorieren</button></div>` : ''}
+                  ${update.notes && update.notes.length ? `<div style="margin-top:8px;"><strong>Notes</strong><div class="list" style="margin-top:6px;">${update.notes.map(note => `<div class="item"><div>${escapeHtml(note.text || '')}</div><div class="mini">${escapeHtml(note.type || 'note')} · ${escapeHtml(note.confidence || 'mittel')}</div><div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-note="${update._idx}|${note._idx}" ${note._done || note._ignored ? 'disabled' : ''}>Als Note übernehmen</button><button class="btn" data-multi-ignore="note|${update._idx}|${note._idx}" ${note._done || note._ignored ? 'disabled' : ''}>Ignorieren</button></div></div>`).join('')}</div></div>` : ''}
+                  ${update.proposedFeatures && update.proposedFeatures.length ? `<div style="margin-top:8px;"><strong>Proposed Features</strong><div class="list" style="margin-top:6px;">${update.proposedFeatures.map(feature => `<div class="item"><div><strong>${escapeHtml(feature.title || 'Ohne Titel')}</strong></div><div class="mini">${escapeHtml(feature.category || 'Sonstiges')} · ${escapeHtml(feature.priority || 'mittel')} · ${escapeHtml(feature.status || 'idea')}</div>${feature.description ? `<div class="mini">${escapeHtml(shorten(feature.description, 220))}</div>` : ''}<div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-feature="${update._idx}|${feature._idx}" ${feature._done || feature._ignored ? 'disabled' : ''}>Als Feature übernehmen</button><button class="btn" data-multi-ignore="feature|${update._idx}|${feature._idx}" ${feature._done || feature._ignored ? 'disabled' : ''}>Ignorieren</button></div></div>`).join('')}</div></div>` : ''}
+                </div>`).join('')}</div>` : '<div class="mini">Noch keine geladenen Vorschläge.</div>'}
+              ${unmatched.length ? `<details open><summary>Unmatched Notes (${unmatched.length})</summary><div class="list" style="margin-top:8px;">${unmatched.map(item => `<div class="item"><div>${escapeHtml(item.text || '')}</div><div class="mini">${escapeHtml(item.reason || 'ohne Grund')}</div></div>`).join('')}</div></details>` : ''}
+            </div>
+          </details>
+        `;
+      }
+
       function renderMomentumFeatureMini(feature, options) {
         const f = applyFeatureDefaults(Object.assign({}, feature || {}));
         const opts = Object.assign({ showControls: true }, options || {});
@@ -2066,6 +2181,7 @@
             </div>
             <div style="margin-top:12px;">
               ${renderDailyLogQuerySection()}
+              ${renderMultiProjectNotesImportSection()}
             </div>
           `;
         }
@@ -2155,6 +2271,7 @@
 
           ${p.summary ? `<div class="notice" style="margin-bottom:10px;">${escapeHtml(p.summary)}</div>` : ''}
           ${renderProjectMomentumSection(p, projectFeatures, projectNotes)}
+          ${renderMultiProjectNotesImportSection()}
 
           <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:14px;">
             <div class="row-top" style="margin-bottom:8px;">
@@ -3223,6 +3340,172 @@
       }
 
       // ─── NOTE REVIEW ──────────────────────────────────────────────────────────
+
+      function loadMultiProjectReviewProposals() {
+        const raw = $('multiProjectResultJsonInput') ? $('multiProjectResultJsonInput').value.trim() : '';
+        if (!raw) return alert('Bitte JSON-Ergebnis einfügen.');
+        let parsed;
+        try { parsed = JSON.parse(extractJsonObjectFromText(raw)); } catch (e) { return alert('Kein gültiges JSON erkannt: ' + e.message); }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return alert('Top-Level muss ein JSON-Objekt sein.');
+        const incomingUpdates = Array.isArray(parsed.projectUpdates) ? parsed.projectUpdates : null;
+        if (!incomingUpdates) return alert('projectUpdates muss ein Array sein (darf leer sein).');
+        const activeProjects = (S.projects || []).filter(p => p && p.status !== 'archiviert');
+        const confidenceValues = ['hoch', 'mittel', 'niedrig'];
+        const noteTypes = ['note', 'idea', 'bug', 'decision', 'open-question'];
+        const normalizedUpdates = [];
+        const unmatched = Array.isArray(parsed.unmatchedNotes) ? parsed.unmatchedNotes.map(item => ({
+          text: String(item && item.text || '').trim(),
+          reason: String(item && item.reason || '').trim()
+        })).filter(x => x.text) : [];
+        incomingUpdates.forEach((item, idx) => {
+          const projectIdRaw = String(item && item.projectId || '').trim();
+          const projectTitle = String(item && item.projectTitle || '').trim();
+          let project = projectIdRaw ? activeProjects.find(p => p.id === projectIdRaw) : null;
+          if (!project && projectTitle) {
+            const normTitle = normalizeText(projectTitle);
+            project = activeProjects.find(p => normalizeText(p.title) === normTitle) || null;
+          }
+          const notes = Array.isArray(item && item.notes) ? item.notes.map((n, noteIdx) => {
+            const text = String(n && n.text || '').trim();
+            if (!text) return null;
+            return { _idx: noteIdx, text, type: noteTypes.includes(n.type) ? n.type : 'note', confidence: confidenceValues.includes(n.confidence) ? n.confidence : 'mittel', _done: false, _ignored: false };
+          }).filter(Boolean) : [];
+          const proposedFeatures = Array.isArray(item && item.proposedFeatures) ? item.proposedFeatures.map((f, featureIdx) => {
+            const title = String(f && f.title || '').trim();
+            const description = String(f && f.description || '').trim();
+            if (!title) return null;
+            const normalizedStatus = String(f && f.status || '').trim().toLowerCase();
+            return { _idx: featureIdx, title, description, category: FEATURE_CATEGORIES.includes(f.category) ? f.category : 'Sonstiges', priority: PRIORITIES.includes(f.priority) ? f.priority : 'mittel', status: (normalizedStatus === 'planned' || normalizedStatus === 'idea') ? normalizedStatus : 'idea', _done: false, _ignored: false };
+          }).filter(Boolean) : [];
+          const update = {
+            _idx: idx,
+            _projectId: project ? project.id : '',
+            _projectTitle: project ? project.title : (projectTitle || 'Unbekanntes Projekt'),
+            projectTitle,
+            projectId: projectIdRaw,
+            confidence: confidenceValues.includes(item && item.confidence) ? item.confidence : 'mittel',
+            focusUpdate: String(item && item.focusUpdate || '').trim(),
+            nextStep: String(item && item.nextStep || '').trim(),
+            notes,
+            proposedFeatures,
+            _focusDone: false,
+            _nextStepDone: false,
+            _focusIgnored: false,
+            _nextStepIgnored: false
+          };
+          normalizedUpdates.push(update);
+          if (!project) unmatched.push({ text: `${projectTitle || projectIdRaw || 'Unbekannt'}: keine aktive Projektzuordnung`, reason: 'Projekt nicht gefunden oder archiviert' });
+        });
+        ui.multiProjectImport.updates = normalizedUpdates;
+        ui.multiProjectImport.unmatchedNotes = unmatched;
+        ui.multiProjectImport.summary = typeof parsed.summary === 'string' ? parsed.summary.trim() : '';
+        ui.multiProjectImport.visible = true;
+        renderView();
+      }
+
+      function acceptMultiProjectFocusUpdate(updateIdx) {
+        const update = (ui.multiProjectImport.updates || []).find(x => x._idx === updateIdx);
+        if (!update || update._focusDone || update._focusIgnored) return;
+        if (!update.focusUpdate) return alert('Kein focusUpdate vorhanden.');
+        const project = (S.projects || []).find(p => p && p.id === update._projectId);
+        if (!project) return alert('Projekt nicht gefunden.');
+        if (!confirm('Aktuellen Fokus ersetzen?')) return;
+        project.currentFocus = update.focusUpdate;
+        project.updatedAt = new Date().toISOString();
+        update._focusDone = true;
+        save(); renderView();
+      }
+
+      function acceptMultiProjectNextStepUpdate(updateIdx) {
+        const update = (ui.multiProjectImport.updates || []).find(x => x._idx === updateIdx);
+        if (!update || update._nextStepDone || update._nextStepIgnored) return;
+        if (!update.nextStep) return alert('Kein nextStep vorhanden.');
+        const project = (S.projects || []).find(p => p && p.id === update._projectId);
+        if (!project) return alert('Projekt nicht gefunden.');
+        if (!confirm('Nächsten Schritt ersetzen?')) return;
+        project.nextStep = update.nextStep;
+        project.updatedAt = new Date().toISOString();
+        update._nextStepDone = true;
+        save(); renderView();
+      }
+
+      function acceptMultiProjectNote(updateIdx, noteIdx) {
+        const update = (ui.multiProjectImport.updates || []).find(x => x._idx === updateIdx);
+        const note = update && Array.isArray(update.notes) ? update.notes.find(n => n._idx === noteIdx) : null;
+        if (!update || !note || note._done || note._ignored) return;
+        const project = (S.projects || []).find(p => p && p.id === update._projectId);
+        if (!project) return alert('Projekt nicht gefunden.');
+        const now = new Date().toISOString();
+        project.updatedAt = now;
+        S.notes.push({
+          id: uid('n'),
+          projectId: project.id,
+          text: note.text,
+          type: note.type || 'note',
+          confidence: note.confidence || 'mittel',
+          sourceType: 'multi-project-import',
+          processed: false,
+          createdAt: now
+        });
+        note._done = true;
+        save(); renderView();
+      }
+
+      function acceptMultiProjectFeature(updateIdx, featureIdx) {
+        const update = (ui.multiProjectImport.updates || []).find(x => x._idx === updateIdx);
+        const feature = update && Array.isArray(update.proposedFeatures) ? update.proposedFeatures.find(f => f._idx === featureIdx) : null;
+        if (!update || !feature || feature._done || feature._ignored) return;
+        const project = (S.projects || []).find(p => p && p.id === update._projectId);
+        if (!project) return alert('Projekt nicht gefunden.');
+        const normTitle = normalizeText(feature.title || '');
+        if (normTitle) {
+          const dup = getVisibleFeatures(S.features).find(f => f.projectId === project.id && normalizeText(f.title || '') === normTitle);
+          if (dup && !confirm('Ähnliches Feature existiert bereits. Trotzdem übernehmen?')) return;
+        }
+        const now = new Date().toISOString();
+        project.updatedAt = now;
+        S.features.push(ensureFeatureDefaults({
+          id: uid('f'),
+          projectId: project.id,
+          title: feature.title || 'Ohne Titel',
+          description: feature.description || '',
+          category: FEATURE_CATEGORIES.includes(feature.category) ? feature.category : 'Sonstiges',
+          priority: PRIORITIES.includes(feature.priority) ? feature.priority : 'mittel',
+          pool: 'planned',
+          reviewStatus: 'needs-review',
+          status: (feature.status === 'planned' || feature.status === 'idea') ? feature.status : 'idea',
+          sourceType: 'multi-project-import',
+          sourceNoteIds: [],
+          createdAt: now,
+          updatedAt: now
+        }));
+        feature._done = true;
+        save(); renderView();
+      }
+
+      function ignoreMultiProjectProposal(kind, updateIdx, itemIdx) {
+        const update = (ui.multiProjectImport.updates || []).find(x => x._idx === updateIdx);
+        if (!update) return;
+        if (kind === 'focus') update._focusIgnored = true;
+        if (kind === 'next-step') update._nextStepIgnored = true;
+        if (kind === 'note') {
+          const note = (update.notes || []).find(n => n._idx === itemIdx);
+          if (note) note._ignored = true;
+        }
+        if (kind === 'feature') {
+          const feature = (update.proposedFeatures || []).find(f => f._idx === itemIdx);
+          if (feature) feature._ignored = true;
+        }
+        renderView();
+      }
+
+      function clearMultiProjectReview() {
+        ui.multiProjectImport.updates = [];
+        ui.multiProjectImport.unmatchedNotes = [];
+        ui.multiProjectImport.summary = '';
+        ui.multiProjectImport.visible = false;
+        renderView();
+      }
 
       function buildNoteReviewPrompt() {
         const rawText = $('quickNote') ? $('quickNote').value.trim() : '';
