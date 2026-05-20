@@ -947,6 +947,7 @@
         if ($('btnEmergencyExportFull')) $('btnEmergencyExportFull').addEventListener('click', exportFullEmergencyJson);
         if ($('btnCompactExport')) $('btnCompactExport').addEventListener('click', exportCompactJson);
         if ($('btnCompactRawData')) $('btnCompactRawData').addEventListener('click', compactRoadtripRawData);
+        if ($('btnBackfillImportMetadata')) $('btnBackfillImportMetadata').addEventListener('click', runImportHistoryMetadataBackfill);
         updateStorageDisplay();
         updateGistStatusUI();
         if ($('openAiModel')) $('openAiModel').addEventListener('input', e => { C.openAiModel = e.target.value; save(); });
@@ -2578,6 +2579,7 @@
             <button class="btn btn-danger" id="btnEmergencyExportFull">Notfall-Export vollständig</button>
             <button class="btn" id="btnCompactExport">Kompakt-Export</button>
             <button class="btn" id="btnCompactRawData">Rohdaten komprimieren</button>
+            <button class="btn" id="btnBackfillImportMetadata">Fehlende Projekt-Summarys aus Import-Historie ergänzen</button>
           </div>
           <hr style="border:none;border-top:1px solid var(--border);margin:12px 0;">
           <div class="field"><label for="openAiModel">OpenAI Model</label><input id="openAiModel" type="text" value="${escapeAttr(C.openAiModel || '')}" /></div>
@@ -3702,6 +3704,59 @@
         return { parsed, parsedFeatures };
       }
 
+      function isGenericProjectType(typeValue) {
+        const normalized = String(typeValue || '').trim();
+        return !normalized || normalized === 'Sonstiges';
+      }
+
+      function applyProjectMetadataFromAnalysis(projectId, parsed, options) {
+        const result = {
+          changed: false,
+          summaryChanged: false,
+          typeChanged: false,
+          skippedSummary: false,
+          skippedType: false
+        };
+        if (!projectId || !parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return result;
+        const project = S.projects.find(x => x.id === projectId);
+        if (!project) return result;
+        const opts = options && typeof options === 'object' ? options : {};
+
+        const incomingSummary = typeof parsed.projectSummary === 'string' ? parsed.projectSummary.trim() : '';
+        const existingSummary = String(project.summary || '').trim();
+        if (incomingSummary) {
+          if (!existingSummary) {
+            project.summary = incomingSummary;
+            result.summaryChanged = true;
+          } else if (opts.allowOverwrite === true && incomingSummary !== existingSummary && confirm('Bestehende Projekt-Summary überschreiben?')) {
+            project.summary = incomingSummary;
+            result.summaryChanged = true;
+          } else {
+            result.skippedSummary = true;
+          }
+        }
+
+        const incomingType = typeof parsed.appType === 'string' ? parsed.appType.trim() : '';
+        const validIncomingType = incomingType && APP_TYPES.includes(incomingType);
+        if (validIncomingType) {
+          const existingType = String(project.type || '').trim();
+          if (isGenericProjectType(existingType) && existingType !== incomingType) {
+            project.type = incomingType;
+            result.typeChanged = true;
+          } else if (!isGenericProjectType(existingType)) {
+            result.skippedType = true;
+          }
+        } else if (incomingType) {
+          result.skippedType = true;
+        }
+
+        if (result.summaryChanged || result.typeChanged) {
+          project.updatedAt = new Date().toISOString();
+          result.changed = true;
+        }
+        return result;
+      }
+
       function buildFeatureListForCleanupPrompt(projectId) {
         return getVisibleFeatures(S.features)
           .filter(f => f.projectId === projectId)
@@ -3843,6 +3898,8 @@
         if (!extractedJson) return alert('Kein Analyse-JSON erkannt. Für Cleanup wird ein JSON mit Features benötigt.');
         try {
           const prepared = parseAnalysisJsonForCleanup(extractedJson, projectId);
+          applyProjectMetadataFromAnalysis(projectId, prepared.parsed);
+          save();
           startCleanupReview(projectId, prepared.parsedFeatures, extractedJson, 'import-cleanup');
         } catch (err) {
           if (err && err.message === 'missing-features-array') return alert("Analyse-JSON erkannt, aber es enthält kein 'features'-Array.");
@@ -3874,6 +3931,8 @@
         if (!extractedJson) return alert('Kein Analyse-JSON erkannt. Für direkten Import nutze bei Bedarf den Fallback-Button.');
         try {
           const prepared = parseAnalysisJsonForCleanup(extractedJson, projectId);
+          applyProjectMetadataFromAnalysis(projectId, prepared.parsed);
+          save();
           startCleanupReview(projectId, prepared.parsedFeatures, extractedJson, 'import-cleanup');
         } catch (err) {
           if (err && err.message === 'missing-features-array') return alert("Analyse-JSON erkannt, aber es enthält kein 'features'-Array.");
@@ -3882,6 +3941,18 @@
           if (err && err.message === 'invalid-analysis-json') return alert('Kein gültiges Analyse-JSON erkannt.');
           throw err;
         }
+      }
+
+      function runImportHistoryMetadataBackfill() {
+        const stats = backfillMissingProjectSummariesFromImportHistory();
+        alert(
+          'Backfill abgeschlossen.\n'
+          + '- Projekte geprüft: ' + stats.checkedProjects + '\n'
+          + '- Summary ergänzt: ' + stats.summaryFilled + '\n'
+          + '- Typ ergänzt: ' + stats.typeFilled + '\n'
+          + '- Ohne verwertbare Analyse: ' + stats.unresolved
+        );
+        renderView();
       }
 
       function loadCleanupReviewProposals() {
@@ -3921,6 +3992,7 @@
         ) {
           try {
             const parsedAnalysis = JSON.parse(ui.cleanupReview.rawAnalysisJson);
+            applyProjectMetadataFromAnalysis(ui.cleanupReview.projectId, parsedAnalysis);
             const comparisonToPrevious = compareFeaturesToPreviousVersion(ui.cleanupReview.projectId, ui.cleanupReview.incomingFeatures || []);
             S.importVersions.push(createImportVersionEntry(
               ui.cleanupReview.projectId,
@@ -4317,6 +4389,59 @@
         };
       }
 
+      function tryParseAnalysisJsonLoose(text) {
+        const source = String(text || '').trim();
+        if (!source) return null;
+        try {
+          return JSON.parse(source);
+        } catch (err) {}
+        try {
+          return JSON.parse(extractJsonObjectFromText(source));
+        } catch (err) {}
+        return null;
+      }
+
+      function backfillMissingProjectSummariesFromImportHistory() {
+        const projects = Array.isArray(S.projects) ? S.projects : [];
+        const importVersions = Array.isArray(S.importVersions) ? S.importVersions : [];
+        const stats = { checkedProjects: 0, summaryFilled: 0, typeFilled: 0, unresolved: 0 };
+        let changedAny = false;
+
+        projects.forEach(project => {
+          const existingSummary = String(project.summary || '').trim();
+          if (existingSummary) return;
+          stats.checkedProjects++;
+          const projectImports = importVersions
+            .filter(v => v && v.projectId === project.id)
+            .sort((a, b) => (String(b.createdAt || '')).localeCompare(String(a.createdAt || '')));
+          let resolved = false;
+          for (const entry of projectImports) {
+            let parsed = null;
+            if (entry && entry.parsedSummary && typeof entry.parsedSummary === 'object') {
+              parsed = {
+                projectSummary: entry.parsedSummary.projectSummary,
+                appType: entry.parsedSummary.appType
+              };
+            }
+            if ((!parsed || !String(parsed.projectSummary || '').trim()) && entry && entry.rawAnalysisText) {
+              parsed = tryParseAnalysisJsonLoose(entry.rawAnalysisText);
+            }
+            const applyResult = applyProjectMetadataFromAnalysis(project.id, parsed);
+            if (applyResult.summaryChanged) stats.summaryFilled++;
+            if (applyResult.typeChanged) stats.typeFilled++;
+            if (applyResult.changed) changedAny = true;
+            if (applyResult.summaryChanged || String(project.summary || '').trim()) {
+              resolved = true;
+              break;
+            }
+          }
+          if (!resolved && !String(project.summary || '').trim()) stats.unresolved++;
+        });
+
+        if (changedAny) save();
+        return stats;
+      }
+
       function reconcileImportedFeature(existing, imported, nowIso) {
         const importedStatus = mapJsonAnalysisStatus(imported.status);
         const importedDescription = String(imported.description || '').trim();
@@ -4484,8 +4609,7 @@
         if (!p) throw new Error('project-not-found');
 
         const now = new Date().toISOString();
-        if (typeof parsed.projectSummary === 'string' && parsed.projectSummary.trim()) p.summary = parsed.projectSummary.trim();
-        if (typeof parsed.appType === 'string' && parsed.appType.trim()) p.type = parsed.appType.trim();
+        applyProjectMetadataFromAnalysis(projectId, parsed, { allowOverwrite: false });
         p.lastAnalyzedAt = now;
         p.updatedAt = now;
 
