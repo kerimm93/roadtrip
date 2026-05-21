@@ -1698,7 +1698,8 @@
         if (!project || !sourceChat) return '';
         const featureLines = getRelevantFeatureTitles(projectId, 8);
         return [
-          'Erstelle einen kompakten Sprint-Bericht als JSON.',
+          'Erstelle einen kompakten Sprint-Abschlussbericht als JSON.',
+          'Dieser Prompt wird am Ende eines Sprintchats verwendet. Der Sprintchat soll nach dem Import in Roadtrip als abgeschlossen gelten.',
           'Antworte AUSSCHLIESSLICH mit gültigem JSON.',
           'Kein Markdown, keine Code-Fences, kein Erklärtext vor oder nach dem JSON.',
           '',
@@ -1715,7 +1716,8 @@
           '{',
           '  "chatTitle": "...",',
           '  "chatType": "sprint",',
-          '  "status": "aktiv",',
+          '  "status": "abgeschlossen",',
+          '  "sourceChatStatus": "abgeschlossen",',
           '  "summary": "...",',
           '  "currentFocus": "...",',
           '  "nextStep": "...",',
@@ -1732,9 +1734,14 @@
           '}',
           '',
           'Regeln:',
+          '- status soll "abgeschlossen" sein.',
+          '- sourceChatStatus soll, wenn gesetzt, "abgeschlossen" sein.',
+          '- chatType soll "sprint" sein.',
           '- Nutze für category bevorzugt: ' + FEATURE_CATEGORIES.join(', '),
           '- Nutze für priority bevorzugt: ' + PRIORITIES.join(', '),
-          '- proposedFeatures[*].status wenn gesetzt nur "planned"',
+          '- proposedFeatures[*].status wenn gesetzt nur "planned".',
+          '- Erzeuge aus Sprintberichten keine Features mit Status "implemented".',
+          '- Neue Feature-Vorschläge aus dem Sprintbericht gehören in den geplanten Pool.',
           '',
           'Projektkontext:',
           `- Projekttitel: ${project.title || '—'}`,
@@ -2562,7 +2569,7 @@
                 <button class="btn" id="btnChatWorkflowSetMain" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Als Hauptchat setzen</button>
                 <button class="btn" id="btnChatWorkflowBuildReturn" ${isArchivedProject || !chatWorkflow.sourceChatId || !projectMainChat ? 'disabled' : ''}>Prompt: In Hauptchat zurückkehren</button>
                 <button class="btn" id="btnChatWorkflowBuildBootstrap" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Prompt: Hauptchat neu anlegen</button>
-                <button class="btn" id="btnChatWorkflowBuildSprintHandoff" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Prompt: Sprint-Bericht anfordern</button>
+                <button class="btn" id="btnChatWorkflowBuildSprintHandoff" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Sprintabschluss im Sprintchat anfordern</button>
               </div>
               <details style="margin-bottom:8px;">
                 <summary style="font-weight:700;">Advanced / Legacy</summary>
