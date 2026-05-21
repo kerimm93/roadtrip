@@ -6,24 +6,54 @@
   <title>Roadtrip</title>
   <style>
     :root {
-      --bg: #12151c;
-      --bg-mid: #171b23;
-      --surface: #1d2330;
-      --surface-2: #222a38;
-      --surface-3: #2a3445;
-      --border: #39465c;
-      --border-light: #586a87;
-      --ink: #eef2f7;
-      --ink-light: #b8c3d4;
-      --ink-dim: #7f8da3;
-      --accent: #b8a06e;
-      --accent-2: #8ea6d9;
-      --green: #7db88f;
-      --yellow: #c5ab63;
-      --red: #c57b7b;
-      --blue: #7ea2d1;
-      --radius: 14px;
-      --shadow: 0 12px 30px rgba(0,0,0,.25);
+      --rt-bg: #0E1117;
+      --rt-bg-elevated: #141923;
+      --rt-surface: #1A2030;
+      --rt-surface-2: #232A3C;
+      --rt-surface-3: #2C3447;
+      --rt-surface-quiet: #161B26;
+      --rt-border-line: #2A3346;
+      --rt-border-strong: #3A4760;
+      --rt-ink: #E8ECF3;
+      --rt-ink-mid: #A3AEC1;
+      --rt-ink-dim: #6B7689;
+      --rt-on-accent: #15161A;
+      --rt-gold: #C9A86A;
+      --rt-gold-soft: rgba(201,168,106,0.14);
+      --rt-indigo: #7B8FE0;
+      --rt-indigo-soft: rgba(123,143,224,0.14);
+      --rt-success: #6BB590;
+      --rt-warning: #D4A856;
+      --rt-danger: #D27575;
+      --rt-info: #7AA4D6;
+      --rt-success-soft: rgba(107,181,144,0.13);
+      --rt-warning-soft: rgba(212,168,86,0.13);
+      --rt-danger-soft: rgba(210,117,117,0.13);
+      --rt-info-soft: rgba(122,164,214,0.13);
+      --rt-neutral-soft: rgba(163,174,193,0.10);
+      --r-sm: 6px;
+      --r-lg: 14px;
+      --r-pill: 9999px;
+      --sh-0: none;
+      --ring: 0 0 0 2px rgba(201,168,106,0.40);
+      --bg: var(--rt-bg);
+      --bg-mid: var(--rt-bg-elevated);
+      --surface: var(--rt-surface);
+      --surface-2: var(--rt-surface-quiet);
+      --surface-3: var(--rt-surface-2);
+      --border: var(--rt-border-line);
+      --border-light: var(--rt-border-strong);
+      --ink: var(--rt-ink);
+      --ink-light: var(--rt-ink-mid);
+      --ink-dim: var(--rt-ink-dim);
+      --accent: var(--rt-gold);
+      --accent-2: var(--rt-indigo);
+      --green: var(--rt-success);
+      --yellow: var(--rt-warning);
+      --red: var(--rt-danger);
+      --blue: var(--rt-info);
+      --radius: var(--r-lg);
+      --shadow: var(--sh-0);
       --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       --font-serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
       --font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
@@ -204,13 +234,15 @@
       transition: .14s ease;
     }
 
-    .btn:hover, button:hover { border-color: var(--border-light); transform: translateY(-1px); }
-    .btn:active, button:active { transform: translateY(0); }
-
-    .btn-primary { background: var(--accent); color: #111; border-color: transparent; font-weight: 700; }
+    .btn:hover, button:hover { border-color: var(--border-light); background: var(--surface-3); }
+    .btn:active, button:active { opacity: .95; }
+    .btn-primary { background: var(--accent); color: var(--rt-on-accent); border-color: var(--accent); font-weight: 700; }
+    .btn-primary:hover { background: #DDBE85; border-color: #DDBE85; }
+    .btn-secondary { background: transparent; border-color: var(--border-light); color: var(--ink); }
+    .btn-ghost { background: transparent; border-color: transparent; color: var(--ink-light); }
     body.theme-eink .btn-primary { color: #fff; }
     .btn-soft { background: var(--surface-2); }
-    .btn-danger { background: var(--red); color: #fff; border-color: transparent; }
+    .btn-danger { background: transparent; color: var(--red); border-color: rgba(210,117,117,0.4); }
 
     .pill {
       display: inline-flex;
@@ -218,13 +250,19 @@
       gap: 6px;
       min-height: 30px;
       padding: 4px 10px;
-      border-radius: 999px;
-      border: 1px solid var(--border);
-      background: var(--surface-2);
+      border-radius: var(--r-pill);
+      border: 1px solid transparent;
+      background: var(--rt-neutral-soft);
       color: var(--ink-light);
       font-size: 12px;
       white-space: nowrap;
     }
+    .pill-success { background: var(--rt-success-soft); color: var(--rt-success); }
+    .pill-warning { background: var(--rt-warning-soft); color: var(--rt-warning); }
+    .pill-danger { background: var(--rt-danger-soft); color: var(--rt-danger); }
+    .pill-info { background: var(--rt-info-soft); color: var(--rt-info); }
+    .pill-gold { background: var(--rt-gold-soft); color: var(--rt-gold); }
+    .pill-outline { background: transparent; border-color: var(--border); }
 
     .segmented .seg {
       padding: 8px 12px;
@@ -380,13 +418,18 @@
     .hidden { display: none !important; }
 
     .notice {
-      background: var(--surface-2);
-      border: 1px dashed var(--border-light);
-      border-radius: 12px;
+      background: var(--rt-warning-soft);
+      border-left: 2px solid var(--rt-warning);
+      border-radius: 0 var(--r-sm) var(--r-sm) 0;
       padding: 10px 12px;
       color: var(--ink-light);
       font-size: 14px;
     }
+    .chat-card { border-left-width: 2px !important; }
+    .chat-card.type-main { border-left-color: var(--rt-gold) !important; }
+    .chat-card.type-sprint { border-left-color: var(--rt-indigo) !important; }
+    .chat-card.type-branch, .chat-card.type-execution { border-left-color: var(--border-light) !important; }
+    .chat-card.is-done { opacity: .55; }
 
     .dropzone {
       border: 1px dashed var(--border-light);
@@ -478,6 +521,8 @@
     (function() {
       const LKEY = 'roadtrip_v0_1';
       const CONFIG_KEY = 'roadtrip_v0_1_config';
+      const UI_SPRINT_VIS_KEY = 'roadtrip.ui.showCompletedSprintsByProject';
+      const UI_MOMENTUM_COLLAPSED_KEY = 'roadtrip.ui.projectMomentumCollapsedByProject';
       const ALL_PROJECTS_KEY = 'all';
       const VIEWS = ['database', 'project', 'import', 'settings'];
       const APP_TYPES = ['Daily Log', 'Braindump', 'Review', 'Tracker', 'Writing', 'Learning', 'Meta-App', 'Sonstiges'];
@@ -554,7 +599,9 @@
         dailyLogQuery: { prompt: '' },
         multiProjectImport: { rawText: '', prompt: '', resultJson: '', summary: '', updates: [], unmatchedNotes: [], visible: false },
         noteReview: { proposals: [], projectId: '', rawText: '', visible: false },
-        cleanupReview: { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', visible: false, versionLogged: false }
+        cleanupReview: { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', visible: false, versionLogged: false },
+        showCompletedSprintsByProject: {},
+        projectMomentumCollapsedByProject: {}
       };
 
       const $ = (id) => document.getElementById(id);
@@ -696,6 +743,18 @@
         renderAll();
       }
 
+      function loadUiMap(key) {
+        try {
+          const raw = localStorage.getItem(key);
+          if (!raw) return {};
+          const parsed = JSON.parse(raw);
+          return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+        } catch (_) { return {}; }
+      }
+      function saveUiMap(key, map) {
+        try { localStorage.setItem(key, JSON.stringify(map || {})); } catch (_) {}
+      }
+
       function load() {
         try {
           const raw = localStorage.getItem(LKEY);
@@ -718,6 +777,8 @@
             }
           }
         } catch (e) { console.warn('[load] Config load failed, using defaults:', e); }
+        ui.showCompletedSprintsByProject = loadUiMap(UI_SPRINT_VIS_KEY);
+        ui.projectMomentumCollapsedByProject = loadUiMap(UI_MOMENTUM_COLLAPSED_KEY);
         ensureDefaults();
       }
 
@@ -1053,6 +1114,20 @@
           const chatId = btn.dataset.setChatMain || '';
           if (!chatId) return;
           setSelectedChatAsMain(chatId);
+        }));
+        qq('[data-toggle-momentum]').forEach(btn => btn.addEventListener('click', () => {
+          const pid = btn.dataset.toggleMomentum;
+          if (!pid) return;
+          ui.projectMomentumCollapsedByProject[pid] = !ui.projectMomentumCollapsedByProject[pid];
+          saveUiMap(UI_MOMENTUM_COLLAPSED_KEY, ui.projectMomentumCollapsedByProject);
+          renderView();
+        }));
+        qq('[data-toggle-completed-sprints]').forEach(btn => btn.addEventListener('click', () => {
+          const pid = btn.dataset.toggleCompletedSprints;
+          if (!pid) return;
+          ui.showCompletedSprintsByProject[pid] = !ui.showCompletedSprintsByProject[pid];
+          saveUiMap(UI_SPRINT_VIS_KEY, ui.showCompletedSprintsByProject);
+          renderView();
         }));
         if ($('chatWorkflowSourceChat')) $('chatWorkflowSourceChat').addEventListener('change', e => {
           const projectId = ui.activeProjectId || '';
@@ -2314,17 +2389,20 @@
 
       function renderProjectMomentumSection(project, projectFeatures, projectNotes) {
         const data = getProjectMomentumData(project.id, projectFeatures, projectNotes);
+        const isCollapsed = !!(ui.projectMomentumCollapsedByProject && ui.projectMomentumCollapsedByProject[project.id]);
         const renderList = items => items.map(f => renderMomentumFeatureMini(f, { showControls: true })).join('');
+        const counters = `<div class="stack-row" style="gap:6px;"><span class="pill pill-info">Aktiv ${data.activeFeatures.length}</span><span class="pill">Kandidaten ${data.candidateFeatures.length}</span>${data.blockedFeatures.length ? `<span class="pill pill-warning">Blockiert ${data.blockedFeatures.length}</span>` : ''}</div>`;
         return `
           <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:12px;">
-            <div class="row-top" style="margin-bottom:6px;"><strong>Projekt-Momentum</strong><div class="stack-row" style="gap:6px;"><button class="btn" data-enter-project-edit="${project.id}">Bearbeiten</button><button class="btn" id="btnBuildProjectMomentumPrompt">Prompt: Nächsten Projektschritt planen</button></div></div>
+            <div class="row-top" style="margin-bottom:6px;"><strong>Projekt-Momentum</strong><div class="stack-row" style="gap:6px;"><button class="btn btn-ghost" data-toggle-momentum="${project.id}">${isCollapsed ? 'Momentum ausklappen' : 'Momentum einklappen'}</button><button class="btn" data-enter-project-edit="${project.id}">Bearbeiten</button><button class="btn" id="btnBuildProjectMomentumPrompt">Prompt: Nächsten Projektschritt planen</button></div></div>
             <div class="mini" style="margin-bottom:8px;">Was hält dieses Projekt als nächstes in Bewegung?</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;"><div style="background:var(--surface-3);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:10px;padding:10px 12px;"><div class="eyebrow">Aktueller Fokus</div><div>${escapeHtml(project.currentFocus || 'Noch kein Fokus gesetzt.')}</div></div><div style="background:var(--surface-3);border:1px solid var(--border);border-left:3px solid var(--green);border-radius:10px;padding:10px 12px;"><div class="eyebrow">Nächster Schritt</div><div>${escapeHtml(project.nextStep || 'Noch kein nächster Schritt gesetzt.')}</div></div></div>
+            ${isCollapsed ? counters : `
             <div style="margin-bottom:10px;"><strong>Gerade sprintfähig / in Bewegung</strong>${data.activeFeatures.length ? `<div class="list" style="margin-top:6px;">${renderList(data.activeFeatures)}</div>` : '<div class="notice" style="margin-top:6px;">Noch nichts für Sprint ausgewählt oder in Arbeit.</div>'}</div>
             <div style="margin-bottom:10px;"><strong>Top-Kandidaten</strong>${data.candidateFeatures.length ? `<div class="list" style="margin-top:6px;">${renderList(data.candidateFeatures)}</div>` : '<div class="notice" style="margin-top:6px;">Keine geplanten Kandidaten.</div>'}</div>
             ${data.blockedFeatures.length ? `<details open style="margin-bottom:8px;"><summary>Blockiert (${data.blockedFeatures.length})</summary><div class="list" style="margin-top:6px;">${renderList(data.blockedFeatures)}</div></details>` : ''}
             ${data.deferredFeatures.length ? `<details style="margin-bottom:8px;"><summary>Zurückgestellt (${data.deferredFeatures.length})</summary><div class="list" style="margin-top:6px;">${renderList(data.deferredFeatures)}</div></details>` : ''}
-            ${data.openNotes.length ? `<details><summary>Offene Notizen (${data.openNotes.length})</summary><div class="list" style="margin-top:6px;">${data.openNotes.map(n => `<div class="item"><div class="mini">${escapeHtml(shorten(String(n.text || '').trim(), 200))}</div></div>`).join('')}</div></details>` : ''}
+            ${data.openNotes.length ? `<details><summary>Offene Notizen (${data.openNotes.length})</summary><div class="list" style="margin-top:6px;">${data.openNotes.map(n => `<div class="item"><div class="mini">${escapeHtml(shorten(String(n.text || '').trim(), 200))}</div></div>`).join('')}</div></details>` : ''}`}
           </div>`;
       }
 
@@ -2387,6 +2465,9 @@
         const trashedFeatures = getTrashedFeaturesForProject(p.id);
         const projectNotes = S.notes.filter(n => n.projectId === p.id).sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
         const projectChats = getProjectChats(p.id);
+        const showCompletedSprints = !!ui.showCompletedSprintsByProject[p.id];
+        const hiddenDoneSprints = projectChats.filter(c => c.type === 'sprint' && c.status === 'abgeschlossen').length;
+        const visibleChats = projectChats.filter(c => showCompletedSprints || !(c.type === 'sprint' && c.status === 'abgeschlossen'));
         const projectMainChat = getProjectMainChat(p.id);
         const sourceChats = getProjectSourceChats(p.id);
         const chatWorkflow = getChatWorkflowState(p.id);
@@ -2480,10 +2561,14 @@
           </div>
 
           <details style="margin-bottom:12px;" ${projectChats.length ? 'open' : ''}>
-            <summary style="font-weight:700;">Chats &amp; Sprints (${projectChats.length})</summary>
+            <summary style="font-weight:700;">Chats &amp; Sprints (${visibleChats.length}/${projectChats.length})</summary>
+            <div class="stack-row" style="margin-top:8px;">
+              <span class="pill">${visibleChats.length} sichtbar · ${hiddenDoneSprints} abgeschlossene Sprints ${showCompletedSprints ? 'eingeblendet' : 'ausgeblendet'}</span>
+              <button class="btn btn-ghost" data-toggle-completed-sprints="${p.id}">${showCompletedSprints ? 'Abgeschlossene ausblenden' : 'Abgeschlossene Sprints anzeigen'}</button>
+            </div>
             <div style="margin-top:10px;" class="list">
-              ${projectChats.map(c => `
-                <div class="item" style="border-left:3px solid ${c.type==='project-main'?'var(--accent)':c.type==='sprint'?'var(--blue)':c.type==='execution'?'var(--green)':'var(--yellow)'}">
+              ${visibleChats.map(c => `
+                <div class="item chat-card ${c.type==='project-main'?'type-main':c.type==='sprint'?'type-sprint':c.type==='execution'?'type-execution':'type-branch'} ${c.status==='abgeschlossen'?'is-done':''}" style="border-left:2px solid var(--border-light);">
                   <div class="row-top">
                     <strong>${escapeHtml(c.title||'Ohne Titel')} ${p.mainChatId === c.id ? '⭐' : ''}</strong>
                     <div class="stack-row" style="gap:4px;">${renderChatTypeBadge(c.type)}${renderChatStatusBadge(c.status)}</div>
@@ -2492,8 +2577,8 @@
                   ${c.nextStep ? `<div class="mini" style="color:var(--accent)">→ ${escapeHtml(c.nextStep)}</div>` : ''}
                   <div class="stack-row">
                     ${c.url && c.url.trim() ? `<a href="${escapeAttr(c.url.trim())}" target="_blank" rel="noopener" class="btn">Öffnen</a>` : ''}
-                    ${p.mainChatId !== c.id ? `<button class="btn" data-set-chat-main="${c.id}" ${isArchivedProject ? 'disabled' : ''}>Als Hauptchat setzen</button>` : '<span class="pill">Kanonischer Hauptchat</span>'}
-                    <button class="btn" data-use-chat-source="${c.id}" data-project-id="${p.id}" ${isArchivedProject ? 'disabled' : ''}>Als Ausgangschat nutzen</button>
+                    ${p.mainChatId !== c.id ? `<button class="btn" data-set-chat-main="${c.id}" ${isArchivedProject ? 'disabled' : ''}>Als Hauptchat markieren</button>` : '<span class="pill pill-gold">Kanonischer Hauptchat</span>'}
+                    <button class="btn" data-use-chat-source="${c.id}" data-project-id="${p.id}" ${isArchivedProject ? 'disabled' : ''}>Prompt-Workflow wählen</button>
                     <button class="btn" data-edit-chat="${c.id}">Bearbeiten</button>
                     <button class="btn btn-danger" data-delete-chat="${c.id}">×</button>
                   </div>
@@ -2565,25 +2650,34 @@
                   </div>
                 </div>
               </div>
-              <div class="stack-row" style="margin-bottom:8px;">
-                <button class="btn" id="btnChatWorkflowSetMain" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Als Hauptchat setzen</button>
-                <button class="btn" id="btnChatWorkflowBuildReturn" ${isArchivedProject || !chatWorkflow.sourceChatId || !projectMainChat ? 'disabled' : ''}>Prompt: In Hauptchat zurückkehren</button>
-                <button class="btn" id="btnChatWorkflowBuildBootstrap" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Prompt: Hauptchat neu anlegen</button>
-                <button class="btn" id="btnChatWorkflowBuildSprintHandoff" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Sprintabschluss im Sprintchat anfordern</button>
-              </div>
               <details style="margin-bottom:8px;">
-                <summary style="font-weight:700;">Advanced / Legacy</summary>
+                <summary style="font-weight:700;">Advanced · Hauptchat-Werkzeuge</summary>
+                <div class="stack-row" style="margin-top:8px;">
+                  <button class="btn btn-ghost" id="btnChatWorkflowSetMain" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Als Hauptchat markieren</button>
+                  <button class="btn btn-ghost" id="btnChatWorkflowBuildReturn" ${isArchivedProject || !chatWorkflow.sourceChatId || !projectMainChat ? 'disabled' : ''}>Zum Hauptchat-Kontext zurück</button>
+                  <button class="btn btn-ghost" id="btnChatWorkflowBuildBootstrap" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Neuen Hauptchat-Kontext bauen</button>
+                </div>
+              </details>
+              <details style="margin-bottom:8px;">
+                <summary style="font-weight:700;">Legacy · alte Sprint-Werkzeuge</summary>
                 <div class="stack-row" style="margin-top:8px;">
                   <button class="btn" id="btnChatWorkflowBuildLegacyMigration" ${isArchivedProject ? 'disabled' : ''}>Prompt: Alten Sprintchat migrieren</button>
                   <button class="btn" id="btnChatWorkflowBuildSprint" ${isArchivedProject || !projectMainChat ? 'disabled' : ''}>Legacy: Prompt für direkten Sprintchat-Start</button>
                 </div>
                 <div class="mini" style="margin-top:6px;">Hinweis: Die Prompt-Ausgabe oben ist primär für den Hauptchat gedacht. In diesem Bereich können Legacy-Aktionen andere Zielchats adressieren.</div>
               </details>
+              <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;">
+                <div class="eyebrow" style="margin-bottom:6px;">Sprint abschließen / Handoff</div>
+                <div class="mini" style="margin-bottom:8px;">Fordere im Sprintchat den Abschlussbericht an und importiere danach das Sprint-Handoff-JSON zurück nach Roadtrip.</div>
+                <div class="stack-row">
+                  <button class="btn btn-primary" id="btnChatWorkflowBuildSprintHandoff" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Sprintabschluss anfordern</button>
+                </div>
+              </div>
               <div class="field">
                 <label for="chatWorkflowHandoffJson">Sprint-Handoff-JSON</label>
                 <textarea id="chatWorkflowHandoffJson" style="min-height:180px;font-family:var(--font-mono);font-size:12px;" placeholder='{"summary":"...","currentFocus":"...","nextStep":"..."}'>${escapeHtml(chatWorkflowHandoff.rawJson || '')}</textarea>
                 <div class="stack-row" style="margin-top:6px;">
-                  <button class="btn btn-primary" id="btnChatWorkflowImportHandoff" ${isArchivedProject ? 'disabled' : ''}>Sprint-Bericht importieren</button>
+                  <button class="btn btn-primary" id="btnChatWorkflowImportHandoff" ${isArchivedProject ? 'disabled' : ''}>Sprint-Handoff importieren</button>
                 </div>
               </div>
               <div class="field">
@@ -4460,6 +4554,8 @@
         const proposal = ui.cleanupReview.proposals.find(p => p._idx === idx);
         if (!proposal) return;
         proposal._done = true;
+        proposal._ignored = true;
+        save();
         renderView();
       }
 
@@ -4508,12 +4604,12 @@
                     ${p.rationale ? `<div class="mini" style="color:var(--ink-dim)">Grund: ${escapeHtml(p.rationale)}</div>` : ''}
                     ${hasTarget ? `<div class="mini">Ziel: ${escapeHtml(targetFeature.title || '—')}</div>` : `<div class="mini" style="color:var(--accent-2)">Kein bestehendes Feature erkannt – kann als neues Feature übernommen werden.</div>`}
                     ${p.type === 'duplicate-of' && !hasDuplicate ? '<div class="mini" style="color:var(--ink-dim)">Keine konkrete Dublette zugeordnet.</div>' : ''}
-                    ${p._done ? '<div class="mini">✓ erledigt</div>' : `
+                    ${p._done ? `<div class="mini"><span class="pill ${p._ignored ? '' : 'pill-success'}">${p._ignored ? 'ignoriert' : 'übernommen'}</span></div>` : `
                       <div class="stack-row">
-                        ${hasTarget ? `<button class="btn btn-primary" data-cleanup-accept-update="${p._idx}">Bestehendes aktualisieren</button>` : `<button class="btn btn-primary" data-cleanup-accept-new="${p._idx}">Als neues Feature hinzufügen</button>`}
-                        ${hasTarget ? `<button class="btn" data-cleanup-accept-new="${p._idx}">Trotzdem als neues Feature</button>` : ''}
-                        ${hasDuplicate ? `<button class="btn" data-cleanup-mark-duplicate="${p._idx}">Dublette in Papierkorb</button>` : ''}
-                        <button class="btn" data-cleanup-ignore="${p._idx}">Ignorieren</button>
+                        ${hasTarget ? `<button class="btn btn-primary" data-cleanup-accept-update="${p._idx}">Bestehendes Feature aktualisieren</button>` : `<button class="btn btn-primary" data-cleanup-accept-new="${p._idx}">Als neues Feature anlegen</button>`}
+                        ${hasTarget ? `<button class="btn btn-secondary" data-cleanup-accept-new="${p._idx}">Trotzdem als neues Feature anlegen</button>` : ''}
+                        ${hasDuplicate ? `<button class="btn btn-danger" data-cleanup-mark-duplicate="${p._idx}">In Papierkorb verschieben</button>` : ''}
+                        <button class="btn btn-ghost" style="margin-left:auto;" data-cleanup-ignore="${p._idx}">Nicht übernehmen</button>
                       </div>
                     `}
                   </div>
