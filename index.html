@@ -2461,8 +2461,8 @@
               <button class="btn" id="btnStartNewProjectImport">Neues Projekt</button>
             </div>
           </div>
-          <div class="field"><label for="htmlFileInput">HTML Upload</label><input id="htmlFileInput" type="file" accept=".html,text/html" /></div>
-          <div class="field"><label for="htmlTextarea">HTML Paste</label><textarea id="htmlTextarea" style="min-height:170px">${escapeHtml(ui.importDraft.html || '')}</textarea></div>
+          <div class="field"><label for="htmlFileInput">Code-Datei / Projektdatei Upload</label><input id="htmlFileInput" type="file" accept=".html,.htm,.js,.ts,.jsx,.tsx,.css,.json,.md,.txt,text/*" /></div>
+          <div class="field"><label for="htmlTextarea">Code / Repository-Auszug Paste</label><textarea id="htmlTextarea" style="min-height:170px">${escapeHtml(ui.importDraft.html || '')}</textarea></div>
           <div class="stack-row">
             <button class="btn btn-primary" id="btnAnalyzeHtml">HTML lokal analysieren</button>
             <button class="btn" id="btnBuildHtmlPrompt">KI-Prompt erzeugen</button>
@@ -3107,7 +3107,7 @@
         ui.importDraft.html = $('htmlTextarea').value;
         ui.importDraft.projectId = projectId;
         if (!projectId) return alert('Bitte ein Projekt auswählen.');
-        if (!html) return alert('Bitte HTML hochladen oder einfügen.');
+        if (!html) return alert('Bitte Code, Projektdatei oder Repository-Auszug hochladen/einfügen.');
         const result = heuristicsFromHtml(html);
         const p = S.projects.find(x => x.id === projectId);
         if (!p) return;
@@ -3201,17 +3201,17 @@
 
         const html = $('htmlTextarea').value.trim();
         ui.importDraft.html = $('htmlTextarea').value;
-        if (!html) return alert('Bitte HTML hochladen oder einfügen.');
+        if (!html) return alert('Bitte Code, Projektdatei oder Repository-Auszug hochladen/einfügen.');
 
         const p = S.projects.find(x => x.id === projectId);
         if (!p) return alert('Projekt konnte nicht gefunden werden.');
 
         const prompt = [
           'SYSTEMROLLE',
-          'Du analysierst Single-File-HTML-Apps für eine Meta-App zur Feature- und Projektverwaltung.',
+          'Du analysierst App-Code, Projektdateien oder Repository-Auszüge für eine Meta-App zur Feature- und Projektverwaltung.',
           '',
           'AUFGABE',
-          'Analysiere die folgende Single-File-HTML-App gründlich und liefere eine streng formatierte Analyse.',
+          'Analysiere den folgenden Code-/Projekt-Auszug gründlich und liefere eine streng formatierte Analyse.',
           '',
           'WAS ANALYSIERT WERDEN SOLL',
           '1. Was für eine Art App ist das?',
@@ -3243,7 +3243,7 @@
           '- Jedes Feature-Objekt muss enthalten: title, description, category, status.',
           '- category darf NUR eines sein: UI, Workflow, Sync, KI, Import/Export, Darstellung, Datenmodell, Ansicht, Sonstiges.',
           '- status darf NUR eines sein: umgesetzt, teilweise umgesetzt, vorbereitet.',
-          '- Nenne bei Features nur klar im HTML erkennbare Hinweise, keine Spekulation.',
+          '- Nenne bei Features nur klar im Code-/Projekt-Auszug erkennbare Hinweise, keine Spekulation.',
           '',
           'AUSGABEFORMAT JSON',
           '{',
@@ -3262,7 +3262,7 @@
           '  "unclearPoints": ["..."]',
           '}',
           '',
-          'HTML-QUELLCODE',
+          'CODE- / PROJEKT-AUSZUG',
           html
         ].join('\n');
 
@@ -3282,17 +3282,17 @@
         const htmlRaw = $('htmlTextarea') ? $('htmlTextarea').value : '';
         const html = String(htmlRaw || '').trim();
         ui.importDraft.html = htmlRaw;
-        if (!html) return alert('Bitte HTML hochladen oder einfügen.');
+        if (!html) return alert('Bitte Code, Projektdatei oder Repository-Auszug hochladen/einfügen.');
 
         const project = S.projects.find(x => x.id === projectId);
         if (!project) return alert('Projekt konnte nicht gefunden werden.');
 
         const prompt = [
           'SYSTEMROLLE',
-          'Du analysierst Single-File-HTML-Apps für eine Meta-App zur Projektverwaltung.',
+          'Du analysierst App-Code oder Projektdateien für eine Meta-App zur Projektverwaltung.',
           '',
           'AUFGABE',
-          'Erzeuge ausschließlich eine Projekt-Summary aus dem aktuellen HTML-Code.',
+          'Erzeuge ausschließlich eine Projekt-Summary aus dem aktuellen Code-/Projekt-Auszug.',
           'Es dürfen KEINE Features extrahiert, vorgeschlagen oder erzeugt werden.',
           '',
           'PROJEKTKONTEXT',
@@ -3322,7 +3322,7 @@
           '- projectSummary kurz, präzise, ohne Feature-Liste.',
           '- rationale in 1-2 Sätzen begründen.',
           '',
-          'HTML-QUELLCODE',
+          'CODE- / PROJEKT-AUSZUG',
           html
         ].join('\n');
 
