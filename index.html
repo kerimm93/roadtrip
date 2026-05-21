@@ -1010,8 +1010,10 @@
         if ($('htmlProjectSelect')) $('htmlProjectSelect').addEventListener('change', e => { ui.importDraft.projectId = e.target.value; });
         if ($('btnAnalyzeHtml')) $('btnAnalyzeHtml').addEventListener('click', analyzeHtmlLocal);
         if ($('btnBuildHtmlPrompt')) $('btnBuildHtmlPrompt').addEventListener('click', buildHtmlPrompt);
+        if ($('btnBuildProjectSummaryOnlyPrompt')) $('btnBuildProjectSummaryOnlyPrompt').addEventListener('click', buildProjectSummaryOnlyPrompt);
         if ($('btnImportJsonResult')) $('btnImportJsonResult').addEventListener('click', startImportCleanupFromPrompt);
         if ($('btnBuildCleanupPrompt')) $('btnBuildCleanupPrompt').addEventListener('click', buildCleanupPromptFromPromptOutput);
+        if ($('btnImportProjectSummaryOnlyJson')) $('btnImportProjectSummaryOnlyJson').addEventListener('click', importProjectSummaryOnlyJson);
         if ($('btnBuildProjectDedupePrompt')) $('btnBuildProjectDedupePrompt').addEventListener('click', buildProjectDedupePrompt);
         if ($('btnLoadCleanupReview')) $('btnLoadCleanupReview').addEventListener('click', loadCleanupReviewProposals);
         if ($('btnClearCleanupReview')) $('btnClearCleanupReview').addEventListener('click', clearCleanupReview);
@@ -2464,6 +2466,7 @@
           <div class="stack-row">
             <button class="btn btn-primary" id="btnAnalyzeHtml">HTML lokal analysieren</button>
             <button class="btn" id="btnBuildHtmlPrompt">KI-Prompt erzeugen</button>
+            <button class="btn" id="btnBuildProjectSummaryOnlyPrompt">Nur Projekt-Summary erzeugen</button>
           </div>
           <div class="field" style="margin-top:12px;">
             <label for="analysisPromptOutput">Analyse-Prompt Ausgabe</label>
@@ -2480,6 +2483,7 @@
           <div class="stack-row">
             <button class="btn btn-primary" id="btnImportJsonResult">Aktuellen Code auf umgesetzte Features prüfen</button>
             <button class="btn" id="btnBuildCleanupPrompt">Cleanup-Prompt bauen</button>
+            <button class="btn" id="btnImportProjectSummaryOnlyJson">Projekt-Summary übernehmen</button>
             <button class="btn" id="btnFeatureFromPrompt">Fallback: Zeilen importieren</button>
           </div>
           <div class="mini" style="margin-top:6px;">Nutze das, wenn du ein neues Analyse-JSON aus neuem Code hast.</div>
@@ -3270,6 +3274,66 @@
           .catch(() => alert('KI-Analyse-Prompt erzeugt, aber Kopieren in die Zwischenablage war nicht möglich.'));
       }
 
+      async function buildProjectSummaryOnlyPrompt() {
+        const projectId = $('htmlProjectSelect').value;
+        ui.importDraft.projectId = projectId;
+        if (!projectId) return alert('Bitte zuerst ein Projekt wählen.');
+
+        const htmlRaw = $('htmlTextarea') ? $('htmlTextarea').value : '';
+        const html = String(htmlRaw || '').trim();
+        ui.importDraft.html = htmlRaw;
+        if (!html) return alert('Bitte HTML hochladen oder einfügen.');
+
+        const project = S.projects.find(x => x.id === projectId);
+        if (!project) return alert('Projekt konnte nicht gefunden werden.');
+
+        const prompt = [
+          'SYSTEMROLLE',
+          'Du analysierst Single-File-HTML-Apps für eine Meta-App zur Projektverwaltung.',
+          '',
+          'AUFGABE',
+          'Erzeuge ausschließlich eine Projekt-Summary aus dem aktuellen HTML-Code.',
+          'Es dürfen KEINE Features extrahiert, vorgeschlagen oder erzeugt werden.',
+          '',
+          'PROJEKTKONTEXT',
+          'Titel: ' + (project.title || '—'),
+          'Aktueller Typ: ' + (project.type || '—'),
+          'Bisherige Projektsummary: ' + (project.summary || '—'),
+          '',
+          'WICHTIG',
+          '- Gib GENAU EIN (1) gültiges JSON-Objekt zurück.',
+          '- Die Antwort MUSS mit "{" beginnen und mit "}" enden.',
+          '- Keine Ausgabe außer diesem einen JSON-Objekt.',
+          '',
+          'VERBOTEN',
+          '- Keine Markdown-Code-Fences.',
+          '- Kein zusätzlicher Text vor oder nach dem JSON.',
+          '- Keine zusätzlichen Top-Level-Keys.',
+          '',
+          'PFLICHT-JSON',
+          '{',
+          '  "appType": "...",',
+          '  "projectSummary": "...",',
+          '  "rationale": "..."',
+          '}',
+          '',
+          'HINWEISE',
+          '- appType möglichst passend zu einem bestehenden App-Typ wählen.',
+          '- projectSummary kurz, präzise, ohne Feature-Liste.',
+          '- rationale in 1-2 Sätzen begründen.',
+          '',
+          'HTML-QUELLCODE',
+          html
+        ].join('\n');
+
+        if ($('analysisPromptOutput')) $('analysisPromptOutput').value = prompt;
+        ui.importDraft.analysisPrompt = prompt;
+
+        navigator.clipboard.writeText(prompt)
+          .then(() => alert('Projekt-Summary-Prompt erzeugt und in die Zwischenablage kopiert.'))
+          .catch(() => alert('Projekt-Summary-Prompt erzeugt, aber Kopieren in die Zwischenablage war nicht möglich.'));
+      }
+
       function buildNotePrompt() {
         const noteText = $('quickNote').value.trim();
         const pid = $('quickProject').value || '';
@@ -3941,6 +4005,50 @@
           if (err && err.message === 'invalid-analysis-json') return alert('Kein gültiges Analyse-JSON erkannt.');
           throw err;
         }
+      }
+
+      function importProjectSummaryOnlyJson() {
+        const raw = $('promptOutput') ? $('promptOutput').value.trim() : '';
+        if (!raw) return alert('Bitte Summary-JSON einfügen.');
+        const projectId = getImportTargetProjectId();
+        if (!projectId) return alert('Bitte zuerst ein Projekt auswählen.');
+
+        let extractedJson = null;
+        try { extractedJson = extractJsonObjectFromText(raw); } catch (err) { extractedJson = null; }
+        if (!extractedJson) return alert('Kein gültiges JSON erkannt.');
+
+        let parsed;
+        try { parsed = JSON.parse(extractedJson); } catch (err) { return alert('Kein gültiges JSON erkannt: ' + err.message); }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return alert('Ungültige JSON-Struktur.');
+
+        const project = S.projects.find(x => x.id === projectId);
+        if (!project) return alert('Projekt konnte nicht gefunden werden.');
+
+        const hadSummary = String(project.summary || '').trim();
+        const result = applyProjectMetadataFromAnalysis(projectId, parsed, { allowOverwrite: true });
+        const incomingSummary = typeof parsed.projectSummary === 'string' ? parsed.projectSummary.trim() : '';
+        const incomingType = typeof parsed.appType === 'string' ? parsed.appType.trim() : '';
+        const validIncomingType = incomingType && APP_TYPES.includes(incomingType);
+
+        if (result.changed) {
+          project.updatedAt = new Date().toISOString();
+          save();
+        }
+        renderView();
+
+        const messages = [];
+        if (result.summaryChanged) {
+          messages.push(hadSummary ? 'Summary überschrieben.' : 'Summary gesetzt.');
+        } else if (!incomingSummary) {
+          messages.push('Summary nicht übernommen (leer).');
+        } else {
+          messages.push('Summary nicht übernommen.');
+        }
+        if (result.typeChanged) messages.push('appType übernommen.');
+        else if (incomingType && !validIncomingType) messages.push('appType ignoriert (nicht in APP_TYPES).');
+        else if (incomingType) messages.push('appType nicht übernommen (Projekt-Typ bereits spezifisch).');
+        else messages.push('Kein appType im JSON.');
+        alert(messages.join('\n'));
       }
 
       function runImportHistoryMetadataBackfill() {
