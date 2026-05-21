@@ -1066,10 +1066,15 @@
           const handoff = getChatWorkflowHandoffState(projectId);
           handoff.rawJson = e.target.value;
         });
-        if ($('chatWorkflowSprintGoal')) $('chatWorkflowSprintGoal').addEventListener('input', e => {
+        if ($('sprintCycleSprintGoal')) $('sprintCycleSprintGoal').addEventListener('input', e => {
           const projectId = ui.activeProjectId || '';
           if (!projectId || projectId === ALL_PROJECTS_KEY) return;
           getChatWorkflowState(projectId).sprintGoal = e.target.value;
+        });
+        if ($('sprintCycleStartJsonInput')) $('sprintCycleStartJsonInput').addEventListener('input', e => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          getChatWorkflowState(projectId).sprintStartJson = e.target.value;
         });
         if ($('chatWorkflowPromptOutput')) $('chatWorkflowPromptOutput').addEventListener('input', e => {
           const projectId = ui.activeProjectId || '';
@@ -1109,6 +1114,21 @@
           st.mode = 'next-sprint';
           st.prompt = buildSprintPromptFromMainChat(projectId, st.sprintGoal || '');
           renderView();
+        });
+        if ($('btnSprintCycleBuildMainChatStart')) $('btnSprintCycleBuildMainChatStart').addEventListener('click', () => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          const st = getChatWorkflowState(projectId);
+          const selectedFeatureIds = getSelectedSprintFeatureIds(projectId);
+          st.mode = 'sprint-cycle-start';
+          st.prompt = buildMainChatSprintStartRequestPrompt(projectId, st.sprintGoal || '', selectedFeatureIds);
+          renderView();
+        });
+        if ($('btnSprintCycleImportStartJson')) $('btnSprintCycleImportStartJson').addEventListener('click', () => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          const st = getChatWorkflowState(projectId);
+          importSprintStartJsonFromMainChat(projectId, st.sprintStartJson || '');
         });
         if ($('btnChatWorkflowBuildSprintHandoff')) $('btnChatWorkflowBuildSprintHandoff').addEventListener('click', () => {
           const projectId = ui.activeProjectId || '';
@@ -1826,6 +1846,101 @@
         alert('Sprint-Bericht importiert. Projekt und Hauptchat-Kontext aktualisiert. Neue geplante Features: ' + createdFeatures + '.');
       }
 
+      function importSprintStartJsonFromMainChat(projectId, rawJson) {
+        const project = S.projects.find(p => p && p.id === projectId);
+        if (!project) return alert('Projekt wurde nicht gefunden.');
+        if (project.status === 'archiviert') return alert('Archivierte Projekte können keinen Sprintstart importieren.');
+        const cleanRaw = String(rawJson || '').trim();
+        if (!cleanRaw) return alert('Bitte Sprintstart-JSON aus dem Hauptchat einfügen.');
+        let extractedJson = '';
+        let parsed;
+        try {
+          extractedJson = extractJsonObjectFromText(cleanRaw);
+          parsed = JSON.parse(extractedJson);
+        } catch (err) {
+          if (err && err.message === 'invalid-json-not-found') return alert('Ungültiges JSON: Kein JSON-Objekt erkannt.');
+          return alert('Ungültiges JSON: ' + (err && err.message ? err.message : 'Parsing fehlgeschlagen.'));
+        }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return alert('Ungültiges JSON: Erwartet wird ein JSON-Objekt.');
+        if (String(parsed.type || '').trim() !== 'roadtrip-sprint-start') return alert('Dieses JSON ist kein Roadtrip-Sprintstart-JSON.');
+
+        const missing = [];
+        const chatTitle = String(parsed.chatTitle || '').trim();
+        const chatType = String(parsed.chatType || '').trim();
+        const status = String(parsed.status || '').trim();
+        const summary = String(parsed.summary || '').trim();
+        const currentFocus = String(parsed.currentFocus || '').trim();
+        const nextStep = String(parsed.nextStep || '').trim();
+        if (!chatTitle) missing.push('chatTitle');
+        if (!chatType) missing.push('chatType');
+        else if (chatType !== 'sprint') missing.push('chatType (muss "sprint" sein)');
+        if (!status) missing.push('status');
+        else if (status !== 'aktiv') missing.push('status (muss "aktiv" sein)');
+        if (!summary) missing.push('summary');
+        if (!currentFocus) missing.push('currentFocus');
+        if (!nextStep) missing.push('nextStep');
+        if (missing.length) return alert('Pflichtfelder fehlen oder sind ungültig: ' + missing.join(', '));
+
+        const now = new Date().toISOString();
+        const parsedChatId = String(parsed.chatId || '').trim();
+        let sprintChat = parsedChatId
+          ? S.chats.find(c => c && c.id === parsedChatId && c.projectId === projectId)
+          : null;
+        if (!sprintChat) {
+          sprintChat = ensureChatDefaults({
+            id: parsedChatId || uid('ch'),
+            projectId,
+            title: chatTitle,
+            type: 'sprint',
+            status: 'aktiv',
+            summary,
+            nextStep,
+            rawReportText: extractedJson,
+            rawHandoffText: extractedJson,
+            mainChatId: project.mainChatId || '',
+            startedAt: now,
+            updatedAt: now
+          });
+          S.chats.push(sprintChat);
+        } else {
+          sprintChat.title = chatTitle;
+          sprintChat.type = 'sprint';
+          sprintChat.status = 'aktiv';
+          sprintChat.summary = summary;
+          sprintChat.nextStep = nextStep;
+          sprintChat.rawReportText = extractedJson;
+          sprintChat.rawHandoffText = extractedJson;
+          if (project.mainChatId) sprintChat.mainChatId = project.mainChatId;
+          if (!sprintChat.startedAt) sprintChat.startedAt = now;
+          sprintChat.updatedAt = now;
+          Object.assign(sprintChat, ensureChatDefaults(sprintChat));
+        }
+
+        project.currentFocus = currentFocus;
+        project.nextStep = nextStep;
+        project.updatedAt = now;
+
+        const selectedFeatureIds = Array.isArray(parsed.selectedFeatureIds)
+          ? parsed.selectedFeatureIds.map(id => String(id || '').trim()).filter(Boolean)
+          : [];
+        const selectedSet = new Set(selectedFeatureIds);
+        S.features.forEach(f => {
+          if (!f || f.projectId !== projectId) return;
+          if (!selectedSet.has(f.id)) return;
+          if (!isPlannedFeature(f)) return;
+          f.status = 'selected-for-sprint';
+          f.updatedAt = now;
+        });
+
+        const st = getChatWorkflowState(projectId);
+        st.sourceChatId = sprintChat.id;
+        st.mode = 'sprint-start-import';
+        st.sprintStartJson = extractedJson;
+        save();
+        renderView();
+        alert('Sprintstart-JSON importiert. Sprintchat wurde als aktiv gespeichert.');
+      }
+
       function buildReturnToMainChatPrompt(projectId, sourceChatId) {
         const project = S.projects.find(p => p.id === projectId);
         const sourceChat = S.chats.find(c => c.id === sourceChatId && c.projectId === projectId);
@@ -1954,6 +2069,70 @@
           '- Begrenze den Scope auf einen fokussierten Sprint.',
           '- Nenne Deliverables und klare Akzeptanzkriterien.',
           '- Schlage den ersten konkreten Umsetzungsschritt vor.'
+        ].join('\n');
+      }
+
+      function getSelectedSprintFeatureIds(projectId) {
+        return getVisibleFeatures(S.features)
+          .filter(f => f.projectId === projectId && f.status === 'selected-for-sprint')
+          .map(f => f.id);
+      }
+
+      function buildMainChatSprintStartRequestPrompt(projectId, sprintGoal, selectedFeatureIds) {
+        const project = S.projects.find(p => p.id === projectId);
+        if (!project) return '';
+        const mainChat = getProjectMainChat(projectId);
+        const features = getVisibleFeatures(S.features).filter(f => f.projectId === projectId);
+        const selectedIds = Array.isArray(selectedFeatureIds) ? selectedFeatureIds : [];
+        const selectedFeatures = selectedIds.map(id => features.find(f => f.id === id)).filter(Boolean);
+        const selectedSet = new Set(selectedFeatures.map(f => f.id));
+        const relevantOpenFeatures = features.filter(f => isPlannedFeature(f) && !selectedSet.has(f.id)).slice(0, 8);
+        const relevantOpenNotes = getRelevantUnprocessedNotes(projectId, 6);
+        const cleanGoal = String(sprintGoal || '').trim() || 'Kein separates Sprintziel hinterlegt.';
+        return [
+          'Bitte bereite für Roadtrip den Sprint-Start vor.',
+          'Wichtig: Erzeuge NICHT nur eine allgemeine Antwort, sondern genau zwei Codeblöcke im geforderten Format.',
+          'Aktualisiere deinen Hauptchat-Kontext aktiv anhand der folgenden Projektdaten, bevor du den Sprintstart planst.',
+          '',
+          '## Projektkontext (aus Roadtrip)',
+          `- Projekttitel: ${project.title || '—'}`,
+          `- Projektsummary: ${project.summary || '—'}`,
+          `- Aktueller Fokus: ${project.currentFocus || '—'}`,
+          `- Nächster Projektschritt: ${project.nextStep || '—'}`,
+          `- Hauptchat-Titel: ${(mainChat && mainChat.title) || '—'}`,
+          `- Hauptchat-URL: ${(mainChat && mainChat.url) || project.mainChatUrl || 'OFFEN – in Roadtrip nachtragen'}`,
+          '',
+          '## Ausgewählte Features für den nächsten Sprint',
+          ...(selectedFeatures.length ? selectedFeatures.map(f => `- [${f.id}] ${f.title || 'Ohne Titel'} (${getFeatureStatusLabel(f.status)} · ${f.priority || 'prio-offen'})`) : ['- Keine Features explizit als "Für Sprint ausgewählt" markiert.']),
+          '',
+          '## Relevante offene Features',
+          ...(relevantOpenFeatures.length ? relevantOpenFeatures.map(f => `- [${f.id}] ${f.title || 'Ohne Titel'} (${getFeatureStatusLabel(f.status)} · ${f.priority || 'prio-offen'})`) : ['- Keine weiteren relevanten offenen Features gefunden.']),
+          '',
+          '## Relevante offene Notizen',
+          ...(relevantOpenNotes.length ? relevantOpenNotes : ['- Keine offenen Notizen vorhanden.']),
+          '',
+          '## Sprintziel / Anliegen des Nutzers',
+          `- ${cleanGoal}`,
+          '',
+          '## Deine Ausgabe muss exakt so strukturiert sein',
+          '1) Codeblock: fertiger Sprintchat-Startprompt (zum Kopieren in einen neuen Sprintchat).',
+          '2) Codeblock: gültiges JSON für Roadtrip, damit der Sprintchat als aktiv angelegt/aktualisiert werden kann.',
+          '',
+          'JSON-Mindeststruktur (Pflichtfelder):',
+          '{',
+          '  "type": "roadtrip-sprint-start",',
+          '  "chatTitle": "...",',
+          '  "chatType": "sprint",',
+          '  "status": "aktiv",',
+          '  "sprintGoal": "...",',
+          '  "summary": "...",',
+          '  "currentFocus": "...",',
+          '  "nextStep": "...",',
+          '  "selectedFeatureIds": ["..."],',
+          '  "selectedFeatureTitles": ["..."],',
+          '  "acceptanceCriteria": ["..."],',
+          '  "notes": ["..."]',
+          '}'
         ].join('\n');
       }
 
@@ -2350,18 +2529,49 @@
                 </select>
                 ${chatWorkflowSource && chatWorkflowSource.url ? `<div class="mini" style="margin-top:4px;">Ausgewählt: <a href="${escapeAttr(chatWorkflowSource.url)}" target="_blank" rel="noopener">${escapeHtml(chatWorkflowSource.url)}</a></div>` : ''}
               </div>
-              <div class="field">
-                <label for="chatWorkflowSprintGoal">Neues Sprint-Ziel / Anliegen (optional)</label>
-                <textarea id="chatWorkflowSprintGoal" style="min-height:70px;" placeholder="z.B. Checkout-Flow stabilisieren und offene Fehler beheben">${escapeHtml(chatWorkflow.sprintGoal || '')}</textarea>
+              <div class="panel" style="padding:10px 12px;margin-bottom:10px;">
+                <div class="panel-title"><h3>Sprint-Zyklus</h3></div>
+                <div class="field">
+                  <label for="sprintCycleSprintGoal">Sprintziel / Anliegen</label>
+                  <textarea id="sprintCycleSprintGoal" style="min-height:70px;" placeholder="z.B. Checkout-Flow stabilisieren und offene Fehler beheben">${escapeHtml(chatWorkflow.sprintGoal || '')}</textarea>
+                </div>
+                <div class="field">
+                  <label>Features mit Status „Für Sprint ausgewählt“</label>
+                  <div class="notice" style="margin:0;">
+                    ${getSelectedSprintFeatureIds(p.id).length
+                      ? getSelectedSprintFeatureIds(p.id).map(fid => {
+                        const feature = projectFeatures.find(f => f.id === fid);
+                        return `• ${escapeHtml(feature ? feature.title : fid)}`;
+                      }).join('<br/>')
+                      : 'Keine Features mit Status „Für Sprint ausgewählt“.'
+                    }
+                  </div>
+                </div>
+                <div class="stack-row">
+                  <button class="btn btn-primary" id="btnSprintCycleBuildMainChatStart" ${isArchivedProject || !projectMainChat ? 'disabled' : ''}>Hauptchat um Sprintstart bitten</button>
+                </div>
+                <div class="field" style="margin-top:8px;">
+                  <label for="sprintCycleStartJsonInput">Sprintstart-JSON aus Hauptchat</label>
+                  <textarea id="sprintCycleStartJsonInput" style="min-height:140px;font-family:var(--font-mono);font-size:12px;" placeholder='{"type":"roadtrip-sprint-start","chatTitle":"..."}'>${escapeHtml(chatWorkflow.sprintStartJson || '')}</textarea>
+                  <div class="stack-row" style="margin-top:6px;">
+                    <button class="btn" id="btnSprintCycleImportStartJson" ${isArchivedProject ? 'disabled' : ''}>Sprintstart-JSON importieren</button>
+                  </div>
+                </div>
               </div>
               <div class="stack-row" style="margin-bottom:8px;">
                 <button class="btn" id="btnChatWorkflowSetMain" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Als Hauptchat setzen</button>
                 <button class="btn" id="btnChatWorkflowBuildReturn" ${isArchivedProject || !chatWorkflow.sourceChatId || !projectMainChat ? 'disabled' : ''}>Prompt: In Hauptchat zurückkehren</button>
                 <button class="btn" id="btnChatWorkflowBuildBootstrap" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Prompt: Hauptchat neu anlegen</button>
                 <button class="btn" id="btnChatWorkflowBuildSprintHandoff" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Prompt: Sprint-Bericht anfordern</button>
-                <button class="btn" id="btnChatWorkflowBuildLegacyMigration" ${isArchivedProject ? 'disabled' : ''}>Prompt: Alten Sprintchat migrieren</button>
-                <button class="btn btn-primary" id="btnChatWorkflowBuildSprint" ${isArchivedProject || !projectMainChat ? 'disabled' : ''}>Prompt: Nächsten Sprintchat starten</button>
               </div>
+              <details style="margin-bottom:8px;">
+                <summary style="font-weight:700;">Advanced / Legacy</summary>
+                <div class="stack-row" style="margin-top:8px;">
+                  <button class="btn" id="btnChatWorkflowBuildLegacyMigration" ${isArchivedProject ? 'disabled' : ''}>Prompt: Alten Sprintchat migrieren</button>
+                  <button class="btn" id="btnChatWorkflowBuildSprint" ${isArchivedProject || !projectMainChat ? 'disabled' : ''}>Legacy: Prompt für direkten Sprintchat-Start</button>
+                </div>
+                <div class="mini" style="margin-top:6px;">Hinweis: Die Prompt-Ausgabe oben ist primär für den Hauptchat gedacht. In diesem Bereich können Legacy-Aktionen andere Zielchats adressieren.</div>
+              </details>
               <div class="field">
                 <label for="chatWorkflowHandoffJson">Sprint-Handoff-JSON</label>
                 <textarea id="chatWorkflowHandoffJson" style="min-height:180px;font-family:var(--font-mono);font-size:12px;" placeholder='{"summary":"...","currentFocus":"...","nextStep":"..."}'>${escapeHtml(chatWorkflowHandoff.rawJson || '')}</textarea>
@@ -2370,7 +2580,7 @@
                 </div>
               </div>
               <div class="field">
-                <label for="chatWorkflowPromptOutput">Chat-Workflow Prompt-Ausgabe</label>
+                <label for="chatWorkflowPromptOutput">Prompt für Hauptchat</label>
                 <textarea id="chatWorkflowPromptOutput" style="min-height:220px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(chatWorkflow.prompt || '')}</textarea>
                 <div class="stack-row" style="margin-top:6px;">
                   <button class="btn" id="btnCopyChatWorkflowPrompt">Copy</button>
