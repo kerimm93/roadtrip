@@ -349,6 +349,57 @@
       grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
       gap: 10px;
     }
+    .momentum-dashboard-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .momentum-row {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+      min-height: 44px;
+    }
+    .momentum-main-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(260px, .8fr);
+      gap: 12px;
+      margin-top: 10px;
+    }
+    .momentum-focus {
+      color: var(--ink-light);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .momentum-next-step {
+      background: var(--rt-gold-soft, var(--surface-3));
+      border-left: 3px solid var(--accent);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-top: 8px;
+    }
+    .momentum-next-step .label {
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      font-size: 10px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .momentum-next-step .value {
+      color: var(--ink);
+      font-weight: 700;
+      line-height: 1.45;
+    }
+    .momentum-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    @media (max-width: 860px) {
+      .momentum-main-grid { grid-template-columns: 1fr; }
+    }
 
     .card {
       background: var(--surface);
@@ -1089,6 +1140,17 @@
           const projectId = el.dataset.momentumPromptOutput || '';
           if (!projectId) return;
           getProjectMomentumPromptState(projectId).prompt = e.target.value;
+        }));
+        qq('[data-momentum-result-json]').forEach(el => el.addEventListener('input', e => {
+          const projectId = el.dataset.momentumResultJson || '';
+          if (!projectId) return;
+          getProjectMomentumPromptState(projectId).resultJson = e.target.value;
+        }));
+        qq('[data-import-momentum-result]').forEach(btn => btn.addEventListener('click', () => {
+          const projectId = btn.dataset.importMomentumResult || '';
+          if (!projectId) return;
+          const st = getProjectMomentumPromptState(projectId);
+          importProjectMomentumResult(projectId, st.resultJson || '');
         }));
         qq('[data-copy-momentum-prompt]').forEach(btn => btn.addEventListener('click', () => {
           const projectId = btn.dataset.copyMomentumPrompt || '';
@@ -2516,36 +2578,50 @@
         const promptState = getProjectMomentumPromptState(project.id);
         const quickNoteValue = (ui.momentumQuickNoteByProject && ui.momentumQuickNoteByProject[project.id]) || '';
         return `
-          <div class="item">
+          <div class="item momentum-row">
             <div class="row-top">
-              <strong>${escapeHtml(project.title || 'Ohne Titel')}</strong>
-              <span class="pill">${escapeHtml(project.type || 'Sonstiges')} · ${escapeHtml(project.status || 'aktiv')}</span>
-            </div>
-            <div class="mini" style="margin-top:6px;"><strong>Fokus:</strong> ${escapeHtml(shorten(project.currentFocus || '—', 180))}</div>
-            <div class="mini" style="margin-top:4px;"><strong>Nächster Schritt:</strong> ${escapeHtml(shorten(project.nextStep || '—', 180))}</div>
-            <div class="stack-row" style="margin-top:8px;gap:6px;">
-              <span class="pill">Planned Features: ${plannedFeatures.length}</span>
-              <span class="pill">Offene Notizen: ${openNotes.length}</span>
-            </div>
-            <div class="mini" style="margin-top:6px;">Zuletzt aktualisiert: ${escapeHtml(formatDateTime(updatedAt))}</div>
-            <div class="stack-row" style="margin-top:10px;">
-              <button class="btn" data-open-momentum-project="${escapeAttr(project.id)}">Projekt öffnen</button>
-              <button class="btn btn-primary" data-build-momentum-prompt="${escapeAttr(project.id)}">Next Step brainstormen</button>
-            </div>
-            ${promptState.prompt ? `<div class="field" style="margin-top:10px;">
-              <label>Next-Step-Brainstorm-Prompt</label>
-              <textarea data-momentum-prompt-output="${escapeAttr(project.id)}" style="min-height:180px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(promptState.prompt || '')}</textarea>
-              <div class="stack-row" style="margin-top:6px;">
-                <button class="btn btn-secondary" data-copy-momentum-prompt="${escapeAttr(project.id)}">Copy</button>
+              <div>
+                <strong>${escapeHtml(project.title || 'Ohne Titel')}</strong>
+                <div class="mini">${escapeHtml(project.type || 'Sonstiges')} · ${escapeHtml(project.status || 'aktiv')} · Zuletzt aktualisiert: ${escapeHtml(formatDateTime(updatedAt))}</div>
               </div>
-            </div>` : ''}
-            <div class="field" style="margin-top:10px;">
-              <label>Rohe Notiz</label>
-              <textarea data-momentum-note-input="${escapeAttr(project.id)}" placeholder="Rohe Notiz zu diesem Projekt..." style="min-height:80px;">${escapeHtml(quickNoteValue)}</textarea>
-              <div class="stack-row" style="margin-top:6px;">
-                <button class="btn" data-add-momentum-note="${escapeAttr(project.id)}">Rohe Notiz erfassen</button>
+              <div class="stack-row" style="gap:6px;">
+                <span class="pill">Planned Features: ${plannedFeatures.length}</span>
+                <span class="pill">Offene Notizen: ${openNotes.length}</span>
               </div>
             </div>
+            <div class="momentum-main-grid">
+              <div>
+                <div class="momentum-focus"><strong>Fokus:</strong> ${escapeHtml(shorten(project.currentFocus || 'Noch kein Fokus gesetzt.', 220))}</div>
+                ${project.nextStep ? `<div class="momentum-next-step"><div class="label">Nächster Schritt</div><div class="value">${escapeHtml(shorten(project.nextStep, 260))}</div></div>` : '<div class="notice" style="margin-top:8px;">Noch kein nächster Schritt gesetzt.</div>'}
+              </div>
+              <div class="momentum-actions">
+                <button class="btn btn-primary" data-build-momentum-prompt="${escapeAttr(project.id)}">Next Step brainstormen</button>
+                <button class="btn" data-open-momentum-project="${escapeAttr(project.id)}">Projekt öffnen</button>
+                <div class="field" style="margin-top:4px;">
+                  <label>Rohe Notiz</label>
+                  <textarea data-momentum-note-input="${escapeAttr(project.id)}" placeholder="Rohe Notiz zu diesem Projekt..." style="min-height:80px;">${escapeHtml(quickNoteValue)}</textarea>
+                  <div class="stack-row" style="margin-top:6px;">
+                    <button class="btn" data-add-momentum-note="${escapeAttr(project.id)}">Rohe Notiz erfassen</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            ${promptState.prompt ? `<details open style="margin-top:10px;">
+              <summary style="font-weight:700;">Next-Step-Brainstorm-Prompt</summary>
+              <div class="field" style="margin-top:8px;">
+                <textarea data-momentum-prompt-output="${escapeAttr(project.id)}" style="min-height:180px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(promptState.prompt || '')}</textarea>
+                <div class="stack-row" style="margin-top:6px;">
+                  <button class="btn btn-secondary" data-copy-momentum-prompt="${escapeAttr(project.id)}">Copy</button>
+                </div>
+              </div>
+              <div class="field" style="margin-top:8px;">
+                <label>Ergebnis / Fokus-Update aus ChatGPT</label>
+                <textarea data-momentum-result-json="${escapeAttr(project.id)}" style="min-height:120px;font-family:var(--font-mono);font-size:12px;" placeholder='{"currentFocus":"...","nextStep":"..."}'>${escapeHtml(promptState.resultJson || '')}</textarea>
+                <div class="stack-row" style="margin-top:6px;">
+                  <button class="btn btn-primary" data-import-momentum-result="${escapeAttr(project.id)}">Fokus & nächsten Schritt übernehmen</button>
+                </div>
+              </div>
+            </details>` : ''}
           </div>
         `;
       }
@@ -2573,7 +2649,7 @@
               <option value="plannedFeatures" ${ui.momentumSort === 'plannedFeatures' ? 'selected' : ''}>Viele geplante Features</option>
             </select>
           </div>
-          <div class="grid-cards">
+          <div class="list momentum-dashboard-list">
             ${projects.map(renderMomentumDashboardCard).join('')}
           </div>
         `;
