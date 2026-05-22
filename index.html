@@ -2701,6 +2701,27 @@
         const projectFeatures = getVisibleFeatures(S.features).filter(f => f.projectId === projectId);
         const projectNotes = (S.notes || []).filter(n => n && n.projectId === projectId);
         const data = getProjectMomentumData(projectId, projectFeatures, projectNotes);
+        const plannedForPrompt = sortMomentumFeatures(
+          (projectFeatures || [])
+            .map(f => applyFeatureDefaults(Object.assign({}, f || {})))
+            .filter(isPlannedFeature)
+        );
+        const activeFeaturesForPrompt = plannedForPrompt
+          .filter(f => ['selected-for-sprint', 'in-progress'].includes(f.status))
+          .slice(0, 8);
+        const candidateFeaturesForPrompt = plannedForPrompt
+          .filter(f => ['planned', 'idea'].includes(f.status))
+          .slice(0, 10);
+        const blockedFeaturesForPrompt = plannedForPrompt
+          .filter(f => f.status === 'blocked')
+          .slice(0, 6);
+        const deferredFeaturesForPrompt = plannedForPrompt
+          .filter(f => f.status === 'deferred')
+          .slice(0, 5);
+        const openNotesForPrompt = (projectNotes || [])
+          .filter(n => n && !n.processed && String(n.text || '').trim())
+          .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+          .slice(0, 12);
         function formatMomentumFeatureForPrompt(feature) {
           const f = applyFeatureDefaults(Object.assign({}, feature || {}));
           const parts = [
@@ -2750,19 +2771,19 @@
           '',
           '## Geplante Features',
           '### Gerade aktive Features',
-          featureLines(data.activeFeatures, 8),
+          featureLines(activeFeaturesForPrompt, 8),
           '',
           '### Top-Kandidaten',
-          featureLines(data.candidateFeatures, 10),
+          featureLines(candidateFeaturesForPrompt, 10),
           '',
           '### Blockierte Features',
-          featureLines(data.blockedFeatures, 6),
+          featureLines(blockedFeaturesForPrompt, 6),
           '',
           '### Zurückgestellte Features',
-          featureLines(data.deferredFeatures, 5),
+          featureLines(deferredFeaturesForPrompt, 5),
           '',
           '## Offene Notizen zur Verarbeitung',
-          noteLines(data.openNotes, 12),
+          noteLines(openNotesForPrompt, 12),
           '',
           '## Aufgabe',
           '1. Werte die offenen Notizen aus.',
