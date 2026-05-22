@@ -349,6 +349,57 @@
       grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
       gap: 10px;
     }
+    .momentum-dashboard-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .momentum-row {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+      min-height: 44px;
+    }
+    .momentum-main-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(260px, .8fr);
+      gap: 12px;
+      margin-top: 10px;
+    }
+    .momentum-focus {
+      color: var(--ink-light);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .momentum-next-step {
+      background: var(--rt-gold-soft, var(--surface-3));
+      border-left: 3px solid var(--accent);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-top: 8px;
+    }
+    .momentum-next-step .label {
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      font-size: 10px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .momentum-next-step .value {
+      color: var(--ink);
+      font-weight: 700;
+      line-height: 1.45;
+    }
+    .momentum-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    @media (max-width: 860px) {
+      .momentum-main-grid { grid-template-columns: 1fr; }
+    }
 
     .card {
       background: var(--surface);
@@ -544,7 +595,7 @@
       const UI_SPRINT_VIS_KEY = 'roadtrip.ui.showCompletedSprintsByProject';
       const UI_MOMENTUM_COLLAPSED_KEY = 'roadtrip.ui.projectMomentumCollapsedByProject';
       const ALL_PROJECTS_KEY = 'all';
-      const VIEWS = ['database', 'project', 'import', 'settings'];
+      const VIEWS = ['database', 'momentum', 'project', 'import', 'settings'];
       const APP_TYPES = ['Daily Log', 'Braindump', 'Review', 'Tracker', 'Writing', 'Learning', 'Meta-App', 'Sonstiges'];
       const PROJECT_STATUS = ['aktiv', 'pausiert', 'archiviert'];
       const FEATURE_CATEGORIES = ['UI', 'Workflow', 'Sync', 'KI', 'Import/Export', 'Darstellung', 'Datenmodell', 'Ansicht', 'Sonstiges'];
@@ -622,7 +673,9 @@
         cleanupReview: { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', visible: false, versionLogged: false },
         showCompletedSprintsByProject: {},
         projectMomentumCollapsedByProject: {},
-        projectMomentumPromptByProject: {}
+        projectMomentumPromptByProject: {},
+        momentumSort: 'updated',
+        momentumQuickNoteByProject: {}
       };
 
       const $ = (id) => document.getElementById(id);
@@ -942,7 +995,7 @@
         VIEWS.forEach(v => {
           const b = document.createElement('button');
           b.className = 'seg' + (ui.view === v ? ' active' : '');
-          b.textContent = ({database:'Database',project:'Project',import:'Import',settings:'Settings'})[v];
+          b.textContent = ({database:'Database',momentum:'Momentum',project:'Project',import:'Import',settings:'Settings'})[v];
           b.addEventListener('click', () => { ui.view = v; renderNav(); renderView(); });
           wrap.appendChild(b);
         });
@@ -992,13 +1045,14 @@
       function renderView() {
         const c = $('viewContainer');
         if (ui.view === 'database') c.innerHTML = renderDatabaseView();
+        if (ui.view === 'momentum') c.innerHTML = renderMomentumDashboardView();
         if (ui.view === 'project') c.innerHTML = renderProjectWorkspace();
         if (ui.view === 'import') c.innerHTML = renderImportWorkspace();
         if (ui.view === 'settings') c.innerHTML = renderSettingsWorkspace();
         renderProjectSelects();
         if ($('themeSelect')) $('themeSelect').value = C.theme;
         if ($('fontSelect')) $('fontSelect').value = C.font;
-        $('viewTitle').textContent = ({database:'Database',project:'Project',import:'Import',settings:'Settings'})[ui.view];
+        $('viewTitle').textContent = ({database:'Database',momentum:'Momentum',project:'Project',import:'Import',settings:'Settings'})[ui.view];
         wireDynamicView();
       }
 
@@ -1016,6 +1070,12 @@
         if (search) search.addEventListener('input', e => { ui.filters.search = e.target.value; renderView(); });
         if (kanbanToggle) kanbanToggle.addEventListener('change', e => { ui.showKanban = e.target.checked; renderView(); });
         if (allProjectsToggle) allProjectsToggle.addEventListener('change', e => { ui.showAllProjects = e.target.checked; renderView(); });
+        if ($('momentumSortSelect')) {
+          $('momentumSortSelect').addEventListener('change', e => {
+            ui.momentumSort = e.target.value || 'updated';
+            renderView();
+          });
+        }
 
         if ($('themeSelect')) $('themeSelect').addEventListener('change', e => { C.theme = e.target.value; applyTheme(); save(); });
         if ($('fontSelect')) $('fontSelect').addEventListener('change', e => { C.font = e.target.value; applyTheme(); save(); });
@@ -1056,6 +1116,67 @@
           ui.projectEditMode = true;
           ui.editingProjectId = targetProjectId;
           renderView();
+        }));
+        qq('[data-open-momentum-project]').forEach(btn => btn.addEventListener('click', () => {
+          const projectId = btn.dataset.openMomentumProject || '';
+          if (!projectId) return;
+          ui.activeProjectId = projectId;
+          ui.projectEditMode = false;
+          ui.editingProjectId = projectId;
+          ui.importDraft.projectId = projectId;
+          ui.view = 'project';
+          renderNav();
+          renderSidebarProjects();
+          renderView();
+        }));
+        qq('[data-build-momentum-prompt]').forEach(btn => btn.addEventListener('click', () => {
+          const projectId = btn.dataset.buildMomentumPrompt || '';
+          if (!projectId) return;
+          const st = getProjectMomentumPromptState(projectId);
+          st.prompt = buildProjectNextStepPrompt(projectId);
+          renderView();
+        }));
+        qq('[data-momentum-prompt-output]').forEach(el => el.addEventListener('input', e => {
+          const projectId = el.dataset.momentumPromptOutput || '';
+          if (!projectId) return;
+          getProjectMomentumPromptState(projectId).prompt = e.target.value;
+        }));
+        qq('[data-momentum-result-json]').forEach(el => el.addEventListener('input', e => {
+          const projectId = el.dataset.momentumResultJson || '';
+          if (!projectId) return;
+          getProjectMomentumPromptState(projectId).resultJson = e.target.value;
+        }));
+        qq('[data-import-momentum-result]').forEach(btn => btn.addEventListener('click', () => {
+          const projectId = btn.dataset.importMomentumResult || '';
+          if (!projectId) return;
+          const st = getProjectMomentumPromptState(projectId);
+          importProjectMomentumResult(projectId, st.resultJson || '');
+        }));
+        qq('[data-copy-momentum-prompt]').forEach(btn => btn.addEventListener('click', () => {
+          const projectId = btn.dataset.copyMomentumPrompt || '';
+          if (!projectId) return;
+          const prompt = (getProjectMomentumPromptState(projectId).prompt || '').trim();
+          if (!prompt) return alert('Kein Prompt vorhanden.');
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(prompt).then(() => {
+              if (typeof toast === 'function') toast('Prompt kopiert.');
+            }).catch(() => {
+              alert('Kopieren fehlgeschlagen. Bitte manuell markieren.');
+            });
+          } else {
+            alert('Clipboard API nicht verfügbar. Bitte Prompt manuell kopieren.');
+          }
+        }));
+        qq('[data-momentum-note-input]').forEach(el => el.addEventListener('input', e => {
+          const projectId = el.dataset.momentumNoteInput || '';
+          if (!projectId) return;
+          if (!ui.momentumQuickNoteByProject || typeof ui.momentumQuickNoteByProject !== 'object') {
+            ui.momentumQuickNoteByProject = {};
+          }
+          ui.momentumQuickNoteByProject[projectId] = e.target.value;
+        }));
+        qq('[data-add-momentum-note]').forEach(btn => btn.addEventListener('click', () => {
+          addMomentumDashboardNote(btn.dataset.addMomentumNote || '');
         }));
         if ($('btnAddNote')) $('btnAddNote').addEventListener('click', addQuickNote);
         if ($('btnAnalyzeNote')) $('btnAnalyzeNote').addEventListener('click', buildNotePrompt);
@@ -2419,6 +2540,121 @@
         `;
       }
 
+      function getProjectUpdatedAt(project) {
+        return (project && (project.updatedAt || project.lastAnalyzedAt || project.lastHtmlImportedAt || project.createdAt)) || '';
+      }
+
+      function getOpenProjectNotes(projectId) {
+        return (S.notes || []).filter(n =>
+          n &&
+          n.projectId === projectId &&
+          !n.processed &&
+          String(n.text || '').trim()
+        );
+      }
+
+      function getPlannedProjectFeatures(projectId) {
+        return getVisibleFeatures(S.features || []).filter(f =>
+          f &&
+          f.projectId === projectId &&
+          isPlannedFeature(f)
+        );
+      }
+
+      function getMomentumDashboardProjects() {
+        const projects = (S.projects || []).filter(p => p && p.status !== 'archiviert');
+        const sortMode = ui.momentumSort || 'updated';
+        return projects.slice().sort((a, b) => {
+          if (sortMode === 'openNotes') return getOpenProjectNotes(b.id).length - getOpenProjectNotes(a.id).length;
+          if (sortMode === 'plannedFeatures') return getPlannedProjectFeatures(b.id).length - getPlannedProjectFeatures(a.id).length;
+          return String(getProjectUpdatedAt(b)).localeCompare(String(getProjectUpdatedAt(a)));
+        });
+      }
+
+      function renderMomentumDashboardCard(project) {
+        const plannedFeatures = getPlannedProjectFeatures(project.id);
+        const openNotes = getOpenProjectNotes(project.id);
+        const updatedAt = getProjectUpdatedAt(project);
+        const promptState = getProjectMomentumPromptState(project.id);
+        const quickNoteValue = (ui.momentumQuickNoteByProject && ui.momentumQuickNoteByProject[project.id]) || '';
+        return `
+          <div class="item momentum-row">
+            <div class="row-top">
+              <div>
+                <strong>${escapeHtml(project.title || 'Ohne Titel')}</strong>
+                <div class="mini">${escapeHtml(project.type || 'Sonstiges')} · ${escapeHtml(project.status || 'aktiv')} · Zuletzt aktualisiert: ${escapeHtml(formatDateTime(updatedAt))}</div>
+              </div>
+              <div class="stack-row" style="gap:6px;">
+                <span class="pill">Planned Features: ${plannedFeatures.length}</span>
+                <span class="pill">Offene Notizen: ${openNotes.length}</span>
+              </div>
+            </div>
+            <div class="momentum-main-grid">
+              <div>
+                <div class="momentum-focus"><strong>Fokus:</strong> ${escapeHtml(shorten(project.currentFocus || 'Noch kein Fokus gesetzt.', 220))}</div>
+                ${project.nextStep ? `<div class="momentum-next-step"><div class="label">Nächster Schritt</div><div class="value">${escapeHtml(shorten(project.nextStep, 260))}</div></div>` : '<div class="notice" style="margin-top:8px;">Noch kein nächster Schritt gesetzt.</div>'}
+              </div>
+              <div class="momentum-actions">
+                <button class="btn btn-primary" data-build-momentum-prompt="${escapeAttr(project.id)}">Next Step brainstormen</button>
+                <button class="btn" data-open-momentum-project="${escapeAttr(project.id)}">Projekt öffnen</button>
+                <div class="field" style="margin-top:4px;">
+                  <label>Rohe Notiz</label>
+                  <textarea data-momentum-note-input="${escapeAttr(project.id)}" placeholder="Rohe Notiz zu diesem Projekt..." style="min-height:80px;">${escapeHtml(quickNoteValue)}</textarea>
+                  <div class="stack-row" style="margin-top:6px;">
+                    <button class="btn" data-add-momentum-note="${escapeAttr(project.id)}">Rohe Notiz erfassen</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            ${promptState.prompt ? `<details open style="margin-top:10px;">
+              <summary style="font-weight:700;">Next-Step-Brainstorm-Prompt</summary>
+              <div class="field" style="margin-top:8px;">
+                <textarea data-momentum-prompt-output="${escapeAttr(project.id)}" style="min-height:180px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(promptState.prompt || '')}</textarea>
+                <div class="stack-row" style="margin-top:6px;">
+                  <button class="btn btn-secondary" data-copy-momentum-prompt="${escapeAttr(project.id)}">Copy</button>
+                </div>
+              </div>
+              <div class="field" style="margin-top:8px;">
+                <label>Ergebnis / Fokus-Update aus ChatGPT</label>
+                <textarea data-momentum-result-json="${escapeAttr(project.id)}" style="min-height:120px;font-family:var(--font-mono);font-size:12px;" placeholder='{"currentFocus":"...","nextStep":"..."}'>${escapeHtml(promptState.resultJson || '')}</textarea>
+                <div class="stack-row" style="margin-top:6px;">
+                  <button class="btn btn-primary" data-import-momentum-result="${escapeAttr(project.id)}">Fokus & nächsten Schritt übernehmen</button>
+                </div>
+              </div>
+            </details>` : ''}
+          </div>
+        `;
+      }
+
+      function renderMomentumDashboardView() {
+        const projects = getMomentumDashboardProjects();
+        if (!projects.length) {
+          return `
+            <div class="panel-title"><h3>Momentum Dashboard</h3></div>
+            <div class="notice">Keine aktiven Projekte vorhanden.</div>
+            <div class="stack-row" style="margin-top:10px;">
+              <button class="btn btn-primary" id="btnStartNewProject">+ Neues Projekt</button>
+            </div>
+          `;
+        }
+        return `
+          <div class="panel-title">
+            <div>
+              <h3>Momentum Dashboard</h3>
+              <div class="mini">Projektübergreifender Überblick über Fokus, nächsten Schritt, offene Features und offene Notizen.</div>
+            </div>
+            <select id="momentumSortSelect" style="max-width:260px;">
+              <option value="updated" ${ui.momentumSort === 'updated' ? 'selected' : ''}>Zuletzt aktualisiert</option>
+              <option value="openNotes" ${ui.momentumSort === 'openNotes' ? 'selected' : ''}>Viele offene Notizen</option>
+              <option value="plannedFeatures" ${ui.momentumSort === 'plannedFeatures' ? 'selected' : ''}>Viele geplante Features</option>
+            </select>
+          </div>
+          <div class="list momentum-dashboard-list">
+            ${projects.map(renderMomentumDashboardCard).join('')}
+          </div>
+        `;
+      }
+
       function renderMomentumFeatureMini(feature, options) {
         const f = applyFeatureDefaults(Object.assign({}, feature || {}));
         const opts = Object.assign({ showControls: true }, options || {});
@@ -2465,31 +2701,156 @@
         const projectFeatures = getVisibleFeatures(S.features).filter(f => f.projectId === projectId);
         const projectNotes = (S.notes || []).filter(n => n && n.projectId === projectId);
         const data = getProjectMomentumData(projectId, projectFeatures, projectNotes);
-        const lines = arr => arr.length ? arr.map(f => `- ${f.title} (${getFeatureStatusLabel(f.status)}, Prio: ${f.priority || 'mittel'})`).join('\n') : '- —';
-        const noteLines = data.openNotes.length ? data.openNotes.map(n => `- ${shorten(String(n.text || '').trim(), 180)}`).join('\n') : '- —';
+        const plannedForPrompt = sortMomentumFeatures(
+          (projectFeatures || [])
+            .map(f => applyFeatureDefaults(Object.assign({}, f || {})))
+            .filter(isPlannedFeature)
+        );
+        const activeFeaturesForPrompt = plannedForPrompt
+          .filter(f => ['selected-for-sprint', 'in-progress'].includes(f.status))
+          .slice(0, 8);
+        const candidateFeaturesForPrompt = plannedForPrompt
+          .filter(f => ['planned', 'idea'].includes(f.status))
+          .slice(0, 10);
+        const blockedFeaturesForPrompt = plannedForPrompt
+          .filter(f => f.status === 'blocked')
+          .slice(0, 6);
+        const deferredFeaturesForPrompt = plannedForPrompt
+          .filter(f => f.status === 'deferred')
+          .slice(0, 5);
+        const openNotesForPrompt = (projectNotes || [])
+          .filter(n => n && !n.processed && String(n.text || '').trim())
+          .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+          .slice(0, 12);
+        function formatMomentumFeatureForPrompt(feature) {
+          const f = applyFeatureDefaults(Object.assign({}, feature || {}));
+          const parts = [
+            `ID: ${f.id || '—'}`,
+            `Titel: ${f.title || 'Ohne Titel'}`,
+            `Status: ${getFeatureStatusLabel(f.status)}`,
+            `Priorität: ${f.priority || 'mittel'}`,
+            `Kategorie: ${f.category || 'Sonstiges'}`
+          ];
+          const desc = String(f.description || '').trim();
+          if (desc) parts.push(`Beschreibung: ${shorten(desc, 420)}`);
+          if (f.sourceType) parts.push(`Quelle: ${f.sourceType}`);
+          if (f.updatedAt) parts.push(`Aktualisiert: ${f.updatedAt}`);
+          return '- ' + parts.join(' | ');
+        }
+        function formatMomentumNoteForPrompt(note) {
+          const n = note || {};
+          const text = String(n.text || '').trim();
+          const parts = [
+            `ID: ${n.id || '—'}`,
+            `Erstellt: ${n.createdAt || '—'}`
+          ];
+          if (n.sourceType) parts.push(`Quelle: ${n.sourceType}`);
+          parts.push(`Text: ${shorten(text, 520)}`);
+          return '- ' + parts.join(' | ');
+        }
+        const featureLines = (arr, limit) => {
+          const rows = (arr || []).slice(0, limit || arr.length).map(formatMomentumFeatureForPrompt);
+          return rows.length ? rows.join('\n') : '- —';
+        };
+        const noteLines = (arr, limit) => {
+          const rows = (arr || []).slice(0, limit || arr.length).map(formatMomentumNoteForPrompt);
+          return rows.length ? rows.join('\n') : '- —';
+        };
         return [
-          `Projekt: ${project.title || '—'}`,
-          `Summary: ${project.summary || '—'}`,
-          `Aktueller Fokus: ${project.currentFocus || '—'}`,
-          `Nächster Schritt: ${project.nextStep || '—'}`,
+          '# Roadtrip Momentum Review',
           '',
-          'Gerade aktive Features:', lines(data.activeFeatures),
+          'Du arbeitest mit einem Roadtrip-Projektkontext.',
+          'Der Quellcode allein reicht für diese Entscheidung nicht aus.',
+          'Nutze deshalb die folgenden Roadtrip-Daten als wichtigste Arbeitsgrundlage: Projektkontext, geplante Features und offene Notizen.',
           '',
-          'Top-Kandidaten:', lines(data.candidateFeatures),
+          '## Projektkontext',
+          `- Projekt: ${project.title || '—'}`,
+          `- Summary: ${project.summary || '—'}`,
+          `- Aktueller Fokus: ${project.currentFocus || '—'}`,
+          `- Aktueller nächster Schritt: ${project.nextStep || '—'}`,
           '',
-          'Blockierte Features:', lines(data.blockedFeatures),
+          '## Geplante Features',
+          '### Gerade aktive Features',
+          featureLines(activeFeaturesForPrompt, 8),
           '',
-          'Zurückgestellte Features:', lines(data.deferredFeatures),
+          '### Top-Kandidaten',
+          featureLines(candidateFeaturesForPrompt, 10),
           '',
-          'Offene Notizen:', noteLines,
+          '### Blockierte Features',
+          featureLines(blockedFeaturesForPrompt, 6),
           '',
-          'Hilf mir, den nächsten konkreten Projektschritt zu planen.',
-          'Wähle höchstens 1–2 nächste Aktionen.',
-          'Keine neuen Features erfinden, außer es ist eindeutig nötig.',
-          'Gib am Ende einen kurzen Roadtrip-kompatiblen Fokus und einen nächsten Schritt aus.',
+          '### Zurückgestellte Features',
+          featureLines(deferredFeaturesForPrompt, 5),
           '',
-          'Gib am Ende zusätzlich genau ein JSON-Objekt aus:',
-          '{"currentFocus":"...","nextStep":"..."}'
+          '## Offene Notizen zur Verarbeitung',
+          noteLines(openNotesForPrompt, 12),
+          '',
+          '## Aufgabe',
+          '1. Werte die offenen Notizen aus.',
+          '   - Entscheide, welche Notizen für den aktuellen Projektfokus relevant sind.',
+          '   - Erkenne, ob eine Notiz eher Kontext, Problem, Feature-Idee, offene Frage, Entscheidung oder veralteter Rest ist.',
+          '   - Extrahiere verwertbare Hinweise für Fokus und nächsten Schritt.',
+          '   - Erfinde keine neuen Features, aber benenne klar, wenn aus einer Notiz ein Feature-Kandidat entstehen sollte.',
+          '',
+          '2. Vergleiche die Notizen mit den geplanten Features.',
+          '   - Welche Features werden durch Notizen bestätigt?',
+          '   - Welche Features wirken jetzt wichtiger?',
+          '   - Welche Features können warten?',
+          '   - Gibt es Widersprüche oder offene Klärungen?',
+          '',
+          '3. Leite daraus den nächsten konkreten Projektschritt ab.',
+          '   - Wähle höchstens 1–2 nächste Aktionen.',
+          '   - Formuliere sie so konkret, dass ich direkt damit weiterarbeiten kann.',
+          '   - Vermeide große Architekturentscheidungen, wenn ein kleiner nächster Schritt reicht.',
+          '',
+          '## Ausgabeformat',
+          'Bitte antworte in dieser Reihenfolge:',
+          '',
+          '### 1. Kurzdiagnose',
+          '2–5 Sätze: Was ist gerade der eigentliche Engpass / nächste Hebel?',
+          '',
+          '### 2. Verarbeitung der offenen Notizen',
+          'Liste die relevanten Notizen mit ID und Entscheidung:',
+          '- nutzen für Fokus',
+          '- in Feature-Kandidat überführen',
+          '- als offene Frage behalten',
+          '- später prüfen',
+          '- vermutlich veraltet / ignorieren',
+          '',
+          '### 3. Feature-Einschätzung',
+          'Welche 1–3 Features sind jetzt am wichtigsten und warum?',
+          '',
+          '### 4. Empfohlene nächste Aktionen',
+          'Höchstens 1–2 Aktionen.',
+          '',
+          '### 5. Roadtrip-JSON',
+          'Gib am Ende genau ein JSON-Objekt aus.',
+          'Mindestens diese Felder:',
+          '{',
+          '  "currentFocus": "...",',
+          '  "nextStep": "..."',
+          '}',
+          '',
+          'currentFocus und nextStep sollen kurz und konkret sein, damit sie direkt in Roadtrip-Feldern funktionieren.',
+          '',
+          'Optional darfst du zusätzlich diese Felder ergänzen:',
+          '{',
+          '  "noteProcessing": [',
+          '    {',
+          '      "noteId": "...",',
+          '      "decision": "use-for-focus|feature-candidate|open-question|later|ignore",',
+          '      "reason": "...",',
+          '      "suggestedAction": "..."',
+          '    }',
+          '  ],',
+          '  "featurePriorities": [',
+          '    {',
+          '      "featureId": "...",',
+          '      "reason": "..."',
+          '    }',
+          '  ],',
+          '  "openQuestions": ["..."]',
+          '}'
         ].join('\n');
       }
 
@@ -3858,6 +4219,28 @@
         project.updatedAt = new Date().toISOString();
         update._focusDone = true;
         save(); renderView();
+      }
+
+      function addMomentumDashboardNote(projectId) {
+        const project = (S.projects || []).find(p => p && p.id === projectId);
+        if (!project) return alert('Projekt nicht gefunden.');
+        const text = String((ui.momentumQuickNoteByProject && ui.momentumQuickNoteByProject[projectId]) || '').trim();
+        if (!text) return alert('Bitte erst eine Notiz schreiben.');
+        const now = new Date().toISOString();
+        S.notes.push({
+          id: uid('n'),
+          projectId,
+          text,
+          sourceType: 'momentum-dashboard',
+          processed: false,
+          createdAt: now,
+          updatedAt: now
+        });
+        project.updatedAt = now;
+        if (!ui.momentumQuickNoteByProject || typeof ui.momentumQuickNoteByProject !== 'object') ui.momentumQuickNoteByProject = {};
+        ui.momentumQuickNoteByProject[projectId] = '';
+        save();
+        renderView();
       }
 
       function acceptMultiProjectNextStepUpdate(updateIdx) {
