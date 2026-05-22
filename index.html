@@ -2701,31 +2701,135 @@
         const projectFeatures = getVisibleFeatures(S.features).filter(f => f.projectId === projectId);
         const projectNotes = (S.notes || []).filter(n => n && n.projectId === projectId);
         const data = getProjectMomentumData(projectId, projectFeatures, projectNotes);
-        const lines = arr => arr.length ? arr.map(f => `- ${f.title} (${getFeatureStatusLabel(f.status)}, Prio: ${f.priority || 'mittel'})`).join('\n') : '- —';
-        const noteLines = data.openNotes.length ? data.openNotes.map(n => `- ${shorten(String(n.text || '').trim(), 180)}`).join('\n') : '- —';
+        function formatMomentumFeatureForPrompt(feature) {
+          const f = applyFeatureDefaults(Object.assign({}, feature || {}));
+          const parts = [
+            `ID: ${f.id || '—'}`,
+            `Titel: ${f.title || 'Ohne Titel'}`,
+            `Status: ${getFeatureStatusLabel(f.status)}`,
+            `Priorität: ${f.priority || 'mittel'}`,
+            `Kategorie: ${f.category || 'Sonstiges'}`
+          ];
+          const desc = String(f.description || '').trim();
+          if (desc) parts.push(`Beschreibung: ${shorten(desc, 420)}`);
+          if (f.sourceType) parts.push(`Quelle: ${f.sourceType}`);
+          if (f.updatedAt) parts.push(`Aktualisiert: ${f.updatedAt}`);
+          return '- ' + parts.join(' | ');
+        }
+        function formatMomentumNoteForPrompt(note) {
+          const n = note || {};
+          const text = String(n.text || '').trim();
+          const parts = [
+            `ID: ${n.id || '—'}`,
+            `Erstellt: ${n.createdAt || '—'}`
+          ];
+          if (n.sourceType) parts.push(`Quelle: ${n.sourceType}`);
+          parts.push(`Text: ${shorten(text, 520)}`);
+          return '- ' + parts.join(' | ');
+        }
+        const featureLines = (arr, limit) => {
+          const rows = (arr || []).slice(0, limit || arr.length).map(formatMomentumFeatureForPrompt);
+          return rows.length ? rows.join('\n') : '- —';
+        };
+        const noteLines = (arr, limit) => {
+          const rows = (arr || []).slice(0, limit || arr.length).map(formatMomentumNoteForPrompt);
+          return rows.length ? rows.join('\n') : '- —';
+        };
         return [
-          `Projekt: ${project.title || '—'}`,
-          `Summary: ${project.summary || '—'}`,
-          `Aktueller Fokus: ${project.currentFocus || '—'}`,
-          `Nächster Schritt: ${project.nextStep || '—'}`,
+          '# Roadtrip Momentum Review',
           '',
-          'Gerade aktive Features:', lines(data.activeFeatures),
+          'Du arbeitest mit einem Roadtrip-Projektkontext.',
+          'Der Quellcode allein reicht für diese Entscheidung nicht aus.',
+          'Nutze deshalb die folgenden Roadtrip-Daten als wichtigste Arbeitsgrundlage: Projektkontext, geplante Features und offene Notizen.',
           '',
-          'Top-Kandidaten:', lines(data.candidateFeatures),
+          '## Projektkontext',
+          `- Projekt: ${project.title || '—'}`,
+          `- Summary: ${project.summary || '—'}`,
+          `- Aktueller Fokus: ${project.currentFocus || '—'}`,
+          `- Aktueller nächster Schritt: ${project.nextStep || '—'}`,
           '',
-          'Blockierte Features:', lines(data.blockedFeatures),
+          '## Geplante Features',
+          '### Gerade aktive Features',
+          featureLines(data.activeFeatures, 8),
           '',
-          'Zurückgestellte Features:', lines(data.deferredFeatures),
+          '### Top-Kandidaten',
+          featureLines(data.candidateFeatures, 10),
           '',
-          'Offene Notizen:', noteLines,
+          '### Blockierte Features',
+          featureLines(data.blockedFeatures, 6),
           '',
-          'Hilf mir, den nächsten konkreten Projektschritt zu planen.',
-          'Wähle höchstens 1–2 nächste Aktionen.',
-          'Keine neuen Features erfinden, außer es ist eindeutig nötig.',
-          'Gib am Ende einen kurzen Roadtrip-kompatiblen Fokus und einen nächsten Schritt aus.',
+          '### Zurückgestellte Features',
+          featureLines(data.deferredFeatures, 5),
           '',
-          'Gib am Ende zusätzlich genau ein JSON-Objekt aus:',
-          '{"currentFocus":"...","nextStep":"..."}'
+          '## Offene Notizen zur Verarbeitung',
+          noteLines(data.openNotes, 12),
+          '',
+          '## Aufgabe',
+          '1. Werte die offenen Notizen aus.',
+          '   - Entscheide, welche Notizen für den aktuellen Projektfokus relevant sind.',
+          '   - Erkenne, ob eine Notiz eher Kontext, Problem, Feature-Idee, offene Frage, Entscheidung oder veralteter Rest ist.',
+          '   - Extrahiere verwertbare Hinweise für Fokus und nächsten Schritt.',
+          '   - Erfinde keine neuen Features, aber benenne klar, wenn aus einer Notiz ein Feature-Kandidat entstehen sollte.',
+          '',
+          '2. Vergleiche die Notizen mit den geplanten Features.',
+          '   - Welche Features werden durch Notizen bestätigt?',
+          '   - Welche Features wirken jetzt wichtiger?',
+          '   - Welche Features können warten?',
+          '   - Gibt es Widersprüche oder offene Klärungen?',
+          '',
+          '3. Leite daraus den nächsten konkreten Projektschritt ab.',
+          '   - Wähle höchstens 1–2 nächste Aktionen.',
+          '   - Formuliere sie so konkret, dass ich direkt damit weiterarbeiten kann.',
+          '   - Vermeide große Architekturentscheidungen, wenn ein kleiner nächster Schritt reicht.',
+          '',
+          '## Ausgabeformat',
+          'Bitte antworte in dieser Reihenfolge:',
+          '',
+          '### 1. Kurzdiagnose',
+          '2–5 Sätze: Was ist gerade der eigentliche Engpass / nächste Hebel?',
+          '',
+          '### 2. Verarbeitung der offenen Notizen',
+          'Liste die relevanten Notizen mit ID und Entscheidung:',
+          '- nutzen für Fokus',
+          '- in Feature-Kandidat überführen',
+          '- als offene Frage behalten',
+          '- später prüfen',
+          '- vermutlich veraltet / ignorieren',
+          '',
+          '### 3. Feature-Einschätzung',
+          'Welche 1–3 Features sind jetzt am wichtigsten und warum?',
+          '',
+          '### 4. Empfohlene nächste Aktionen',
+          'Höchstens 1–2 Aktionen.',
+          '',
+          '### 5. Roadtrip-JSON',
+          'Gib am Ende genau ein JSON-Objekt aus.',
+          'Mindestens diese Felder:',
+          '{',
+          '  "currentFocus": "...",',
+          '  "nextStep": "..."',
+          '}',
+          '',
+          'currentFocus und nextStep sollen kurz und konkret sein, damit sie direkt in Roadtrip-Feldern funktionieren.',
+          '',
+          'Optional darfst du zusätzlich diese Felder ergänzen:',
+          '{',
+          '  "noteProcessing": [',
+          '    {',
+          '      "noteId": "...",',
+          '      "decision": "use-for-focus|feature-candidate|open-question|later|ignore",',
+          '      "reason": "...",',
+          '      "suggestedAction": "..."',
+          '    }',
+          '  ],',
+          '  "featurePriorities": [',
+          '    {',
+          '      "featureId": "...",',
+          '      "reason": "..."',
+          '    }',
+          '  ],',
+          '  "openQuestions": ["..."]',
+          '}'
         ].join('\n');
       }
 
