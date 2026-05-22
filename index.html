@@ -469,7 +469,25 @@
       position: sticky;
       top: 16px;
       height: calc(100vh - 40px);
+      min-height: 0;
+      overflow: hidden;
     }
+    .sidebar-projects-panel {
+      margin-top: 16px;
+      box-shadow: none;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      flex: 1 1 auto;
+      overflow: hidden;
+    }
+    #sidebarProjects { min-height: 0; overflow-y: auto; padding-right: 4px; }
+    .workspace-sidebar > .stack-row { flex: 0 0 auto; }
+    .flow-steps { display:flex; flex-direction:column; gap:10px; margin-top:10px; }
+    .flow-step { background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:10px 12px; }
+    .flow-step-head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+    .flow-step-kicker { color:var(--ink-dim); font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; }
+    .flow-step-title { font-weight:800; }
     .workspace-main { display:flex; flex-direction:column; gap:16px; min-width:0; }
     .sidebar-project {
       border: 1px solid var(--border);
@@ -483,7 +501,9 @@
     .db-toolbar { display:grid; grid-template-columns:2fr repeat(3, minmax(130px,1fr)) auto; gap:8px; margin-bottom:12px; }
     @media (max-width: 1080px) {
       .workspace { grid-template-columns: 1fr; }
-      .workspace-sidebar { position: static; height: auto; }
+      .workspace-sidebar { position: static; height: auto; overflow: visible; }
+      .sidebar-projects-panel { max-height: 55vh; }
+      #sidebarProjects { max-height: 45vh; }
       .db-toolbar { grid-template-columns:1fr; }
     }
   </style>
@@ -493,7 +513,7 @@
     <aside class="workspace-sidebar panel">
       <h1 style="font-size:20px;margin:0 0 12px;">Roadtrip</h1>
       <div class="segmented" id="navTabs"></div>
-      <div class="panel" style="margin-top:16px; box-shadow:none;">
+      <div class="panel sidebar-projects-panel" style="margin-top:16px; box-shadow:none;">
         <div class="panel-title"><h3>Projects</h3></div>
         <div class="list" id="sidebarProjects"></div>
       </div>
@@ -601,7 +621,8 @@
         noteReview: { proposals: [], projectId: '', rawText: '', visible: false },
         cleanupReview: { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', visible: false, versionLogged: false },
         showCompletedSprintsByProject: {},
-        projectMomentumCollapsedByProject: {}
+        projectMomentumCollapsedByProject: {},
+        projectMomentumPromptByProject: {}
       };
 
       const $ = (id) => document.getElementById(id);
@@ -1225,10 +1246,26 @@
         if ($('btnBuildProjectMomentumPrompt')) $('btnBuildProjectMomentumPrompt').addEventListener('click', () => {
           const projectId = ui.activeProjectId || '';
           if (!projectId || projectId === ALL_PROJECTS_KEY) return;
-          const st = getChatWorkflowState(projectId);
-          st.mode = 'project-momentum-plan';
+          const st = getProjectMomentumPromptState(projectId);
           st.prompt = buildProjectNextStepPrompt(projectId);
           renderView();
+        });
+        if ($('projectMomentumPromptOutput')) $('projectMomentumPromptOutput').addEventListener('input', e => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          getProjectMomentumPromptState(projectId).prompt = e.target.value;
+        });
+        if ($('projectMomentumResultJsonInput')) $('projectMomentumResultJsonInput').addEventListener('input', e => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          getProjectMomentumPromptState(projectId).resultJson = e.target.value;
+        });
+        if ($('btnCopyProjectMomentumPrompt')) $('btnCopyProjectMomentumPrompt').addEventListener('click', () => copyPrompt('projectMomentumPromptOutput'));
+        if ($('btnImportProjectMomentumResult')) $('btnImportProjectMomentumResult').addEventListener('click', () => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          const st = getProjectMomentumPromptState(projectId);
+          importProjectMomentumResult(projectId, st.resultJson || '');
         });
         if ($('btnChatWorkflowImportHandoff')) $('btnChatWorkflowImportHandoff').addEventListener('click', () => {
           const projectId = ui.activeProjectId || '';
@@ -1411,6 +1448,19 @@
         ui.chatWorkflowHandoffByProject[projectId] = state;
         ui.chatWorkflowHandoff = state;
         return state;
+      }
+
+      function getProjectMomentumPromptState(projectId) {
+        if (!ui.projectMomentumPromptByProject || typeof ui.projectMomentumPromptByProject !== 'object') {
+          ui.projectMomentumPromptByProject = {};
+        }
+        if (!ui.projectMomentumPromptByProject[projectId]) {
+          ui.projectMomentumPromptByProject[projectId] = {
+            prompt: '',
+            resultJson: ''
+          };
+        }
+        return ui.projectMomentumPromptByProject[projectId];
       }
 
       function setChatWorkflowSource(projectId, sourceChatId) {
@@ -2390,13 +2440,16 @@
       function renderProjectMomentumSection(project, projectFeatures, projectNotes) {
         const data = getProjectMomentumData(project.id, projectFeatures, projectNotes);
         const isCollapsed = !!(ui.projectMomentumCollapsedByProject && ui.projectMomentumCollapsedByProject[project.id]);
+        const promptState = getProjectMomentumPromptState(project.id);
         const renderList = items => items.map(f => renderMomentumFeatureMini(f, { showControls: true })).join('');
         const counters = `<div class="stack-row" style="gap:6px;"><span class="pill pill-info">Aktiv ${data.activeFeatures.length}</span><span class="pill">Kandidaten ${data.candidateFeatures.length}</span>${data.blockedFeatures.length ? `<span class="pill pill-warning">Blockiert ${data.blockedFeatures.length}</span>` : ''}</div>`;
         return `
           <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:12px;">
-            <div class="row-top" style="margin-bottom:6px;"><strong>Projekt-Momentum</strong><div class="stack-row" style="gap:6px;"><button class="btn btn-ghost" data-toggle-momentum="${project.id}">${isCollapsed ? 'Momentum ausklappen' : 'Momentum einklappen'}</button><button class="btn" data-enter-project-edit="${project.id}">Bearbeiten</button><button class="btn" id="btnBuildProjectMomentumPrompt">Prompt: Nächsten Projektschritt planen</button></div></div>
+            <div class="row-top" style="margin-bottom:6px;"><strong>Projekt-Momentum</strong><div class="stack-row" style="gap:6px;"><button class="btn btn-ghost" data-toggle-momentum="${project.id}">${isCollapsed ? 'Momentum ausklappen' : 'Momentum einklappen'}</button><button class="btn btn-secondary" data-enter-project-edit="${project.id}">Bearbeiten</button><button class="btn btn-primary" id="btnBuildProjectMomentumPrompt">Nächsten Projektschritt planen</button></div></div>
             <div class="mini" style="margin-bottom:8px;">Was hält dieses Projekt als nächstes in Bewegung?</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;"><div style="background:var(--surface-3);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:10px;padding:10px 12px;"><div class="eyebrow">Aktueller Fokus</div><div>${escapeHtml(project.currentFocus || 'Noch kein Fokus gesetzt.')}</div></div><div style="background:var(--surface-3);border:1px solid var(--border);border-left:3px solid var(--green);border-radius:10px;padding:10px 12px;"><div class="eyebrow">Nächster Schritt</div><div>${escapeHtml(project.nextStep || 'Noch kein nächster Schritt gesetzt.')}</div></div></div>
+            ${promptState.prompt ? `<div style="background:var(--surface-3);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;"><label for="projectMomentumPromptOutput">Projekt-Momentum-Prompt</label><textarea id="projectMomentumPromptOutput" style="min-height:180px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(promptState.prompt || '')}</textarea><div class="stack-row" style="margin-top:6px;"><button class="btn btn-secondary" id="btnCopyProjectMomentumPrompt">Copy</button></div><div class="field" style="margin-top:8px;"><label for="projectMomentumResultJsonInput">Ergebnis / Fokus-Update aus ChatGPT</label><textarea id="projectMomentumResultJsonInput" style="min-height:140px;font-family:var(--font-mono);font-size:12px;" placeholder='{"currentFocus":"...","nextStep":"..."}'>${escapeHtml(promptState.resultJson || '')}</textarea><div class="stack-row" style="margin-top:6px;"><button class="btn btn-primary" id="btnImportProjectMomentumResult">Fokus & nächsten Schritt übernehmen</button></div></div></div>` : ''}
+
             ${isCollapsed ? counters : `
             <div style="margin-bottom:10px;"><strong>Gerade sprintfähig / in Bewegung</strong>${data.activeFeatures.length ? `<div class="list" style="margin-top:6px;">${renderList(data.activeFeatures)}</div>` : '<div class="notice" style="margin-top:6px;">Noch nichts für Sprint ausgewählt oder in Arbeit.</div>'}</div>
             <div style="margin-bottom:10px;"><strong>Top-Kandidaten</strong>${data.candidateFeatures.length ? `<div class="list" style="margin-top:6px;">${renderList(data.candidateFeatures)}</div>` : '<div class="notice" style="margin-top:6px;">Keine geplanten Kandidaten.</div>'}</div>
@@ -2433,7 +2486,10 @@
           'Hilf mir, den nächsten konkreten Projektschritt zu planen.',
           'Wähle höchstens 1–2 nächste Aktionen.',
           'Keine neuen Features erfinden, außer es ist eindeutig nötig.',
-          'Gib am Ende einen kurzen Roadtrip-kompatiblen Fokus und einen nächsten Schritt aus.'
+          'Gib am Ende einen kurzen Roadtrip-kompatiblen Fokus und einen nächsten Schritt aus.',
+          '',
+          'Gib am Ende zusätzlich genau ein JSON-Objekt aus:',
+          '{"currentFocus":"...","nextStep":"..."}'
         ].join('\n');
       }
 
@@ -2623,30 +2679,55 @@
               </div>
               <div class="panel" style="padding:10px 12px;margin-bottom:10px;">
                 <div class="panel-title"><h3>Sprint-Zyklus</h3></div>
-                <div class="field">
-                  <label for="sprintCycleSprintGoal">Sprintziel / Anliegen</label>
-                  <textarea id="sprintCycleSprintGoal" style="min-height:70px;" placeholder="z.B. Checkout-Flow stabilisieren und offene Fehler beheben">${escapeHtml(chatWorkflow.sprintGoal || '')}</textarea>
-                </div>
-                <div class="field">
-                  <label>Features mit Status „Für Sprint ausgewählt“</label>
-                  <div class="notice" style="margin:0;">
-                    ${getSelectedSprintFeatureIds(p.id).length
-                      ? getSelectedSprintFeatureIds(p.id).map(fid => {
-                        const feature = projectFeatures.find(f => f.id === fid);
-                        return `• ${escapeHtml(feature ? feature.title : fid)}`;
-                      }).join('<br/>')
-                      : 'Keine Features mit Status „Für Sprint ausgewählt“.'
-                    }
+                <div class="flow-steps">
+                  <div class="flow-step">
+                    <div class="flow-step-head"><span class="flow-step-kicker">Schritt 1</span><span class="flow-step-title">Start</span></div>
+                    <div class="field">
+                      <label for="sprintCycleSprintGoal">Sprintziel / Anliegen</label>
+                      <textarea id="sprintCycleSprintGoal" style="min-height:70px;" placeholder="z.B. Checkout-Flow stabilisieren und offene Fehler beheben">${escapeHtml(chatWorkflow.sprintGoal || '')}</textarea>
+                    </div>
+                    <div class="field">
+                      <label>Features mit Status „Für Sprint ausgewählt“</label>
+                      <div class="notice" style="margin:0;">
+                        ${getSelectedSprintFeatureIds(p.id).length
+                          ? getSelectedSprintFeatureIds(p.id).map(fid => {
+                            const feature = projectFeatures.find(f => f.id === fid);
+                            return `• ${escapeHtml(feature ? feature.title : fid)}`;
+                          }).join('<br/>')
+                          : 'Keine Features mit Status „Für Sprint ausgewählt“.'
+                        }
+                      </div>
+                    </div>
+                    <div class="stack-row">
+                      <button class="btn btn-primary" id="btnSprintCycleBuildMainChatStart" ${isArchivedProject || !projectMainChat ? 'disabled' : ''}>Hauptchat um Sprintstart bitten</button>
+                    </div>
                   </div>
-                </div>
-                <div class="stack-row">
-                  <button class="btn btn-primary" id="btnSprintCycleBuildMainChatStart" ${isArchivedProject || !projectMainChat ? 'disabled' : ''}>Hauptchat um Sprintstart bitten</button>
-                </div>
-                <div class="field" style="margin-top:8px;">
-                  <label for="sprintCycleStartJsonInput">Sprintstart-JSON aus Hauptchat</label>
-                  <textarea id="sprintCycleStartJsonInput" style="min-height:140px;font-family:var(--font-mono);font-size:12px;" placeholder='{"type":"roadtrip-sprint-start","chatTitle":"..."}'>${escapeHtml(chatWorkflow.sprintStartJson || '')}</textarea>
-                  <div class="stack-row" style="margin-top:6px;">
-                    <button class="btn" id="btnSprintCycleImportStartJson" ${isArchivedProject ? 'disabled' : ''}>Sprintstart-JSON importieren</button>
+                  <div class="flow-step">
+                    <div class="flow-step-head"><span class="flow-step-kicker">Schritt 2</span><span class="flow-step-title">Importieren</span></div>
+                    <div class="field">
+                      <label for="sprintCycleStartJsonInput">Sprintstart-JSON aus Hauptchat</label>
+                      <textarea id="sprintCycleStartJsonInput" style="min-height:140px;font-family:var(--font-mono);font-size:12px;" placeholder='{"type":"roadtrip-sprint-start","chatTitle":"..."}'>${escapeHtml(chatWorkflow.sprintStartJson || '')}</textarea>
+                      <div class="stack-row" style="margin-top:6px;">
+                        <button class="btn btn-secondary" id="btnSprintCycleImportStartJson" ${isArchivedProject ? 'disabled' : ''}>Sprintstart-JSON importieren</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flow-step">
+                    <div class="flow-step-head"><span class="flow-step-kicker">Schritt 3</span><span class="flow-step-title">Abschluss</span></div>
+                    <div class="mini" style="margin-bottom:8px;">Fordere im Sprintchat den Abschlussbericht an.</div>
+                    <div class="stack-row">
+                      <button class="btn btn-primary" id="btnChatWorkflowBuildSprintHandoff" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Sprintabschluss anfordern</button>
+                    </div>
+                  </div>
+                  <div class="flow-step">
+                    <div class="flow-step-head"><span class="flow-step-kicker">Schritt 4</span><span class="flow-step-title">Rückgabe</span></div>
+                    <div class="field">
+                      <label for="chatWorkflowHandoffJson">Sprint-Handoff-JSON</label>
+                      <textarea id="chatWorkflowHandoffJson" style="min-height:180px;font-family:var(--font-mono);font-size:12px;" placeholder='{"summary":"...","currentFocus":"...","nextStep":"..."}'>${escapeHtml(chatWorkflowHandoff.rawJson || '')}</textarea>
+                      <div class="stack-row" style="margin-top:6px;">
+                        <button class="btn btn-secondary" id="btnChatWorkflowImportHandoff" ${isArchivedProject ? 'disabled' : ''}>Sprint-Handoff importieren</button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2661,27 +2742,13 @@
               <details style="margin-bottom:8px;">
                 <summary style="font-weight:700;">Legacy · alte Sprint-Werkzeuge</summary>
                 <div class="stack-row" style="margin-top:8px;">
-                  <button class="btn" id="btnChatWorkflowBuildLegacyMigration" ${isArchivedProject ? 'disabled' : ''}>Prompt: Alten Sprintchat migrieren</button>
-                  <button class="btn" id="btnChatWorkflowBuildSprint" ${isArchivedProject || !projectMainChat ? 'disabled' : ''}>Legacy: Prompt für direkten Sprintchat-Start</button>
+                  <button class="btn btn-ghost" id="btnChatWorkflowBuildLegacyMigration" ${isArchivedProject ? 'disabled' : ''}>Prompt: Alten Sprintchat migrieren</button>
+                  <button class="btn btn-ghost" id="btnChatWorkflowBuildSprint" ${isArchivedProject || !projectMainChat ? 'disabled' : ''}>Legacy: Prompt für direkten Sprintchat-Start</button>
                 </div>
                 <div class="mini" style="margin-top:6px;">Hinweis: Die Prompt-Ausgabe oben ist primär für den Hauptchat gedacht. In diesem Bereich können Legacy-Aktionen andere Zielchats adressieren.</div>
               </details>
-              <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;">
-                <div class="eyebrow" style="margin-bottom:6px;">Sprint abschließen / Handoff</div>
-                <div class="mini" style="margin-bottom:8px;">Fordere im Sprintchat den Abschlussbericht an und importiere danach das Sprint-Handoff-JSON zurück nach Roadtrip.</div>
-                <div class="stack-row">
-                  <button class="btn btn-primary" id="btnChatWorkflowBuildSprintHandoff" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Sprintabschluss anfordern</button>
-                </div>
-              </div>
               <div class="field">
-                <label for="chatWorkflowHandoffJson">Sprint-Handoff-JSON</label>
-                <textarea id="chatWorkflowHandoffJson" style="min-height:180px;font-family:var(--font-mono);font-size:12px;" placeholder='{"summary":"...","currentFocus":"...","nextStep":"..."}'>${escapeHtml(chatWorkflowHandoff.rawJson || '')}</textarea>
-                <div class="stack-row" style="margin-top:6px;">
-                  <button class="btn btn-primary" id="btnChatWorkflowImportHandoff" ${isArchivedProject ? 'disabled' : ''}>Sprint-Handoff importieren</button>
-                </div>
-              </div>
-              <div class="field">
-                <label for="chatWorkflowPromptOutput">Prompt für Hauptchat</label>
+                <label for="chatWorkflowPromptOutput">Aktueller Workflow-Prompt</label>
                 <textarea id="chatWorkflowPromptOutput" style="min-height:220px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(chatWorkflow.prompt || '')}</textarea>
                 <div class="stack-row" style="margin-top:6px;">
                   <button class="btn" id="btnCopyChatWorkflowPrompt">Copy</button>
@@ -2702,8 +2769,8 @@
             </div>
             <div class="stack-row">
               <button class="btn btn-primary" id="btnAddNote">Notiz speichern</button>
-              <button class="btn" id="btnAnalyzeNote">Prompt bauen</button>
-              <button class="btn" id="btnBuildReviewPrompt">Review-Prompt bauen</button>
+              <button class="btn btn-secondary" id="btnAnalyzeNote">Prompt bauen</button>
+              <button class="btn btn-ghost" id="btnBuildReviewPrompt">Review-Prompt bauen</button>
             </div>
           </details>
 
@@ -2714,7 +2781,7 @@
               Nutze das, wenn dieses Projekt bereits doppelte oder ähnliche Features enthält. Es wird kein neuer Code benötigt.
             </div>
             <div class="stack-row">
-              <button class="btn" id="btnBuildProjectDedupePrompt">Bestehende Features auf Dubletten prüfen</button>
+              <button class="btn btn-secondary" id="btnBuildProjectDedupePrompt">Bestehende Features auf Dubletten prüfen</button>
             </div>
           </details>
           <details style="margin-bottom:12px;" ${trashedFeatures.length ? 'open' : ''}>
@@ -4608,7 +4675,7 @@
                       <div class="stack-row">
                         ${hasTarget ? `<button class="btn btn-primary" data-cleanup-accept-update="${p._idx}">Bestehendes Feature aktualisieren</button>` : `<button class="btn btn-primary" data-cleanup-accept-new="${p._idx}">Als neues Feature anlegen</button>`}
                         ${hasTarget ? `<button class="btn btn-secondary" data-cleanup-accept-new="${p._idx}">Trotzdem als neues Feature anlegen</button>` : ''}
-                        ${hasDuplicate ? `<button class="btn btn-danger" data-cleanup-mark-duplicate="${p._idx}">In Papierkorb verschieben</button>` : ''}
+                        ${hasDuplicate ? `<button class="btn btn-danger" data-cleanup-mark-duplicate="${p._idx}">Dublette in Papierkorb verschieben</button>` : ''}
                         <button class="btn btn-ghost" style="margin-left:auto;" data-cleanup-ignore="${p._idx}">Nicht übernehmen</button>
                       </div>
                     `}
@@ -4621,6 +4688,36 @@
         `;
       }
 
+      function importProjectMomentumResult(projectId, rawText) {
+        const p = S.projects.find(x => x.id === projectId);
+        if (!p) return alert('Projekt nicht gefunden.');
+        if (!String(rawText || '').trim()) return alert('Bitte Ergebnis-JSON einfügen.');
+
+        let parsed;
+        try {
+          parsed = JSON.parse(extractJsonObjectFromText(rawText));
+        } catch (e) {
+          return alert('Kein gültiges JSON erkannt: ' + e.message);
+        }
+
+        const nextFocus = String(parsed.currentFocus || '').trim();
+        const nextStep = String(parsed.nextStep || '').trim();
+        const summary = String(parsed.summary || '').trim();
+
+        if (!nextFocus && !nextStep && !summary) {
+          return alert('JSON enthält keine verwertbaren Felder: currentFocus, nextStep oder summary.');
+        }
+
+        if (nextFocus) p.currentFocus = nextFocus;
+        if (nextStep) p.nextStep = nextStep;
+        if (summary && !String(p.summary || '').trim()) p.summary = summary;
+        p.updatedAt = new Date().toISOString();
+
+        save();
+        alert('Projekt-Momentum übernommen.');
+        renderView();
+      }
+
       // ─────────────────────────────────────────────────────────────────────────
 
       function copyPrompt(textareaId) {
@@ -4630,6 +4727,10 @@
         if (!text.trim()) return;
         if (textareaId === 'analysisPromptOutput') ui.importDraft.analysisPrompt = text;
         else if (textareaId === 'cleanupPromptOutput') ui.importDraft.cleanupPrompt = text;
+        else if (textareaId === 'projectMomentumPromptOutput') {
+          const projectId = ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '';
+          if (projectId) getProjectMomentumPromptState(projectId).prompt = text;
+        }
         else if (textareaId === 'chatWorkflowPromptOutput') {
           const projectId = ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : (ui.chatWorkflow && ui.chatWorkflow.projectId) || '';
           if (projectId) getChatWorkflowState(projectId).prompt = text;
