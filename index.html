@@ -2129,6 +2129,8 @@
         const summary = String(parsed.summary || '').trim();
         const currentFocus = String(parsed.currentFocus || '').trim();
         const nextStep = String(parsed.nextStep || '').trim();
+        const workMode = String(parsed.workMode || '').trim();
+        const normalizedWorkMode = workMode && Object.values(CHAT_WORK_MODES).includes(workMode) ? workMode : '';
         if (!chatTitle) missing.push('chatTitle');
         if (!chatType) missing.push('chatType');
         else if (chatType !== 'sprint') missing.push('chatType (muss "sprint" sein)');
