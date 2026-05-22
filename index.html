@@ -1225,6 +1225,7 @@
         if ($('btnFeatureFromPrompt')) $('btnFeatureFromPrompt').addEventListener('click', importFeatureLinesFromPrompt);
         qq('[data-cleanup-accept-update]').forEach(btn => btn.addEventListener('click', () => acceptCleanupProposalAsUpdate(+btn.dataset.cleanupAcceptUpdate)));
         qq('[data-cleanup-accept-new]').forEach(btn => btn.addEventListener('click', () => acceptCleanupProposalAsNew(+btn.dataset.cleanupAcceptNew)));
+        qq('[data-cleanup-review-only]').forEach(btn => btn.addEventListener('click', () => markCleanupProposalAsReviewed(+btn.dataset.cleanupReviewOnly)));
         qq('[data-cleanup-mark-duplicate]').forEach(btn => btn.addEventListener('click', () => markCleanupProposalAsDuplicate(+btn.dataset.cleanupMarkDuplicate)));
         qq('[data-cleanup-ignore]').forEach(btn => btn.addEventListener('click', () => ignoreCleanupProposal(+btn.dataset.cleanupIgnore)));
         qq('[data-restore-feature]').forEach(btn => btn.addEventListener('click', () => restoreFeatureFromTrash(btn.dataset.restoreFeature)));
@@ -1801,6 +1802,8 @@
         const summary = String(parsed.summary || '').trim();
         const currentFocus = String(parsed.currentFocus || '').trim();
         const nextStep = String(parsed.nextStep || '').trim();
+        const workMode = String(parsed.workMode || '').trim();
+        const normalizedWorkMode = workMode && Object.values(CHAT_WORK_MODES).includes(workMode) ? workMode : '';
         if (!summary || !currentFocus || !nextStep) throw new Error('handoff-required-fields');
 
         let openQuestions = [];
@@ -1842,6 +1845,7 @@
             summary,
             currentFocus,
             nextStep,
+            workMode: normalizedWorkMode,
             openQuestions,
             proposedFeatures
           }
@@ -2042,6 +2046,7 @@
         if (normalized.sourceChatType) sourceChat.type = normalized.sourceChatType;
         if (normalized.sourceChatStatus) sourceChat.status = normalized.sourceChatStatus;
         else if (normalized.status) sourceChat.status = normalized.status;
+        if (sourceChat.status === 'abgeschlossen' && !sourceChat.completedAt) sourceChat.completedAt = now;
 
         project.currentFocus = normalized.currentFocus;
         project.nextStep = normalized.nextStep;
@@ -2151,6 +2156,7 @@
             rawReportText: extractedJson,
             rawHandoffText: extractedJson,
             mainChatId: project.mainChatId || '',
+            workMode: normalizedWorkMode,
             startedAt: now,
             updatedAt: now
           });
@@ -2163,6 +2169,7 @@
           sprintChat.nextStep = nextStep;
           sprintChat.rawReportText = extractedJson;
           sprintChat.rawHandoffText = extractedJson;
+          if (normalizedWorkMode) sprintChat.workMode = normalizedWorkMode;
           if (project.mainChatId) sprintChat.mainChatId = project.mainChatId;
           if (!sprintChat.startedAt) sprintChat.startedAt = now;
           sprintChat.updatedAt = now;
@@ -2189,6 +2196,7 @@
         st.sourceChatId = sprintChat.id;
         st.mode = 'sprint-start-import';
         st.sprintStartJson = extractedJson;
+        if (normalizedWorkMode) st.workMode = normalizedWorkMode;
         save();
         renderView();
         alert('Sprintstart-JSON importiert. Sprintchat wurde als aktiv gespeichert.');
@@ -2341,6 +2349,11 @@
         const selectedSet = new Set(selectedFeatures.map(f => f.id));
         const relevantOpenFeatures = features.filter(f => isPlannedFeature(f) && !selectedSet.has(f.id)).slice(0, 8);
         const relevantOpenNotes = getRelevantUnprocessedNotes(projectId, 6);
+        const workflowState = getChatWorkflowState(projectId);
+        const selectedWorkMode = String((workflowState && workflowState.workMode) || '').trim();
+        const workModeLabel = selectedWorkMode === CHAT_WORK_MODES.agent
+          ? 'Agentenmodus'
+          : (selectedWorkMode === CHAT_WORK_MODES.learning ? 'Lernmodus / manuell' : 'Nicht festgelegt');
         const cleanGoal = String(sprintGoal || '').trim() || 'Kein separates Sprintziel hinterlegt.';
         return [
           'Bitte bereite für Roadtrip den Sprint-Start vor.',
@@ -2366,6 +2379,10 @@
           '',
           '## Sprintziel / Anliegen des Nutzers',
           `- ${cleanGoal}`,
+          `- Arbeitsmodus: ${workModeLabel}`,
+          selectedWorkMode === CHAT_WORK_MODES.agent
+            ? '- Hinweis: Agentenmodus -> schneller Ablauf, größere zusammenhängende Patches sind ok.'
+            : (selectedWorkMode === CHAT_WORK_MODES.learning ? '- Hinweis: Lernmodus -> Schritt-für-Schritt mit nachvollziehbaren Änderungen/Befehlen.' : '- Hinweis: Arbeitsmodus nicht vorgegeben.'),
           '',
           '## Deine Ausgabe muss exakt so strukturiert sein',
           '1) Codeblock: fertiger Sprintchat-Startprompt (zum Kopieren in einen neuen Sprintchat).',
@@ -2381,6 +2398,7 @@
           '  "summary": "...",',
           '  "currentFocus": "...",',
           '  "nextStep": "...",',
+          '  "workMode": "agent|learning (optional)",',
           '  "selectedFeatureIds": ["..."],',
           '  "selectedFeatureTitles": ["..."],',
           '  "acceptanceCriteria": ["..."],',
@@ -4666,10 +4684,15 @@
           '',
           'ANWEISUNGEN',
           '- Erzeuge nur Vorschläge, keine endgültigen Löschungen.',
-          '- type darf nur sein: "match-existing" | "update-existing" | "new-feature" | "duplicate-of" | "probably-stale".',
+          '- Erzeuge keine neuen planned Features.',
+          '- type darf nur sein: "match-existing" | "update-existing" | "new-implemented-feature" | "duplicate-of" | "probably-stale".',
+          '- Nutze new-implemented-feature nur, wenn das Feature wirklich neu im Code/Import erkannt wurde und kein passender Eintrag existiert.',
+          '- Nutze match-existing bei unverändert/bereits vorhanden.',
+          '- Nutze update-existing nur bei echter Änderung oder wenn ein planned Feature durch Codeanalyse auf umgesetzt gehoben werden soll.',
+          '- Schlage keine Updates bei identischer oder nur minimal anders formulierter Beschreibung vor.',
           '- Bei match-existing / update-existing / duplicate-of / probably-stale muss targetFeatureId gesetzt werden, wenn möglich.',
           '- duplicate-of darf nur Vorschlag sein; nichts direkt löschen.',
-          '- resolvedStatus darf nur sein: idea|planned|selected-for-sprint|in-progress|blocked|deferred',
+          '- resolvedStatus darf nur sein: detected|confirmed',
           '- resolvedCategory darf nur sein: UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges',
           '- confidence darf nur sein: hoch|mittel|niedrig',
           '- rationale: kurzer nachvollziehbarer Grund.',
@@ -4678,13 +4701,14 @@
           '{',
           '  "proposals": [',
           '    {',
-          '      "type": "match-existing|update-existing|new-feature|duplicate-of|probably-stale",',
+          '      "type": "match-existing|update-existing|new-implemented-feature|duplicate-of|probably-stale",',
           '      "targetFeatureId": "",',
           '      "incomingTitle": "",',
           '      "resolvedTitle": "",',
           '      "resolvedDescription": "",',
           '      "resolvedCategory": "",',
-          '      "resolvedStatus": "",',
+          '      "resolvedStatus": "detected|confirmed",',
+          '      "changeSummary": "kurz: neu / unverändert / aktualisiert / Dublette / veraltet",',
           '      "confidence": "hoch|mittel|niedrig",',
           '      "rationale": ""',
           '    }',
@@ -4833,21 +4857,22 @@
         }
         const proposals = Array.isArray(parsed.proposals) ? parsed.proposals : [];
         if (!proposals.length) return alert('Keine Vorschläge im JSON gefunden (Schlüssel: "proposals").');
-        const validTypes = ['match-existing', 'update-existing', 'new-feature', 'duplicate-of', 'probably-stale'];
+        const validTypes = ['match-existing', 'update-existing', 'new-implemented-feature', 'new-feature', 'duplicate-of', 'probably-stale'];
         const validConfidence = ['hoch', 'mittel', 'niedrig'];
-        const fallbackType = ui.cleanupReview.mode === 'project-dedupe' ? 'update-existing' : 'new-feature';
+        const fallbackType = ui.cleanupReview.mode === 'project-dedupe' ? 'update-existing' : 'new-implemented-feature';
         ui.cleanupReview.proposals = proposals.map((p, i) => ({
           _idx: i,
-          type: validTypes.includes(p.type) ? p.type : fallbackType,
+          type: normalizeCleanupProposalType(validTypes.includes(p.type) ? p.type : fallbackType, ui.cleanupReview.mode),
           targetFeatureId: String(p.targetFeatureId || '').trim(),
           duplicateFeatureId: String(p.duplicateFeatureId || '').trim(),
           incomingTitle: String(p.incomingTitle || '').trim(),
           resolvedTitle: String(p.resolvedTitle || '').trim(),
           resolvedDescription: String(p.resolvedDescription || '').trim(),
           resolvedCategory: FEATURE_CATEGORIES.includes(p.resolvedCategory) ? p.resolvedCategory : 'Sonstiges',
-          resolvedStatus: normalizeFeatureStatus(p.resolvedStatus, 'planned'),
+          resolvedStatus: normalizeCleanupProposalStatus(p.resolvedStatus, ui.cleanupReview.mode),
           confidence: validConfidence.includes(String(p.confidence || '').trim()) ? String(p.confidence || '').trim() : 'mittel',
           rationale: String(p.rationale || '').trim(),
+          changeSummary: String(p.changeSummary || '').trim(),
           _done: false
         }));
         ui.cleanupReview.summary = String(parsed.summary || '').trim();
@@ -4881,6 +4906,28 @@
         renderView();
       }
 
+      function normalizeCleanupProposalType(type, mode) {
+        const raw = String(type || '').trim();
+        if (mode === 'import-cleanup') {
+          if (raw === 'new-feature') return 'new-implemented-feature';
+          if (['match-existing', 'update-existing', 'new-implemented-feature', 'duplicate-of', 'probably-stale'].includes(raw)) return raw;
+          return 'new-implemented-feature';
+        }
+        if (raw === 'new-implemented-feature') return 'new-feature';
+        if (['match-existing', 'update-existing', 'new-feature', 'duplicate-of', 'probably-stale'].includes(raw)) return raw;
+        return 'update-existing';
+      }
+
+      function normalizeCleanupProposalStatus(status, mode) {
+        if (mode === 'import-cleanup') {
+          const raw = normalizeText(status || '');
+          if (['umgesetzt', 'implemented', 'confirmed'].includes(raw)) return 'confirmed';
+          if (['teilweise umgesetzt', 'vorbereitet', 'detected'].includes(raw)) return 'detected';
+          return 'detected';
+        }
+        return normalizeFeatureStatus(status, 'planned');
+      }
+
       function resolveCleanupTargetFeature(proposal) {
         if (!proposal) return null;
         const pid = ui.cleanupReview.projectId || '';
@@ -4899,6 +4946,15 @@
 
       function applyCleanupProposalToFeature(feature, proposal) {
         const changes = [];
+        const mode = ui.cleanupReview.mode || 'import-cleanup';
+        if (mode === 'import-cleanup' && feature.pool !== 'implemented') {
+          feature.pool = 'implemented';
+          changes.push('pool');
+        }
+        if (mode === 'import-cleanup' && feature.reviewStatus !== 'needs-review') {
+          feature.reviewStatus = 'needs-review';
+          changes.push('reviewStatus');
+        }
         const nextTitle = proposal.resolvedTitle || proposal.incomingTitle;
         if (nextTitle && nextTitle !== feature.title) {
           if (confirm('Titel ändern von:\n"' + feature.title + '"\nauf:\n"' + nextTitle + '"?')) {
@@ -4921,7 +4977,9 @@
             changes.push('category');
           }
         }
-        const nextStatus = resolveStatusForPool(proposal.resolvedStatus, feature.pool || 'planned');
+        const nextStatus = mode === 'import-cleanup'
+          ? normalizeCleanupProposalStatus(proposal.resolvedStatus, mode)
+          : resolveStatusForPool(proposal.resolvedStatus, feature.pool || 'planned');
         if (nextStatus && isValidFeatureStatus(nextStatus, feature.pool || 'planned') && nextStatus !== feature.status) {
           if (confirm('Status ändern von "' + feature.status + '" auf "' + nextStatus + '"?')) {
             feature.status = nextStatus;
@@ -4958,10 +5016,10 @@
           pool: ui.cleanupReview.mode === 'import-cleanup' ? 'implemented' : 'planned',
           reviewStatus: 'needs-review',
           status: ui.cleanupReview.mode === 'import-cleanup'
-            ? mapJsonAnalysisStatus(proposal.resolvedStatus || 'detected')
-            : (proposal.resolvedStatus || 'planned'),
+            ? normalizeCleanupProposalStatus(proposal.resolvedStatus || 'detected', 'import-cleanup')
+            : normalizeCleanupProposalStatus(proposal.resolvedStatus || 'planned', 'project-dedupe'),
           priority: 'mittel',
-          sourceType: 'cleanup-review',
+          sourceType: ui.cleanupReview.mode === 'import-cleanup' ? 'html-analysis' : 'cleanup-review',
           sourceNoteIds: [],
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
@@ -5000,6 +5058,15 @@
         renderView();
       }
 
+      function markCleanupProposalAsReviewed(idx) {
+        const proposal = ui.cleanupReview.proposals.find(p => p._idx === idx);
+        if (!proposal || proposal._done) return;
+        proposal._done = true;
+        proposal._reviewedOnly = true;
+        save();
+        renderView();
+      }
+
       function ignoreCleanupProposal(idx) {
         const proposal = ui.cleanupReview.proposals.find(p => p._idx === idx);
         if (!proposal) return;
@@ -5017,8 +5084,8 @@
       function renderCleanupReviewSection() {
         if (!ui.cleanupReview.visible) return '';
         const proposals = ui.cleanupReview.proposals || [];
-        const typeLabel = { 'match-existing': 'Match', 'update-existing': 'Update', 'new-feature': 'Neu', 'duplicate-of': 'Dublette?', 'probably-stale': 'Veraltet?' };
-        const typeColor = { 'match-existing': 'var(--blue)', 'update-existing': 'var(--accent-2)', 'new-feature': 'var(--green)', 'duplicate-of': 'var(--yellow)', 'probably-stale': 'var(--ink-dim)' };
+        const typeLabel = { 'match-existing': 'Unverändert / bereits vorhanden', 'update-existing': 'Update', 'new-implemented-feature': 'Neu', 'new-feature': 'Neu', 'duplicate-of': 'Dublette / vermutlich bereits vorhanden', 'probably-stale': 'Möglicherweise veraltet' };
+        const typeColor = { 'match-existing': 'var(--blue)', 'update-existing': 'var(--accent-2)', 'new-implemented-feature': 'var(--green)', 'new-feature': 'var(--green)', 'duplicate-of': 'var(--yellow)', 'probably-stale': 'var(--ink-dim)' };
         const modeLabel = ui.cleanupReview.mode === 'project-dedupe' ? 'Feature-Bereinigung' : 'Import-Cleanup';
         return `
           <details open style="margin-top:10px;">
@@ -5035,6 +5102,7 @@
             ${proposals.length ? `
               <div class="list" style="margin-top:10px;">
                 ${proposals.map(p => {
+                  const normalizedType = normalizeCleanupProposalType(p.type, ui.cleanupReview.mode);
                   const targetFeature = resolveCleanupTargetFeature(p);
                   const duplicateFeature = p.duplicateFeatureId ? S.features.find(f => f.id === p.duplicateFeatureId) : null;
                   const hasTarget = !!targetFeature;
@@ -5043,7 +5111,7 @@
                   <div class="item" style="${p._done ? 'opacity:0.45;' : ''}border-left:3px solid ${typeColor[p.type] || 'var(--border)'}">
                     <div class="row-top">
                       <strong>${escapeHtml(p.resolvedTitle || p.incomingTitle || '—')}</strong>
-                      <span class="pill">${typeLabel[p.type] || p.type}</span>
+                      <span class="pill">${typeLabel[normalizedType] || p.type}</span>
                     </div>
                     ${p.incomingTitle ? `<div class="mini">Import: ${escapeHtml(p.incomingTitle)}</div>` : ''}
                     ${p.targetFeatureId ? `<div class="mini">Ziel-ID: ${escapeHtml(p.targetFeatureId)}</div>` : ''}
@@ -5051,14 +5119,18 @@
                     ${p.duplicateFeatureId ? `<div class="mini">Duplikat-Titel: ${escapeHtml(((S.features.find(f => f.id === p.duplicateFeatureId) || {}).title) || '—')}</div>` : ''}
                     ${p.resolvedDescription ? `<div class="item-desc">${escapeHtml(p.resolvedDescription)}</div>` : ''}
                     <div class="mini">Confidence: ${escapeHtml(p.confidence)}</div>
+                    ${p.changeSummary ? `<div class="mini">Änderung: ${escapeHtml(p.changeSummary)}</div>` : ''}
                     ${p.rationale ? `<div class="mini" style="color:var(--ink-dim)">Grund: ${escapeHtml(p.rationale)}</div>` : ''}
                     ${hasTarget ? `<div class="mini">Ziel: ${escapeHtml(targetFeature.title || '—')}</div>` : `<div class="mini" style="color:var(--accent-2)">Kein bestehendes Feature erkannt – kann als neues Feature übernommen werden.</div>`}
-                    ${p.type === 'duplicate-of' && !hasDuplicate ? '<div class="mini" style="color:var(--ink-dim)">Keine konkrete Dublette zugeordnet.</div>' : ''}
-                    ${p._done ? `<div class="mini"><span class="pill ${p._ignored ? '' : 'pill-success'}">${p._ignored ? 'ignoriert' : 'übernommen'}</span></div>` : `
+                    ${normalizedType === 'duplicate-of' && !hasDuplicate ? '<div class="mini" style="color:var(--ink-dim)">Keine konkrete Dublette zugeordnet.</div>' : ''}
+                    ${p._done ? `<div class="mini"><span class="pill ${(p._ignored || p._reviewedOnly) ? '' : 'pill-success'}">${p._ignored ? 'ignoriert' : (p._reviewedOnly ? 'geprüft' : 'übernommen')}</span></div>` : `
                       <div class="stack-row">
-                        ${hasTarget ? `<button class="btn btn-primary" data-cleanup-accept-update="${p._idx}">Bestehendes Feature aktualisieren</button>` : `<button class="btn btn-primary" data-cleanup-accept-new="${p._idx}">Als neues Feature anlegen</button>`}
-                        ${hasTarget ? `<button class="btn btn-secondary" data-cleanup-accept-new="${p._idx}">Trotzdem als neues Feature anlegen</button>` : ''}
-                        ${hasDuplicate ? `<button class="btn btn-danger" data-cleanup-mark-duplicate="${p._idx}">Dublette in Papierkorb verschieben</button>` : ''}
+                        ${normalizedType === 'update-existing' && hasTarget ? `<button class="btn btn-primary" data-cleanup-accept-update="${p._idx}">Bestehendes Feature aktualisieren</button>` : ''}
+                        ${normalizedType === 'new-implemented-feature' && !hasTarget ? `<button class="btn btn-primary" data-cleanup-accept-new="${p._idx}">Als neues umgesetztes Feature ergänzen</button>` : ''}
+                        ${normalizedType === 'new-implemented-feature' && hasTarget ? `<button class="btn btn-secondary" data-cleanup-accept-new="${p._idx}">Trotzdem als neues umgesetztes Feature ergänzen</button>` : ''}
+                        ${normalizedType === 'match-existing' ? `<button class="btn btn-secondary" data-cleanup-review-only="${p._idx}">Als geprüft abhaken</button>` : ''}
+                        ${normalizedType === 'probably-stale' ? `<button class="btn btn-secondary" data-cleanup-review-only="${p._idx}">Als geprüft abhaken</button>` : ''}
+                        ${normalizedType === 'duplicate-of' && hasDuplicate ? `<button class="btn btn-danger" data-cleanup-mark-duplicate="${p._idx}">Dublette in Papierkorb verschieben</button>` : ''}
                         <button class="btn btn-ghost" style="margin-left:auto;" data-cleanup-ignore="${p._idx}">Nicht übernehmen</button>
                       </div>
                     `}
@@ -5680,6 +5752,7 @@
             existing.title = title;
             existing.type = modal.querySelector('#chatModalType').value;
             existing.status = modal.querySelector('#chatModalStatus').value;
+            if (existing.status === 'abgeschlossen' && !existing.completedAt) existing.completedAt = now;
             existing.projectId = modal.querySelector('#chatModalProject').value;
             existing.url = modal.querySelector('#chatModalUrl').value.trim();
             existing.summary = modal.querySelector('#chatModalSummary').value.trim();
@@ -5729,6 +5802,8 @@
               startedAt: now,
               updatedAt: now
             }));
+            const newChat = S.chats[S.chats.length - 1];
+            if (newChat && newChat.status === 'abgeschlossen' && !newChat.completedAt) newChat.completedAt = now;
           }
           save();
           renderView();
@@ -6284,6 +6359,8 @@
         }, project || {});
       }
 
+      const CHAT_WORK_MODES = { agent: 'agent', learning: 'learning' };
+
       function ensureChatDefaults(chat) {
         return Object.assign({
           id: uid('ch'),
@@ -6302,7 +6379,15 @@
           parentChatId: '',
           mainChatId: '',
           startedAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date().toISOString(),
+          completedAt: '',
+          workMode: '',
+          learningMeta: {
+            learningsExtracted: false,
+            ankiCreated: false,
+            notionDevDbUpdated: false,
+            notes: ''
+          }
         }, chat || {});
       }
 
