@@ -1300,6 +1300,18 @@
           getChatWorkflowState(projectId).prompt = e.target.value;
         });
         if ($('btnCopyChatWorkflowPrompt')) $('btnCopyChatWorkflowPrompt').addEventListener('click', () => copyPrompt('chatWorkflowPromptOutput'));
+        if ($('sprintCycleStartPromptOutput')) $('sprintCycleStartPromptOutput').addEventListener('input', e => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          getChatWorkflowState(projectId).sprintStartPrompt = e.target.value;
+        });
+        if ($('sprintCycleHandoffPromptOutput')) $('sprintCycleHandoffPromptOutput').addEventListener('input', e => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          getChatWorkflowState(projectId).sprintHandoffPrompt = e.target.value;
+        });
+        if ($('btnCopySprintCycleStartPrompt')) $('btnCopySprintCycleStartPrompt').addEventListener('click', () => copyPrompt('sprintCycleStartPromptOutput'));
+        if ($('btnCopySprintCycleHandoffPrompt')) $('btnCopySprintCycleHandoffPrompt').addEventListener('click', () => copyPrompt('sprintCycleHandoffPromptOutput'));
         if ($('btnChatWorkflowSetMain')) $('btnChatWorkflowSetMain').addEventListener('click', () => {
           const projectId = ui.activeProjectId || '';
           if (!projectId || projectId === ALL_PROJECTS_KEY) return;
@@ -1339,7 +1351,7 @@
           const st = getChatWorkflowState(projectId);
           const selectedFeatureIds = getSelectedSprintFeatureIds(projectId);
           st.mode = 'sprint-cycle-start';
-          st.prompt = buildMainChatSprintStartRequestPrompt(projectId, st.sprintGoal || '', selectedFeatureIds);
+          st.sprintStartPrompt = buildMainChatSprintStartRequestPrompt(projectId, st.sprintGoal || '', selectedFeatureIds);
           renderView();
         });
         if ($('btnSprintCycleImportStartJson')) $('btnSprintCycleImportStartJson').addEventListener('click', () => {
@@ -1354,9 +1366,20 @@
           const st = getChatWorkflowState(projectId);
           if (!st.sourceChatId) return alert('Bitte zuerst einen Ausgangschat auswählen.');
           st.mode = 'sprint-handoff';
-          st.prompt = buildSprintHandoffPrompt(projectId, st.sourceChatId);
+          st.sprintHandoffPrompt = buildSprintHandoffPrompt(projectId, st.sourceChatId);
           renderView();
         });
+        qq('[data-open-code-analysis-import]').forEach(btn => btn.addEventListener('click', () => {
+          const projectId = btn.dataset.openCodeAnalysisImport || '';
+          if (!projectId) return;
+          ui.activeProjectId = projectId;
+          ui.importDraft.projectId = projectId;
+          ui.view = 'import';
+          ui.projectEditMode = false;
+          renderNav();
+          renderSidebarProjects();
+          renderView();
+        }));
         if ($('btnChatWorkflowBuildLegacyMigration')) $('btnChatWorkflowBuildLegacyMigration').addEventListener('click', () => {
           const projectId = ui.activeProjectId || '';
           if (!projectId || projectId === ALL_PROJECTS_KEY) return;
@@ -1531,7 +1554,7 @@
 
       function getChatWorkflowState(projectId) {
         if (!projectId || projectId === ALL_PROJECTS_KEY) {
-          ui.chatWorkflow = { projectId: projectId || '', sourceChatId: '', sprintGoal: '', prompt: '', mode: '' };
+          ui.chatWorkflow = { projectId: projectId || '', sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', prompt: '', mode: '' };
           ui.chatWorkflowHandoff = { projectId: projectId || '', sourceChatId: '', rawJson: '' };
           return ui.chatWorkflow;
         }
@@ -1539,8 +1562,10 @@
         const existingState = ui.chatWorkflowByProject[projectId];
         const state = (existingState && typeof existingState === 'object')
           ? existingState
-          : { projectId, sourceChatId: '', sprintGoal: '', prompt: '', mode: '' };
+          : { projectId, sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', prompt: '', mode: '' };
         state.projectId = projectId;
+        if (typeof state.sprintStartPrompt !== 'string') state.sprintStartPrompt = '';
+        if (typeof state.sprintHandoffPrompt !== 'string') state.sprintHandoffPrompt = '';
         ui.chatWorkflowByProject[projectId] = state;
         ui.chatWorkflow = state;
         const sourceChats = getProjectSourceChats(projectId);
@@ -1627,6 +1652,51 @@
         project.updatedAt = now;
         chat.updatedAt = now;
         return true;
+      }
+
+      function markProjectNeedsCodeAnalysisAfterSprint(project, timestamp) {
+        if (!project) return;
+        const now = String(timestamp || new Date().toISOString());
+        project.needsCodeAnalysisAfterSprint = true;
+        project.lastSprintCompletedAt = now;
+        project.updatedAt = now;
+      }
+
+      function markProjectCodeAnalysisCompleted(projectId, timestamp) {
+        const project = (S.projects || []).find(p => p && p.id === projectId);
+        if (!project) return;
+        const now = String(timestamp || new Date().toISOString());
+        project.lastAnalyzedAt = now;
+        project.lastCodeAnalysisCompletedAt = now;
+        project.needsCodeAnalysisAfterSprint = false;
+        project.updatedAt = now;
+      }
+
+      function projectNeedsCodeAnalysisAfterSprint(project) {
+        if (!project) return false;
+        const sprintDoneAt = String(project.lastSprintCompletedAt || '').trim();
+        const analyzedAt = String(project.lastAnalyzedAt || '').trim();
+        if (analyzedAt && sprintDoneAt && analyzedAt >= sprintDoneAt) return false;
+        if (project.needsCodeAnalysisAfterSprint === true) return true;
+        if (!sprintDoneAt) return false;
+        return !analyzedAt || analyzedAt < sprintDoneAt;
+      }
+
+      function renderPostSprintCodeAnalysisNotice(project) {
+        if (!projectNeedsCodeAnalysisAfterSprint(project)) return '';
+        const sprintDoneAt = String(project.lastSprintCompletedAt || '').trim();
+        const analyzedAt = String(project.lastAnalyzedAt || '').trim();
+        return `
+          <div class="notice notice-warn" style="margin:8px 0 12px;">
+            <div><strong>Seit dem letzten Sprintabschluss wurde noch keine neue Codeanalyse durchgeführt.</strong></div>
+            <div class="mini" style="margin-top:6px;">
+              Letzter Sprintabschluss: ${escapeHtml(sprintDoneAt ? formatDateTime(sprintDoneAt) : '—')} · Letzte Codeanalyse: ${escapeHtml(analyzedAt ? formatDateTime(analyzedAt) : '—')}
+            </div>
+            <div class="stack-row" style="margin-top:8px;">
+              <button class="btn btn-secondary" data-open-code-analysis-import="${escapeAttr(project.id || '')}">Codeanalyse im Import öffnen</button>
+            </div>
+          </div>
+        `;
       }
 
       function setSelectedChatAsMain(chatId) {
@@ -2052,6 +2122,7 @@
         project.nextStep = normalized.nextStep;
         const mainChat = ensureProjectMainChatForHandoff(projectId, sourceChat.id, normalized, extractedJson, now);
         project.updatedAt = now;
+        markProjectNeedsCodeAnalysisAfterSprint(project, now);
 
         const sourceChatTitle = sourceChat.title || normalized.sourceChatTitle || normalized.chatTitle || 'Sprint';
         let createdFeatures = 0;
@@ -2474,7 +2545,11 @@
           title: p.title || '',
           summary: p.summary || '',
           currentFocus: p.currentFocus || '',
-          nextStep: p.nextStep || ''
+          nextStep: p.nextStep || '',
+          openNotes: (S.notes || []).filter(n => n && n.projectId === p.id && !n.processed && String(n.text || '').trim())
+            .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+            .slice(0, 6)
+            .map(n => ({ id: n.id || '', text: shorten(String(n.text || '').trim(), 220), createdAt: n.createdAt || '', sourceType: n.sourceType || 'note' }))
         }));
         const schema = {
           projectUpdates: [
@@ -2484,6 +2559,7 @@
               confidence: 'hoch|mittel|niedrig',
               focusUpdate: 'optional',
               nextStep: 'optional',
+              nextStepUpdate: 'optional alias für nextStep',
               notes: [{ text: '...', type: 'note|idea|bug|decision|open-question', confidence: 'hoch|mittel|niedrig' }],
               proposedFeatures: [{ title: '...', description: '...', category: 'UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges', priority: 'niedrig|mittel|hoch|kritisch', status: 'idea|planned' }]
             }
@@ -2515,25 +2591,32 @@
         ].join('\n');
       }
 
-      function renderMultiProjectNotesImportSection() {
+      function renderMultiProjectNotesImportSection(options) {
         const st = ui.multiProjectImport || {};
+        const config = Object.assign({
+          title: 'Multi-Projekt-Notizenimport',
+          description: 'Markdown/Freitext einfügen, KI-Prompt erzeugen, JSON laden und Vorschläge pro Projekt manuell übernehmen.',
+          rawLabel: 'Markdown/Freitext',
+          buildButtonLabel: 'Bereinigungsprompt bauen',
+          promptLabel: 'Prompt-Ausgabe'
+        }, options || {});
         const updates = Array.isArray(st.updates) ? st.updates : [];
         const unmatched = Array.isArray(st.unmatchedNotes) ? st.unmatchedNotes : [];
         const summary = String(st.summary || '').trim();
         return `
           <details style="margin-bottom:12px;" ${st.visible ? 'open' : ''}>
-            <summary style="font-weight:700;">Multi-Projekt-Notizenimport</summary>
+            <summary style="font-weight:700;">${escapeHtml(config.title)}</summary>
             <div style="margin-top:10px;">
-              <div class="mini" style="margin-bottom:8px;">Markdown/Freitext einfügen, KI-Prompt erzeugen, JSON laden und Vorschläge pro Projekt manuell übernehmen.</div>
+              <div class="mini" style="margin-bottom:8px;">${escapeHtml(config.description)}</div>
               <div class="field">
-                <label for="multiProjectRawNotesInput">Markdown/Freitext</label>
+                <label for="multiProjectRawNotesInput">${escapeHtml(config.rawLabel)}</label>
                 <textarea id="multiProjectRawNotesInput" style="min-height:160px;font-family:var(--font-mono);font-size:12px;" placeholder="Notizen aus mehreren Projekten einfügen...">${escapeHtml(st.rawText || '')}</textarea>
               </div>
               <div class="stack-row" style="margin-bottom:8px;">
-                <button class="btn btn-primary" id="btnBuildMultiProjectNotesPrompt">Bereinigungsprompt bauen</button>
+                <button class="btn btn-primary" id="btnBuildMultiProjectNotesPrompt">${escapeHtml(config.buildButtonLabel)}</button>
               </div>
               <div class="field">
-                <label for="multiProjectPromptOutput">Prompt-Ausgabe</label>
+                <label for="multiProjectPromptOutput">${escapeHtml(config.promptLabel)}</label>
                 <textarea id="multiProjectPromptOutput" style="min-height:220px;font-family:var(--font-mono);font-size:12px;" placeholder="Prompt wird hier erzeugt...">${escapeHtml(st.prompt || '')}</textarea>
                 <div class="stack-row" style="margin-top:6px;"><button class="btn" id="btnCopyMultiProjectNotesPrompt">Copy</button></div>
               </div>
@@ -2669,6 +2752,13 @@
               <option value="plannedFeatures" ${ui.momentumSort === 'plannedFeatures' ? 'selected' : ''}>Viele geplante Features</option>
             </select>
           </div>
+          ${renderMultiProjectNotesImportSection({
+            title: 'Projektübergreifender Brainstorm / Braindump',
+            description: 'Gedanken zu mehreren Projekten einfügen, KI-Prompt erzeugen, JSON laden und Vorschläge manuell übernehmen.',
+            rawLabel: 'Brainstorm / Braindump',
+            buildButtonLabel: 'Brainstorm bereinigen',
+            promptLabel: 'Brainstorm-Cleanup-Prompt'
+          })}
           <div class="list momentum-dashboard-list">
             ${projects.map(renderMomentumDashboardCard).join('')}
           </div>
@@ -2977,6 +3067,7 @@
           </div>
 
           ${p.summary ? `<div class="notice" style="margin-bottom:10px;">${escapeHtml(p.summary)}</div>` : ''}
+          ${renderPostSprintCodeAnalysisNotice(p)}
           ${renderProjectMomentumSection(p, projectFeatures, projectNotes)}
           ${renderMultiProjectNotesImportSection()}
 
@@ -3082,6 +3173,15 @@
                     <div class="stack-row">
                       <button class="btn btn-primary" id="btnSprintCycleBuildMainChatStart" ${isArchivedProject || !projectMainChat ? 'disabled' : ''}>Hauptchat um Sprintstart bitten</button>
                     </div>
+                    ${chatWorkflow.sprintStartPrompt ? `
+                      <div class="field" style="margin-top:8px;">
+                        <label for="sprintCycleStartPromptOutput">Sprintstart-Prompt für Hauptchat</label>
+                        <textarea id="sprintCycleStartPromptOutput" style="min-height:160px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(chatWorkflow.sprintStartPrompt || '')}</textarea>
+                        <div class="stack-row" style="margin-top:6px;">
+                          <button class="btn" id="btnCopySprintCycleStartPrompt">Copy</button>
+                        </div>
+                      </div>
+                    ` : ''}
                   </div>
                   <div class="flow-step">
                     <div class="flow-step-head"><span class="flow-step-kicker">Schritt 2</span><span class="flow-step-title">Importieren</span></div>
@@ -3099,6 +3199,15 @@
                     <div class="stack-row">
                       <button class="btn btn-primary" id="btnChatWorkflowBuildSprintHandoff" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Sprintabschluss anfordern</button>
                     </div>
+                    ${chatWorkflow.sprintHandoffPrompt ? `
+                      <div class="field" style="margin-top:8px;">
+                        <label for="sprintCycleHandoffPromptOutput">Sprintabschluss-Prompt für Sprintchat</label>
+                        <textarea id="sprintCycleHandoffPromptOutput" style="min-height:160px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(chatWorkflow.sprintHandoffPrompt || '')}</textarea>
+                        <div class="stack-row" style="margin-top:6px;">
+                          <button class="btn" id="btnCopySprintCycleHandoffPrompt">Copy</button>
+                        </div>
+                      </div>
+                    ` : ''}
                   </div>
                   <div class="flow-step">
                     <div class="flow-step-head"><span class="flow-step-kicker">Schritt 4</span><span class="flow-step-title">Rückgabe</span></div>
@@ -3129,7 +3238,8 @@
                 <div class="mini" style="margin-top:6px;">Hinweis: Die Prompt-Ausgabe oben ist primär für den Hauptchat gedacht. In diesem Bereich können Legacy-Aktionen andere Zielchats adressieren.</div>
               </details>
               <div class="field">
-                <label for="chatWorkflowPromptOutput">Aktueller Workflow-Prompt</label>
+                <label for="chatWorkflowPromptOutput">Advanced / Legacy Workflow-Prompt</label>
+                <div class="mini" style="margin-bottom:6px;">Dieses Feld ist für Advanced- und Legacy-Aktionen. Sprintstart- und Sprintabschluss-Prompts erscheinen direkt im Sprint-Zyklus.</div>
                 <textarea id="chatWorkflowPromptOutput" style="min-height:220px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(chatWorkflow.prompt || '')}</textarea>
                 <div class="stack-row" style="margin-top:6px;">
                   <button class="btn" id="btnCopyChatWorkflowPrompt">Copy</button>
@@ -3872,9 +3982,9 @@
         if (!p) return;
         p.summary = result.projectSummary || p.summary;
         p.type = result.appType || p.type;
-        p.lastHtmlImportedAt = new Date().toISOString();
-        p.lastAnalyzedAt = new Date().toISOString();
-        p.updatedAt = new Date().toISOString();
+        const now = new Date().toISOString();
+        p.lastHtmlImportedAt = now;
+        markProjectCodeAnalysisCompleted(projectId, now);
 
         ui.analysisDraftFeatures = result.features.map(title => ({
           title,
@@ -4210,7 +4320,7 @@
             projectId: projectIdRaw,
             confidence: confidenceValues.includes(item && item.confidence) ? item.confidence : 'mittel',
             focusUpdate: String(item && item.focusUpdate || '').trim(),
-            nextStep: String(item && item.nextStep || '').trim(),
+            nextStep: String((item && (item.nextStep || item.nextStepUpdate)) || '').trim(),
             notes,
             proposedFeatures,
             _focusDone: false,
@@ -4750,6 +4860,7 @@
         try {
           const prepared = parseAnalysisJsonForCleanup(extractedJson, projectId);
           applyProjectMetadataFromAnalysis(projectId, prepared.parsed);
+          markProjectCodeAnalysisCompleted(projectId, new Date().toISOString());
           save();
           startCleanupReview(projectId, prepared.parsedFeatures, extractedJson, 'import-cleanup');
         } catch (err) {
@@ -4783,6 +4894,7 @@
         try {
           const prepared = parseAnalysisJsonForCleanup(extractedJson, projectId);
           applyProjectMetadataFromAnalysis(projectId, prepared.parsed);
+          markProjectCodeAnalysisCompleted(projectId, new Date().toISOString());
           save();
           startCleanupReview(projectId, prepared.parsedFeatures, extractedJson, 'import-cleanup');
         } catch (err) {
@@ -5589,8 +5701,7 @@
 
         const now = new Date().toISOString();
         applyProjectMetadataFromAnalysis(projectId, parsed, { allowOverwrite: false });
-        p.lastAnalyzedAt = now;
-        p.updatedAt = now;
+        markProjectCodeAnalysisCompleted(projectId, now);
 
         const featureSource = Array.isArray(parsed.features) ? parsed.features
           : Array.isArray(parsed.featureCandidates) ? parsed.featureCandidates
@@ -6357,7 +6468,10 @@
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           lastHtmlImportedAt: '',
-          lastAnalyzedAt: ''
+          lastAnalyzedAt: '',
+          needsCodeAnalysisAfterSprint: false,
+          lastSprintCompletedAt: '',
+          lastCodeAnalysisCompletedAt: ''
         }, project || {});
       }
 
