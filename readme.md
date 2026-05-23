@@ -20,6 +20,16 @@ At its core, Roadtrip exists to help developers **build, understand, review, and
 
 ---
 
+## 📚 Handbook / Wiki
+
+Roadtrip has a GitHub Wiki with usage guides, mental models, workflows, architecture notes, and feature explanations:
+
+👉 [Open the Roadtrip Handbook](https://github.com/kerimm93/roadtrip/wiki)
+
+Start there if you want to understand how Roadtrip is meant to be used beyond the code itself.
+
+---
+
 ## ✨ Philosophy
 
 Roadtrip follows one core principle:
