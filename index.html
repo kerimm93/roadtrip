@@ -595,7 +595,7 @@
       const UI_SPRINT_VIS_KEY = 'roadtrip.ui.showCompletedSprintsByProject';
       const UI_MOMENTUM_COLLAPSED_KEY = 'roadtrip.ui.projectMomentumCollapsedByProject';
       const ALL_PROJECTS_KEY = 'all';
-      const VIEWS = ['database', 'momentum', 'project', 'import', 'settings'];
+      const VIEWS = ['database', 'momentum', 'project', 'learning', 'import', 'settings'];
       const APP_TYPES = ['Daily Log', 'Braindump', 'Review', 'Tracker', 'Writing', 'Learning', 'Meta-App', 'Sonstiges'];
       const PROJECT_STATUS = ['aktiv', 'pausiert', 'archiviert'];
       const FEATURE_CATEGORIES = ['UI', 'Workflow', 'Sync', 'KI', 'Import/Export', 'Darstellung', 'Datenmodell', 'Ansicht', 'Sonstiges'];
@@ -675,7 +675,9 @@
         projectMomentumCollapsedByProject: {},
         projectMomentumPromptByProject: {},
         momentumSort: 'updated',
-        momentumQuickNoteByProject: {}
+        momentumQuickNoteByProject: {},
+        learningTracker: { projectId: 'all', scope: 'completed', filter: 'open', search: '' },
+        learningPromptByChatId: {}
       };
 
       const $ = (id) => document.getElementById(id);
@@ -873,6 +875,12 @@
         if (!ui.filters || typeof ui.filters !== 'object') ui.filters = { pool: 'alle', status: 'alle', category: 'alle', search: '' };
         if (!ui.filters.pool) ui.filters.pool = 'alle';
         if (!ui.multiProjectImport || typeof ui.multiProjectImport !== 'object') ui.multiProjectImport = { rawText: '', prompt: '', resultJson: '', summary: '', updates: [], unmatchedNotes: [], visible: false };
+        if (!ui.learningTracker || typeof ui.learningTracker !== 'object') ui.learningTracker = { projectId: 'all', scope: 'completed', filter: 'open', search: '' };
+        if (!ui.learningTracker.projectId) ui.learningTracker.projectId = 'all';
+        if (!ui.learningTracker.scope) ui.learningTracker.scope = 'completed';
+        if (!ui.learningTracker.filter) ui.learningTracker.filter = 'open';
+        if (typeof ui.learningTracker.search !== 'string') ui.learningTracker.search = '';
+        if (!ui.learningPromptByChatId || typeof ui.learningPromptByChatId !== 'object') ui.learningPromptByChatId = {};
       }
 
       function save() {
@@ -997,7 +1005,7 @@
         VIEWS.forEach(v => {
           const b = document.createElement('button');
           b.className = 'seg' + (ui.view === v ? ' active' : '');
-          b.textContent = ({database:'Database',momentum:'Momentum',project:'Project',import:'Import',settings:'Settings'})[v];
+          b.textContent = ({database:'Database',momentum:'Momentum',project:'Project',learning:'Learning',import:'Import',settings:'Settings'})[v];
           b.addEventListener('click', () => { ui.view = v; renderNav(); renderView(); });
           wrap.appendChild(b);
         });
@@ -1049,12 +1057,13 @@
         if (ui.view === 'database') c.innerHTML = renderDatabaseView();
         if (ui.view === 'momentum') c.innerHTML = renderMomentumDashboardView();
         if (ui.view === 'project') c.innerHTML = renderProjectWorkspace();
+        if (ui.view === 'learning') c.innerHTML = renderLearningWorkspace();
         if (ui.view === 'import') c.innerHTML = renderImportWorkspace();
         if (ui.view === 'settings') c.innerHTML = renderSettingsWorkspace();
         renderProjectSelects();
         if ($('themeSelect')) $('themeSelect').value = C.theme;
         if ($('fontSelect')) $('fontSelect').value = C.font;
-        $('viewTitle').textContent = ({database:'Database',momentum:'Momentum',project:'Project',import:'Import',settings:'Settings'})[ui.view];
+        $('viewTitle').textContent = ({database:'Database',momentum:'Momentum',project:'Project',learning:'Learning',import:'Import',settings:'Settings'})[ui.view];
         wireDynamicView();
       }
 
@@ -1072,6 +1081,42 @@
         if (search) search.addEventListener('input', e => { ui.filters.search = e.target.value; renderView(); });
         if (kanbanToggle) kanbanToggle.addEventListener('change', e => { ui.showKanban = e.target.checked; renderView(); });
         if (allProjectsToggle) allProjectsToggle.addEventListener('change', e => { ui.showAllProjects = e.target.checked; renderView(); });
+        if ($('learningProjectFilter')) $('learningProjectFilter').addEventListener('change', e => { ui.learningTracker.projectId = e.target.value || 'all'; renderView(); });
+        if ($('learningScopeFilter')) $('learningScopeFilter').addEventListener('change', e => { ui.learningTracker.scope = e.target.value || 'completed'; renderView(); });
+        if ($('learningStatusFilter')) $('learningStatusFilter').addEventListener('change', e => { ui.learningTracker.filter = e.target.value || 'open'; renderView(); });
+        if ($('learningSearch')) $('learningSearch').addEventListener('input', e => { ui.learningTracker.search = e.target.value || ''; renderView(); });
+        qq('[data-learning-toggle]').forEach(el => el.addEventListener('change', e => {
+          const [chatId, key] = String(e.target.dataset.learningToggle || '').split('|');
+          if (!chatId || !key) return;
+          updateChatLearningMeta(chatId, { [key]: !!e.target.checked });
+        }));
+        qq('[data-learning-notes]').forEach(el => el.addEventListener('change', e => {
+          const chatId = String(e.target.dataset.learningNotes || '');
+          if (!chatId) return;
+          updateChatLearningMeta(chatId, { notes: String(e.target.value || '') });
+        }));
+        qq('[data-build-learning-prompt]').forEach(el => el.addEventListener('click', e => {
+          const chatId = String(e.currentTarget.dataset.buildLearningPrompt || '');
+          if (!chatId) return;
+          buildChatLearningPrompt(chatId);
+          renderView();
+        }));
+        qq('[data-copy-learning-prompt]').forEach(el => el.addEventListener('click', e => {
+          const chatId = String(e.currentTarget.dataset.copyLearningPrompt || '');
+          if (!chatId) return;
+          copyPrompt(`learningPromptOutput-${chatId}`);
+        }));
+        qq('[data-open-learning-project]').forEach(el => el.addEventListener('click', e => {
+          const projectId = String(e.currentTarget.dataset.openLearningProject || '');
+          if (!projectId) return;
+          ui.activeProjectId = projectId;
+          ui.view = 'project';
+          ui.projectEditMode = false;
+          ui.editingProjectId = projectId;
+          renderNav();
+          renderSidebarProjects();
+          renderView();
+        }));
         if ($('momentumSortSelect')) {
           $('momentumSortSelect').addEventListener('change', e => {
             ui.momentumSort = e.target.value || 'updated';
@@ -1530,6 +1575,133 @@
           .filter(c => c && c.projectId === projectId)
           .map(ensureChatDefaults)
           .sort((a, b) => String(b.updatedAt || b.startedAt || '').localeCompare(String(a.updatedAt || a.startedAt || '')));
+      }
+
+      function getChatLearningMeta(chat) {
+        return ensureChatDefaults(chat).learningMeta;
+      }
+
+      function isChatLearningDone(chat) {
+        const meta = getChatLearningMeta(chat);
+        return !!(meta.learningsExtracted && meta.ankiCreated && meta.notionDevDbUpdated && meta.reviewed);
+      }
+
+      function getChatLearningOpenCount(chat) {
+        const meta = getChatLearningMeta(chat);
+        return [meta.learningsExtracted, meta.ankiCreated, meta.notionDevDbUpdated, meta.reviewed].filter(v => !v).length;
+      }
+
+      function getLearningTrackerChats() {
+        const tracker = ui.learningTracker || { projectId: 'all', scope: 'completed', filter: 'open', search: '' };
+        const isCompleted = (chat) => chat.status === 'abgeschlossen' || !!chat.completedAt;
+        return (S.chats || [])
+          .map(ensureChatDefaults)
+          .filter(chat => tracker.scope === 'all' ? true : isCompleted(chat))
+          .filter(chat => tracker.projectId === 'all' ? true : chat.projectId === tracker.projectId)
+          .filter(chat => {
+            if (tracker.filter === 'all') return true;
+            const meta = getChatLearningMeta(chat);
+            if (tracker.filter === 'open') return !isChatLearningDone(chat);
+            if (tracker.filter === 'anki-open') return !meta.ankiCreated;
+            if (tracker.filter === 'learnings-open') return !meta.learningsExtracted;
+            if (tracker.filter === 'devdb-open') return !meta.notionDevDbUpdated;
+            if (tracker.filter === 'done') return isChatLearningDone(chat);
+            return true;
+          })
+          .filter(chat => {
+            const qText = normalizeText(tracker.search || '');
+            if (!qText) return true;
+            const project = S.projects.find(p => p.id === chat.projectId);
+            const blob = normalizeText([project ? project.title : '', chat.title, chat.summary].join(' '));
+            return blob.includes(qText);
+          })
+          .sort((a, b) => String(b.completedAt || b.handoffImportedAt || b.updatedAt || b.startedAt || '').localeCompare(String(a.completedAt || a.handoffImportedAt || a.updatedAt || a.startedAt || '')));
+      }
+
+      function updateChatLearningMeta(chatId, patch) {
+        const idx = (S.chats || []).findIndex(c => c && c.id === chatId);
+        if (idx < 0) return;
+        const chat = ensureChatDefaults(S.chats[idx]);
+        chat.learningMeta = Object.assign({}, chat.learningMeta, patch || {});
+        chat.learningMeta.learningsExtracted = !!chat.learningMeta.learningsExtracted;
+        chat.learningMeta.ankiCreated = !!chat.learningMeta.ankiCreated;
+        chat.learningMeta.notionDevDbUpdated = !!chat.learningMeta.notionDevDbUpdated;
+        chat.learningMeta.reviewed = !!chat.learningMeta.reviewed;
+        chat.learningMeta.notes = String(chat.learningMeta.notes || '');
+        chat.updatedAt = new Date().toISOString();
+        S.chats[idx] = chat;
+        save();
+        renderView();
+      }
+
+      function buildChatLearningPrompt(chatId) {
+        const chat = ensureChatDefaults((S.chats || []).find(c => c && c.id === chatId) || null);
+        if (!chat || !chat.id) return '';
+        const project = S.projects.find(p => p.id === chat.projectId) || {};
+        const prompt = [
+          'Du bist mein Learning-Reviewer für einen abgeschlossenen Roadtrip-Chat/Sprint.',
+          '',
+          '## Projektkontext',
+          `- Projekttitel: ${project.title || '—'}`,
+          `- Projektsummary: ${project.summary || '—'}`,
+          `- Aktueller Fokus: ${project.currentFocus || '—'}`,
+          `- Nächster Projektschritt: ${project.nextStep || '—'}`,
+          '',
+          '## Chatkontext',
+          `- Chattitel: ${chat.title || '—'}`,
+          `- Chattyp: ${chat.type || '—'}`,
+          `- Status: ${chat.status || '—'}`,
+          `- URL: ${chat.url || '—'}`,
+          `- startedAt: ${chat.startedAt || '—'}`,
+          `- completedAt: ${chat.completedAt || '—'}`,
+          `- updatedAt: ${chat.updatedAt || '—'}`,
+          `- Summary: ${chat.summary || '—'}`,
+          `- Next Step: ${chat.nextStep || '—'}`,
+          '',
+          '### rawReportText',
+          chat.rawReportText || '—',
+          '',
+          '### rawHandoffText',
+          chat.rawHandoffText || '—',
+          '',
+          '## Aufgabe',
+          '- Dev-Learnings extrahieren',
+          '- Fehler / Stolperstellen extrahieren',
+          '- Architektur- und Code-Entscheidungen extrahieren',
+          '- Workflow-Learnings extrahieren',
+          '- Anki-Kandidaten formulieren',
+          '- Dev-/Notion-DB-Eintrag formulieren',
+          '- offene Fragen notieren',
+          '',
+          '## Ausgabeformat (Markdown)',
+          '# Dev-Learnings',
+          '- ...',
+          '',
+          '# Fehler / Stolperstellen',
+          '- ...',
+          '',
+          '# Architektur- und Code-Entscheidungen',
+          '- ...',
+          '',
+          '# Workflow-Learnings',
+          '- ...',
+          '',
+          '# Anki-Kandidaten',
+          '| Frage | Antwort | Tags |',
+          '|---|---|---|',
+          '',
+          '# Dev-/Notion-DB-Eintrag',
+          'Titel:',
+          'Projekt:',
+          'Kurzsummary:',
+          'Wichtige Entscheidungen:',
+          'Nächste Wiederverwendung:',
+          '',
+          '# Offene Fragen',
+          '- ...'
+        ].join('\n');
+        ui.learningPromptByChatId[chatId] = prompt;
+        return prompt;
       }
 
       function findProjectMainChatCandidate(projectId) {
@@ -3445,6 +3617,90 @@
             Features: ${projectFeatures.length} | Letzte Analyse: ${latestAnalysis ? formatDateTime(latestAnalysis.createdAt) : '—'}
           </div>
           ${renderTable(projectFeatures)}
+        `;
+      }
+
+      function renderLearningWorkspace() {
+        const tracker = ui.learningTracker || { projectId: 'all', scope: 'completed', filter: 'open', search: '' };
+        const activeProjects = (S.projects || []).filter(p => p && p.status !== 'archiviert');
+        const allChats = getLearningTrackerChats();
+        const totalOpen = allChats.reduce((sum, c) => sum + getChatLearningOpenCount(c), 0);
+        const learningsOpen = allChats.filter(c => !getChatLearningMeta(c).learningsExtracted).length;
+        const ankiOpen = allChats.filter(c => !getChatLearningMeta(c).ankiCreated).length;
+        const devDbOpen = allChats.filter(c => !getChatLearningMeta(c).notionDevDbUpdated).length;
+        const reviewedDone = allChats.filter(c => getChatLearningMeta(c).reviewed).length;
+        const renderType = (type) => `<span class="pill" style="border-color:${({ 'project-main':'var(--accent)','sprint':'var(--blue)','execution':'var(--green)','branch':'var(--yellow)' }[type]||'var(--border)')};color:${({ 'project-main':'var(--accent)','sprint':'var(--blue)','execution':'var(--green)','branch':'var(--yellow)' }[type]||'var(--ink-dim)')}">${escapeHtml(type||'—')}</span>`;
+        const renderStatus = (status) => `<span class="pill" style="color:${({ 'aktiv':'var(--green)','pausiert':'var(--yellow)','abgeschlossen':'var(--ink-dim)','referenz':'var(--blue)' }[status]||'var(--ink-dim)')}">${escapeHtml(status||'—')}</span>`;
+        return `
+          ${renderContextBanner()}
+          <div class="panel">
+            <div class="panel-title"><h3>Learning Tracker</h3></div>
+            <div class="notice">Abgeschlossene Chats/Sprints nachbereiten: Learnings, Anki, Dev-/Notion-DB.</div>
+            <div class="stack-row" style="margin-top:10px;">
+              <span class="pill">Offene Nachbereitungen: ${totalOpen}</span>
+              <span class="pill">Learnings offen: ${learningsOpen}</span>
+              <span class="pill">Anki offen: ${ankiOpen}</span>
+              <span class="pill">Dev-/Notion-DB offen: ${devDbOpen}</span>
+              <span class="pill pill-success">Review erledigt: ${reviewedDone}</span>
+            </div>
+            <div class="stack-row" style="margin-top:10px;">
+              <select id="learningProjectFilter">
+                <option value="all" ${tracker.projectId==='all'?'selected':''}>Alle Projekte</option>
+                ${activeProjects.map(p => `<option value="${escapeAttr(p.id)}" ${tracker.projectId===p.id?'selected':''}>${escapeHtml(p.title)}</option>`).join('')}
+              </select>
+              <select id="learningScopeFilter">
+                <option value="completed" ${tracker.scope==='completed'?'selected':''}>Nur abgeschlossene</option>
+                <option value="all" ${tracker.scope==='all'?'selected':''}>Alle Chats</option>
+              </select>
+              <select id="learningStatusFilter">
+                <option value="open" ${tracker.filter==='open'?'selected':''}>Offen</option>
+                <option value="learnings-open" ${tracker.filter==='learnings-open'?'selected':''}>Learnings offen</option>
+                <option value="anki-open" ${tracker.filter==='anki-open'?'selected':''}>Anki offen</option>
+                <option value="devdb-open" ${tracker.filter==='devdb-open'?'selected':''}>Dev-DB offen</option>
+                <option value="done" ${tracker.filter==='done'?'selected':''}>Erledigt</option>
+                <option value="all" ${tracker.filter==='all'?'selected':''}>Alle</option>
+              </select>
+              <input id="learningSearch" value="${escapeAttr(tracker.search || '')}" placeholder="Suche über Projekt, Titel, Summary" />
+            </div>
+            <div class="list" style="margin-top:10px;">
+              ${allChats.map(c => {
+                const p = S.projects.find(x => x.id === c.projectId) || null;
+                const meta = getChatLearningMeta(c);
+                const prompt = (ui.learningPromptByChatId || {})[c.id] || '';
+                return `<div class="item">
+                  <div class="row-top">
+                    <strong>${escapeHtml(c.title || 'Ohne Titel')}</strong>
+                    <div class="stack-row" style="gap:4px;">${renderType(c.type)}${renderStatus(c.status)}</div>
+                  </div>
+                  <div class="mini">${escapeHtml((p && p.title) || 'Ohne Projekt')}</div>
+                  <div class="stack-row">
+                    ${c.url ? `<a href="${escapeAttr(c.url)}" target="_blank" rel="noopener" class="btn">URL öffnen</a>` : ''}
+                    ${p ? `<button class="btn" data-open-learning-project="${p.id}">Projekt öffnen</button>` : ''}
+                    <span class="pill">${isChatLearningDone(c) ? 'Learning erledigt' : `Learning offen (${getChatLearningOpenCount(c)})`}</span>
+                  </div>
+                  <div class="mini">Abgeschlossen: ${escapeHtml(c.completedAt || c.handoffImportedAt || '')} · Updated: ${escapeHtml(c.updatedAt || '')}</div>
+                  ${c.summary ? `<div class="item-desc">${escapeHtml(c.summary)}</div>` : ''}
+                  ${c.nextStep ? `<div class="mini">Next Step: ${escapeHtml(c.nextStep)}</div>` : ''}
+                  ${c.rawReportText ? `<div class="pill">Raw Report vorhanden</div>` : ''}
+                  <div class="stack-row" style="margin-top:8px;">
+                    <label class="pill"><input type="checkbox" data-learning-toggle="${c.id}|learningsExtracted" ${meta.learningsExtracted ? 'checked' : ''}/> Learnings extrahiert</label>
+                    <label class="pill"><input type="checkbox" data-learning-toggle="${c.id}|ankiCreated" ${meta.ankiCreated ? 'checked' : ''}/> Anki erstellt</label>
+                    <label class="pill"><input type="checkbox" data-learning-toggle="${c.id}|notionDevDbUpdated" ${meta.notionDevDbUpdated ? 'checked' : ''}/> Dev-/Notion-DB gepflegt</label>
+                    <label class="pill"><input type="checkbox" data-learning-toggle="${c.id}|reviewed" ${meta.reviewed ? 'checked' : ''}/> Review erledigt</label>
+                  </div>
+                  <div class="field" style="margin-top:8px;">
+                    <label>Learning-Notizen</label>
+                    <textarea data-learning-notes="${c.id}" placeholder="Optionale Learning-Notizen">${escapeHtml(meta.notes || '')}</textarea>
+                  </div>
+                  <div class="stack-row">
+                    <button class="btn" data-build-learning-prompt="${c.id}">Learning-Prompt bauen</button>
+                    ${prompt ? `<button class="btn" data-copy-learning-prompt="${c.id}">Prompt kopieren</button>` : ''}
+                  </div>
+                  ${prompt ? `<textarea id="learningPromptOutput-${c.id}" style="margin-top:8px;min-height:180px;">${escapeHtml(prompt)}</textarea>` : ''}
+                </div>`;
+              }).join('') || '<div class="notice">Keine Chats für den gewählten Filter gefunden.</div>'}
+            </div>
+          </div>
         `;
       }
 
@@ -6613,7 +6869,8 @@
       const CHAT_WORK_MODES = { agent: 'agent', learning: 'learning' };
 
       function ensureChatDefaults(chat) {
-        return Object.assign({
+        const input = chat || {};
+        const clone = Object.assign({
           id: uid('ch'),
           projectId: '',
           title: '',
@@ -6633,13 +6890,21 @@
           updatedAt: new Date().toISOString(),
           completedAt: '',
           workMode: '',
-          learningMeta: {
-            learningsExtracted: false,
-            ankiCreated: false,
-            notionDevDbUpdated: false,
-            notes: ''
-          }
-        }, chat || {});
+          learningMeta: {}
+        }, input);
+        clone.learningMeta = Object.assign({
+          learningsExtracted: false,
+          ankiCreated: false,
+          notionDevDbUpdated: false,
+          reviewed: false,
+          notes: ''
+        }, input.learningMeta && typeof input.learningMeta === 'object' ? input.learningMeta : {});
+        clone.learningMeta.learningsExtracted = !!clone.learningMeta.learningsExtracted;
+        clone.learningMeta.ankiCreated = !!clone.learningMeta.ankiCreated;
+        clone.learningMeta.notionDevDbUpdated = !!clone.learningMeta.notionDevDbUpdated;
+        clone.learningMeta.reviewed = !!clone.learningMeta.reviewed;
+        clone.learningMeta.notes = String(clone.learningMeta.notes || '');
+        return clone;
       }
 
 
