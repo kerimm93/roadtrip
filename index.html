@@ -670,6 +670,7 @@
         dailyLogQuery: { prompt: '' },
         multiProjectImport: { rawText: '', prompt: '', resultJson: '', summary: '', updates: [], unmatchedNotes: [], visible: false },
         noteReview: { proposals: [], projectId: '', rawText: '', visible: false },
+        noteFeaturePipelineByProject: {},
         cleanupReview: { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', visible: false, versionLogged: false },
         showCompletedSprintsByProject: {},
         projectMomentumCollapsedByProject: {},
@@ -1226,8 +1227,15 @@
           addMomentumDashboardNote(btn.dataset.addMomentumNote || '');
         }));
         if ($('btnAddNote')) $('btnAddNote').addEventListener('click', addQuickNote);
-        if ($('btnAnalyzeNote')) $('btnAnalyzeNote').addEventListener('click', buildNotePrompt);
         if ($('btnBuildReviewPrompt')) $('btnBuildReviewPrompt').addEventListener('click', buildNoteReviewPrompt);
+        if ($('btnBuildNotesToFeaturesPrompt')) $('btnBuildNotesToFeaturesPrompt').addEventListener('click', () => {
+          const pid = ui.activeProjectId;
+          if (!pid || pid === ALL_PROJECTS_KEY) return alert('Bitte zuerst ein Projekt wählen.');
+          const st = getNoteFeaturePipelineState(pid);
+          st.prompt = buildNotesToFeaturesPrompt(pid);
+          st.visible = true;
+          renderView();
+        });
         if ($('btnLoadNoteReview')) $('btnLoadNoteReview').addEventListener('click', loadNoteReviewProposals);
         if ($('btnClearNoteReview')) $('btnClearNoteReview').addEventListener('click', clearNoteReview);
         if ($('multiProjectRawNotesInput')) $('multiProjectRawNotesInput').addEventListener('input', e => { ui.multiProjectImport.rawText = e.target.value; });
@@ -1296,6 +1304,44 @@
         if ($('btnPullProjectTrello')) $('btnPullProjectTrello').addEventListener('click', () => pullActiveProjectFromTrello());
         qq('[data-add-feature-from-note]').forEach(btn => btn.addEventListener('click', () => promoteNoteToFeature(btn.dataset.addFeatureFromNote)));
         qq('[data-build-note-prompt]').forEach(btn => btn.addEventListener('click', () => buildSingleNotePrompt(btn.dataset.buildNotePrompt)));
+        qq('[data-build-notes-to-features]').forEach(btn => btn.addEventListener('click', () => {
+          const projectId = btn.dataset.buildNotesToFeatures || '';
+          if (!projectId) return;
+          const st = getNoteFeaturePipelineState(projectId);
+          st.prompt = buildNotesToFeaturesPrompt(projectId);
+          st.visible = true;
+          renderView();
+        }));
+        qq('[data-note-feature-prompt]').forEach(el => el.addEventListener('input', e => {
+          const projectId = el.dataset.noteFeaturePrompt || '';
+          if (!projectId) return;
+          getNoteFeaturePipelineState(projectId).prompt = e.target.value;
+        }));
+        qq('[data-note-feature-result]').forEach(el => el.addEventListener('input', e => {
+          const projectId = el.dataset.noteFeatureResult || '';
+          if (!projectId) return;
+          getNoteFeaturePipelineState(projectId).resultJson = e.target.value;
+        }));
+        qq('[data-copy-note-feature-prompt]').forEach(btn => btn.addEventListener('click', () => {
+          const projectId = btn.dataset.copyNoteFeaturePrompt || '';
+          if (!projectId) return;
+          const prompt = (getNoteFeaturePipelineState(projectId).prompt || '').trim();
+          if (!prompt) return alert('Kein Prompt vorhanden.');
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(prompt).then(() => alert('Prompt kopiert.')).catch(() => alert('Kopieren fehlgeschlagen.'));
+          } else {
+            alert('Clipboard API nicht verfügbar. Bitte Prompt manuell kopieren.');
+          }
+        }));
+        qq('[data-load-note-feature-proposals]').forEach(btn => btn.addEventListener('click', () => loadNoteFeaturePipelineProposals(btn.dataset.loadNoteFeatureProposals || '')));
+        qq('[data-accept-note-feature-proposal]').forEach(btn => btn.addEventListener('click', () => {
+          const [projectId, idx] = String(btn.dataset.acceptNoteFeatureProposal || '').split('|');
+          acceptNoteFeaturePipelineProposal(projectId, Number(idx));
+        }));
+        qq('[data-ignore-note-feature-proposal]').forEach(btn => btn.addEventListener('click', () => {
+          const [projectId, idx] = String(btn.dataset.ignoreNoteFeatureProposal || '').split('|');
+          ignoreNoteFeaturePipelineProposal(projectId, Number(idx));
+        }));
         qq('[data-create-feature]').forEach(btn => btn.addEventListener('click', () => quickCreateFeature(btn.dataset.createFeature)));
         qq('[data-new-chat]').forEach(btn => btn.addEventListener('click', () => openChatModal(null, btn.dataset.newChat)));
         qq('[data-edit-chat]').forEach(btn => btn.addEventListener('click', () => openChatModal(btn.dataset.editChat, null)));
@@ -3010,7 +3056,7 @@
                   <label>Rohe Notiz</label>
                   <textarea data-momentum-note-input="${escapeAttr(project.id)}" placeholder="Rohe Notiz zu diesem Projekt..." style="min-height:80px;">${escapeHtml(quickNoteValue)}</textarea>
                   <div class="stack-row" style="margin-top:6px;">
-                    <button class="btn" data-add-momentum-note="${escapeAttr(project.id)}">Rohe Notiz erfassen</button>
+                    <button class="btn" data-add-momentum-note="${escapeAttr(project.id)}">Als Rohnotiz speichern</button>
                   </div>
                 </div>
               </div>
@@ -3031,6 +3077,7 @@
                 </div>
               </div>
             </details>` : ''}
+            ${renderNoteFeaturePipelineSection(project.id, { context: 'momentum' })}
           </div>
         `;
       }
@@ -3563,16 +3610,18 @@
             </div>
             <div class="field">
               <label for="quickNote">Rohe Notiz</label>
+              <div class="mini" style="margin-bottom:6px;">Rohnotizen sind Vorstufen. Aus ihnen können später kontrolliert geplante Features erzeugt werden.</div>
               <textarea id="quickNote" placeholder="Notiz, Idee, Bug, Prompt-Hinweis ..."></textarea>
             </div>
             <div class="stack-row">
-              <button class="btn btn-primary" id="btnAddNote">Notiz speichern</button>
-              <button class="btn btn-secondary" id="btnAnalyzeNote">Prompt bauen</button>
-              <button class="btn btn-ghost" id="btnBuildReviewPrompt">Review-Prompt bauen</button>
+              <button class="btn btn-primary" id="btnAddNote">Als Rohnotiz speichern</button>
+              <button class="btn btn-ghost" id="btnBuildReviewPrompt">Aus aktueller Notiz Feature-Vorschläge ableiten</button>
+              <button class="btn btn-secondary" id="btnBuildNotesToFeaturesPrompt">Aus offenen Notizen Features ableiten</button>
             </div>
           </details>
 
           ${renderNoteReviewSection()}
+          ${renderNoteFeaturePipelineSection(p.id, { context: 'project' })}
           <details style="margin-bottom:12px;" open>
             <summary style="font-weight:700;">Feature-Bereinigung</summary>
             <div class="mini" style="margin:8px 0;">
@@ -4014,8 +4063,8 @@
                   <span class="pill">${formatDateTime(n.createdAt)}</span>
                 </div>
                 <div class="stack-row">
-                  <button class="btn" data-build-note-prompt="${n.id}">Prompt bauen</button>
-                  <button class="btn" data-add-feature-from-note="${n.id}">Als Feature anlegen</button>
+                  <button class="btn" data-build-note-prompt="${n.id}">Aus Notiz Feature-Vorschläge ableiten</button>
+                  <button class="btn" data-add-feature-from-note="${n.id}">Als geplantes Feature übernehmen</button>
                   <button class="btn" data-mark-note="${n.id}">Als verarbeitet markieren</button>
                   <button class="btn btn-danger" data-delete-note="${n.id}">Löschen</button>
                 </div>
@@ -4260,30 +4309,67 @@
         renderView();
       }
 
+      function getFirstMeaningfulNoteLine(text) {
+        const lines = String(text || '').split('\n').map(x => x.trim()).filter(Boolean);
+        return lines.find(line => normalizeText(line) !== 'ohne titel') || '';
+      }
+
+      function getNoteFeaturePipelineState(projectId) {
+        const pid = String(projectId || '');
+        if (!ui.noteFeaturePipelineByProject || typeof ui.noteFeaturePipelineByProject !== 'object') ui.noteFeaturePipelineByProject = {};
+        if (!ui.noteFeaturePipelineByProject[pid]) {
+          ui.noteFeaturePipelineByProject[pid] = { prompt: '', resultJson: '', proposals: [], notesToMarkProcessed: [], visible: false, summary: '' };
+        }
+        return ui.noteFeaturePipelineByProject[pid];
+      }
+
       function promoteNoteToFeature(id) {
         const n = S.notes.find(x => x.id === id);
         if (!n) return;
-        const title = prompt('Feature-Titel:', guessFeatureTitle(n.text));
-        if (!title) return;
+        const now = new Date().toISOString();
+        const suggested = getFirstMeaningfulNoteLine(n.text);
+        let title = suggested;
+        if (!title || title.length > 80) title = prompt('Feature-Titel bestätigen oder eingeben:', title || '');
+        if (!title || !title.trim()) title = prompt('Bitte Feature-Titel eingeben (Pflicht):', '');
+        if (!title || !title.trim()) return;
+        title = title.trim();
+        const normalizedTitle = normalizeText(title);
+        const hasDup = getVisibleFeatures(S.features).some(f => f.projectId === (n.projectId || '') && isPlannedFeature(f) && normalizeText(f.title || '') === normalizedTitle);
+        if (hasDup && !confirm('Ähnliches geplantes Feature existiert bereits. Trotzdem übernehmen?')) return;
+        const featureId = uid('f');
         S.features.push(ensureFeatureDefaults({
-          id: uid('f'),
+          id: featureId,
           projectId: n.projectId || '',
-          title: title.trim(),
+          title,
           description: n.text,
           pool: 'planned',
           reviewStatus: 'needs-review',
           status: 'idea',
           priority: 'mittel',
           category: 'Workflow',
-          sourceType: 'note-analysis',
+          sourceType: 'raw-note',
           sourceNoteIds: [n.id],
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
+          createdAt: now,
+          updatedAt: now
         }));
         n.processed = true;
-        n.processedAt = new Date().toISOString();
+        n.processedAt = now;
+        n.processedIntoFeatureId = featureId;
+        n.updatedAt = now;
+        const project = S.projects.find(p => p.id === (n.projectId || ''));
+        if (project) project.updatedAt = now;
+        alert('Feature wurde als geplantes Feature erstellt.\nIn Database sichtbar unter: Geplante Features');
         save();
         renderView();
+      }
+
+      function buildNotesToFeaturesPrompt(projectId) {
+        const project = S.projects.find(p => p.id === projectId);
+        if (!project) return '';
+        const planned = getVisibleFeatures(S.features).filter(f => f.projectId === projectId && isPlannedFeature(f));
+        const implemented = getVisibleFeatures(S.features).filter(f => f.projectId === projectId && isImplementedFeature(f)).slice(0, 10);
+        const notes = (S.notes || []).filter(n => n && n.projectId === projectId && !n.processed && String(n.text || '').trim());
+        return `# Roadtrip Raw Notes -> Planned Features\nProjekt: ${project.title || '—'}\nSummary: ${project.summary || '—'}\nCurrent Focus: ${project.currentFocus || '—'}\nNext Step: ${project.nextStep || '—'}\n\nBestehende planned Features:\n${planned.map(f => `- ${f.id} | ${f.title} | ${f.status}`).join('\n') || '- —'}\n\nBestehende implemented Features (gekürzt):\n${implemented.map(f => `- ${f.id} | ${f.title} | ${f.status}`).join('\n') || '- —'}\n\nOffene Raw Notes:\n${notes.map(n => `- ID: ${n.id} | createdAt: ${n.createdAt || '—'} | sourceType: ${n.sourceType || 'note'} | Text: ${shorten(String(n.text || '').trim(), 800)}`).join('\n') || '- —'}\n\nRegeln:\n- Raw Notes sind noch keine Features.\n- Nur echte Feature-Ideen in proposedFeatures.\n- Keine bestehenden Features doppeln.\n- Keine implemented Features neu als planned anlegen.\n- Wenn unklar, rationale erklären und lieber keinen Vorschlag machen.\n\nGib ausschließlich JSON zurück:\n{\n  \"proposedFeatures\": [{\"title\":\"...\",\"description\":\"...\",\"sourceNoteIds\":[\"n_...\"],\"rationale\":\"...\",\"suggestedPriority\":\"niedrig|mittel|hoch|kritisch\",\"suggestedCategory\":\"UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges\",\"suggestedStatus\":\"idea|planned\"}],\n  \"notesToMarkProcessed\": [\"n_...\"],\n  \"summary\": \"...\"\n}`;
       }
 
       function updateFeatureStatus(id, status) {
@@ -4876,8 +4962,34 @@
         ui.importDraft.analysisPrompt = prompt;
         if (pid) ui.importDraft.projectId = pid;
         navigator.clipboard.writeText(prompt)
-          .then(() => alert('Review-Prompt erzeugt und in Zwischenablage kopiert.\nErgebnis-JSON unten einfügen und "Vorschläge laden" klicken.'))
-          .catch(() => alert('Review-Prompt erzeugt.\nErgebnis-JSON unten einfügen und "Vorschläge laden" klicken.'));
+          .then(() => alert('Feature-Review-Prompt erzeugt und in Zwischenablage kopiert.\nErgebnis-JSON unten einfügen und "Vorschläge laden" klicken.'))
+          .catch(() => alert('Feature-Review-Prompt erzeugt.\nErgebnis-JSON unten einfügen und "Vorschläge laden" klicken.'));
+        renderView();
+      }
+
+      function loadNoteFeaturePipelineProposals(projectId) {
+        const st = getNoteFeaturePipelineState(projectId);
+        const raw = String(st.resultJson || '').trim();
+        if (!raw) return alert('Bitte JSON-Ergebnis einfügen.');
+        let parsed;
+        try { parsed = JSON.parse(extractJsonObjectFromText(raw)); } catch (e) { return alert('Kein gültiges JSON erkannt: ' + e.message); }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return alert('Top-Level muss ein Objekt sein.');
+        const notesInProject = new Set((S.notes || []).filter(n => n && n.projectId === projectId).map(n => n.id));
+        const proposed = Array.isArray(parsed.proposedFeatures) ? parsed.proposedFeatures : [];
+        st.proposals = proposed.map((p, idx) => ({
+          _idx: idx,
+          title: String(p && p.title || '').trim(),
+          description: String(p && p.description || '').trim(),
+          sourceNoteIds: (Array.isArray(p && p.sourceNoteIds) ? p.sourceNoteIds : []).map(String).filter(id => notesInProject.has(id)),
+          rationale: String(p && p.rationale || '').trim(),
+          suggestedPriority: PRIORITIES.includes(p && p.suggestedPriority) ? p.suggestedPriority : 'mittel',
+          suggestedCategory: FEATURE_CATEGORIES.includes(p && p.suggestedCategory) ? p.suggestedCategory : 'Workflow',
+          suggestedStatus: (p && p.suggestedStatus) === 'planned' ? 'planned' : 'idea',
+          _done: false, _ignored: false, createdFeatureId: ''
+        })).filter(x => x.title);
+        st.notesToMarkProcessed = Array.isArray(parsed.notesToMarkProcessed) ? parsed.notesToMarkProcessed.map(String) : [];
+        st.summary = String(parsed.summary || '').trim();
+        st.visible = true;
         renderView();
       }
 
@@ -4980,6 +5092,67 @@
       function clearNoteReview() {
         ui.noteReview = { proposals: [], projectId: '', rawText: '', visible: false };
         renderView();
+      }
+
+      function acceptNoteFeaturePipelineProposal(projectId, idx) {
+        const st = getNoteFeaturePipelineState(projectId);
+        const proposal = (st.proposals || []).find(p => p._idx === idx);
+        if (!proposal || proposal._done || proposal._ignored) return;
+        const normalizedTitle = normalizeText(proposal.title || '');
+        if (normalizedTitle) {
+          const hasDup = getVisibleFeatures(S.features).some(f =>
+            f.projectId === projectId &&
+            isPlannedFeature(f) &&
+            normalizeText(f.title || '') === normalizedTitle
+          );
+          if (hasDup && !confirm('Ähnliches geplantes Feature existiert bereits. Trotzdem übernehmen?')) return;
+        }
+        const now = new Date().toISOString();
+        const featureId = uid('f');
+        S.features.push(ensureFeatureDefaults({
+          id: featureId, projectId, title: proposal.title, description: proposal.description || '',
+          pool: 'planned', status: proposal.suggestedStatus === 'planned' ? 'planned' : 'idea', reviewStatus: 'needs-review',
+          sourceType: 'raw-note-batch', sourceNoteIds: proposal.sourceNoteIds || [], priority: PRIORITIES.includes(proposal.suggestedPriority) ? proposal.suggestedPriority : 'mittel',
+          category: FEATURE_CATEGORIES.includes(proposal.suggestedCategory) ? proposal.suggestedCategory : 'Workflow',
+          createdAt: now, updatedAt: now
+        }));
+        (proposal.sourceNoteIds || []).forEach(noteId => {
+          const note = (S.notes || []).find(n => n && n.id === noteId && n.projectId === projectId);
+          if (!note) return;
+          note.processed = true;
+          note.processedAt = now;
+          note.processedIntoFeatureId = featureId;
+          note.updatedAt = now;
+        });
+        const project = (S.projects || []).find(p => p && p.id === projectId);
+        if (project) project.updatedAt = now;
+        proposal._done = true;
+        proposal.createdFeatureId = featureId;
+        alert('Feature wurde als geplantes Feature erstellt.\nIn Database sichtbar unter: Geplante Features');
+        save(); renderView();
+      }
+
+      function ignoreNoteFeaturePipelineProposal(projectId, idx) {
+        const st = getNoteFeaturePipelineState(projectId);
+        const proposal = (st.proposals || []).find(p => p._idx === idx);
+        if (!proposal || proposal._done || proposal._ignored) return;
+        proposal._ignored = true;
+        renderView();
+      }
+
+      function renderNoteFeaturePipelineSection(projectId, options) {
+        if (!projectId) return '';
+        const st = getNoteFeaturePipelineState(projectId);
+        const context = options && options.context === 'momentum' ? 'momentum' : 'project';
+        const idSuffix = context + '-' + projectId;
+        if (!st.visible && !st.prompt) return `<div style="margin-top:8px;"><button class="btn btn-secondary" data-build-notes-to-features="${escapeAttr(projectId)}">Aus offenen Notizen Features ableiten</button></div>`;
+        return `<details open style="margin-top:8px;"><summary style="font-weight:700;">Raw Notes → Feature-Pipeline</summary>
+          <div class="field"><label for="noteFeaturePrompt-${escapeAttr(idSuffix)}">Prompt</label><textarea id="noteFeaturePrompt-${escapeAttr(idSuffix)}" data-note-feature-prompt="${escapeAttr(projectId)}" style="min-height:150px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(st.prompt || '')}</textarea><div class="stack-row" style="margin-top:6px;"><button class="btn" data-copy-note-feature-prompt="${escapeAttr(projectId)}">Copy</button></div></div>
+          <div class="field"><label for="noteFeatureResult-${escapeAttr(idSuffix)}">KI-Ergebnis (JSON)</label><textarea id="noteFeatureResult-${escapeAttr(idSuffix)}" data-note-feature-result="${escapeAttr(projectId)}" style="min-height:120px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(st.resultJson || '')}</textarea></div>
+          <div class="stack-row"><button class="btn btn-primary" data-load-note-feature-proposals="${escapeAttr(projectId)}">Feature-Vorschläge laden</button></div>
+          ${st.summary ? `<div class="notice" style="margin-top:6px;">${escapeHtml(st.summary)}</div>` : ''}
+          ${(st.proposals || []).length ? `<div class="list" style="margin-top:8px;">${st.proposals.map(p => `<div class="item" style="${p._done || p._ignored ? 'opacity:.65;' : ''}"><div class="row-top"><strong>${escapeHtml(p.title)}</strong><span class="pill">${escapeHtml(p.suggestedCategory)} · ${escapeHtml(p.suggestedPriority)} · ${escapeHtml(p.suggestedStatus)}</span></div><div class="item-desc">${escapeHtml(p.description || '')}</div><div class="mini">Quelle: ${(p.sourceNoteIds || []).map(id => { const n=(S.notes||[]).find(x=>x.id===id); return `${escapeHtml(id)}${n?` (${escapeHtml(shorten(n.text||'',70))})`:''}`; }).join(', ') || '—'}</div>${p.rationale ? `<div class="mini">Rationale: ${escapeHtml(p.rationale)}</div>` : ''}<div class="stack-row" style="margin-top:6px;"><button class="btn" data-accept-note-feature-proposal="${escapeAttr(projectId)}|${p._idx}" ${p._done || p._ignored ? 'disabled' : ''}>${p._done ? '✓ Übernommen' : 'Als geplantes Feature übernehmen'}</button><button class="btn" data-ignore-note-feature-proposal="${escapeAttr(projectId)}|${p._idx}" ${p._done || p._ignored ? 'disabled' : ''}>${p._ignored ? '✓ Ignoriert' : 'Nicht übernehmen'}</button></div></div>`).join('')}</div>` : ''}
+        </details>`;
       }
 
       function renderNoteReviewSection() {
