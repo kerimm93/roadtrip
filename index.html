@@ -792,7 +792,8 @@
           notes: [],
           analyses: [],
           chats: [],
-          importVersions: []
+          importVersions: [],
+          unmatchedNotes: []
         };
       }
 
@@ -863,6 +864,7 @@
         if (!Array.isArray(S.analyses)) S.analyses = [];
         if (!Array.isArray(S.chats)) S.chats = [];
         if (!Array.isArray(S.importVersions)) S.importVersions = [];
+        if (!Array.isArray(S.unmatchedNotes)) S.unmatchedNotes = [];
         if (!S._lastLocalSaveAt && S._lastExported) S._lastLocalSaveAt = S._lastExported;
         if (!S._lastGistPushAt && S._lastExported) S._lastGistPushAt = S._lastExported;
         S.projects = S.projects.map(ensureProjectDefaults);
@@ -1194,6 +1196,11 @@
         if ($('btnCopyMultiProjectNotesPrompt')) $('btnCopyMultiProjectNotesPrompt').addEventListener('click', () => copyPrompt('multiProjectPromptOutput'));
         if ($('btnLoadMultiProjectReview')) $('btnLoadMultiProjectReview').addEventListener('click', loadMultiProjectReviewProposals);
         if ($('btnClearMultiProjectReview')) $('btnClearMultiProjectReview').addEventListener('click', clearMultiProjectReview);
+        if ($('btnSaveCurrentUnmatchedNotes')) $('btnSaveCurrentUnmatchedNotes').addEventListener('click', saveCurrentUnmatchedNotes);
+        if ($('btnCopyOpenUnmatchedMarkdown')) $('btnCopyOpenUnmatchedMarkdown').addEventListener('click', copyUnmatchedNotesMarkdown);
+        if ($('btnDownloadOpenUnmatchedMarkdown')) $('btnDownloadOpenUnmatchedMarkdown').addEventListener('click', downloadUnmatchedNotesMarkdown);
+        qq('[data-unmatched-done]').forEach(btn => btn.addEventListener('click', () => markUnmatchedNoteDone(btn.dataset.unmatchedDone || '')));
+        qq('[data-unmatched-archive]').forEach(btn => btn.addEventListener('click', () => archiveUnmatchedNote(btn.dataset.unmatchedArchive || '')));
         qq('[data-multi-accept-focus]').forEach(btn => btn.addEventListener('click', () => acceptMultiProjectFocusUpdate(+btn.dataset.multiAcceptFocus)));
         qq('[data-multi-accept-next-step]').forEach(btn => btn.addEventListener('click', () => acceptMultiProjectNextStepUpdate(+btn.dataset.multiAcceptNextStep)));
         qq('[data-multi-accept-note]').forEach(btn => btn.addEventListener('click', () => { const [u, n] = String(btn.dataset.multiAcceptNote || '').split('|').map(Number); acceptMultiProjectNote(u, n); }));
@@ -2537,6 +2544,125 @@
         `;
       }
 
+
+      function normalizeUnmatchedNote(item) {
+        const nowIso = new Date().toISOString();
+        const text = String((item && item.text) || '').trim();
+        if (!text) return null;
+        const allowed = ['offen', 'erledigt', 'archiviert'];
+        const rawStatus = String((item && item.status) || 'offen').trim().toLowerCase();
+        const status = allowed.includes(rawStatus) ? rawStatus : 'offen';
+        const createdAt = item && item.createdAt ? String(item.createdAt) : nowIso;
+        const updatedAt = item && item.updatedAt ? String(item.updatedAt) : createdAt;
+        return {
+          id: (item && item.id) || uid('un'),
+          text,
+          reason: String((item && item.reason) || '').trim(),
+          source: String((item && item.source) || 'multi-project-brainstorm').trim() || 'multi-project-brainstorm',
+          status,
+          createdAt,
+          updatedAt,
+          usedInPromptAt: String((item && item.usedInPromptAt) || '')
+        };
+      }
+
+      function getOpenUnmatchedNotes(limit) {
+        const max = Number.isFinite(limit) ? Math.max(0, limit) : 12;
+        return (Array.isArray(S.unmatchedNotes) ? S.unmatchedNotes : [])
+          .map(normalizeUnmatchedNote)
+          .filter(item => item && item.status === 'offen' && item.text)
+          .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+          .slice(0, max);
+      }
+
+      function buildUnmatchedNotesMarkdown(items) {
+        const rows = (items || []).map(item => {
+          const note = normalizeUnmatchedNote(item);
+          if (!note) return '';
+          return [
+            `- [ ] ${note.text}`,
+            `  - Grund: ${note.reason || '—'}`,
+            `  - Quelle: ${note.source || 'multi-project-brainstorm'}`,
+            `  - Erstellt: ${note.createdAt || '—'}`
+          ].join('\n');
+        }).filter(Boolean);
+        return ['# Roadtrip · Unmatched Notes', '', '## Offen', '', rows.join('\n') || '- [ ] —'].join('\n');
+      }
+
+      function saveCurrentUnmatchedNotes() {
+        const current = Array.isArray(ui.multiProjectImport && ui.multiProjectImport.unmatchedNotes) ? ui.multiProjectImport.unmatchedNotes : [];
+        const existingOpen = (Array.isArray(S.unmatchedNotes) ? S.unmatchedNotes : []).map(normalizeUnmatchedNote).filter(x => x && x.status === 'offen');
+        const seen = new Set(existingOpen.map(item => normalizeText(`${item.text}|${item.reason}|${item.source}`)));
+        const nowIso = new Date().toISOString();
+        if (!Array.isArray(S.unmatchedNotes)) S.unmatchedNotes = [];
+        let added = 0;
+        current.forEach(item => {
+          const normalized = normalizeUnmatchedNote(Object.assign({}, item || {}, { source: 'multi-project-brainstorm', status: 'offen', createdAt: nowIso, updatedAt: nowIso }));
+          if (!normalized) return;
+          const key = normalizeText(`${normalized.text}|${normalized.reason}|${normalized.source}`);
+          if (seen.has(key)) return;
+          seen.add(key);
+          S.unmatchedNotes.push(normalized);
+          added += 1;
+        });
+        save();
+        renderView();
+        alert(`${added} Unmatched Notes gespeichert.`);
+      }
+
+      function copyUnmatchedNotesMarkdown() {
+        const openNotes = getOpenUnmatchedNotes(999);
+        if (!openNotes.length) return alert('Keine offenen Unmatched Notes vorhanden.');
+        const markdown = buildUnmatchedNotesMarkdown(openNotes);
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(markdown).then(() => {
+            if (typeof toast === 'function') toast('Offene Unmatched Notes kopiert.');
+          }).catch(() => alert('Kopieren fehlgeschlagen. Bitte manuell markieren.'));
+        } else {
+          alert('Clipboard API nicht verfügbar. Bitte manuell kopieren.');
+        }
+      }
+
+      function downloadTextFile(filename, text, mimeType) {
+        const blob = new Blob([String(text || '')], { type: mimeType || 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 800);
+      }
+
+      function downloadUnmatchedNotesMarkdown() {
+        const openNotes = getOpenUnmatchedNotes(999);
+        if (!openNotes.length) return alert('Keine offenen Unmatched Notes vorhanden.');
+        const markdown = buildUnmatchedNotesMarkdown(openNotes);
+        downloadTextFile(`roadtrip-unmatched-notes-${new Date().toISOString().slice(0, 10)}.md`, markdown, 'text/markdown;charset=utf-8');
+      }
+
+      function markUnmatchedNoteDone(id) {
+        const note = (Array.isArray(S.unmatchedNotes) ? S.unmatchedNotes : []).find(item => item && item.id === id);
+        if (!note) return;
+        note.status = 'erledigt';
+        note.updatedAt = new Date().toISOString();
+        save();
+        renderView();
+      }
+
+      function archiveUnmatchedNote(id) {
+        const note = (Array.isArray(S.unmatchedNotes) ? S.unmatchedNotes : []).find(item => item && item.id === id);
+        if (!note) return;
+        note.status = 'archiviert';
+        note.updatedAt = new Date().toISOString();
+        save();
+        renderView();
+      }
+
+      function renderUnmatchedNotesBucketSection() {
+        const openNotes = getOpenUnmatchedNotes(999);
+        return `<details style="margin-bottom:12px;" ${openNotes.length ? 'open' : ''}><summary style="font-weight:700;">Unmatched Notes Bucket (${openNotes.length} offen)</summary><div style="margin-top:8px;">${openNotes.length ? `<div class="stack-row" style="margin-bottom:8px;"><button class="btn" id="btnCopyOpenUnmatchedMarkdown">Offene unmatched kopieren</button><button class="btn" id="btnDownloadOpenUnmatchedMarkdown">Offene unmatched als Markdown herunterladen</button></div><div class="list">${openNotes.map(item => `<div class="item"><div>${escapeHtml(item.text || '')}</div><div class="mini">Grund: ${escapeHtml(item.reason || '—')}</div><div class="mini">Quelle: ${escapeHtml(item.source || 'multi-project-brainstorm')} · Erstellt: ${escapeHtml(formatDateTime(item.createdAt))}</div><div class="stack-row" style="margin-top:6px;"><button class="btn" data-unmatched-done="${escapeAttr(item.id)}">Erledigt</button><button class="btn" data-unmatched-archive="${escapeAttr(item.id)}">Archivieren</button></div></div>`).join('')}</div>` : '<div class="notice">Keine offenen Unmatched Notes vorhanden.</div>'}</div></details>`;
+      }
+
       function buildMultiProjectNotesPrompt(rawText) {
         const activeProjects = (S.projects || []).filter(p => p && p.status !== 'archiviert');
         const cleanedRawText = String(rawText || '').trim();
@@ -2551,6 +2677,7 @@
             .slice(0, 6)
             .map(n => ({ id: n.id || '', text: shorten(String(n.text || '').trim(), 220), createdAt: n.createdAt || '', sourceType: n.sourceType || 'note' }))
         }));
+        const openUnmatchedNotes = getOpenUnmatchedNotes(12).map(item => ({ id: item.id || '', text: item.text || '', reason: item.reason || '', source: item.source || 'multi-project-brainstorm', createdAt: item.createdAt || '' }));
         const schema = {
           projectUpdates: [
             {
@@ -2574,6 +2701,9 @@
           'Aktive Projekte (Source of Truth):',
           JSON.stringify(projectContext, null, 2),
           '',
+          'Offene Unmatched Notes aus früheren Brainstorms:',
+          JSON.stringify(openUnmatchedNotes, null, 2),
+          '',
           'Markdown/Freitext-Notizen:',
           cleanedRawText || '(leer)',
           '',
@@ -2582,6 +2712,10 @@
           '- Keine erfundenen Projekte.',
           '- Wenn Zuordnung unsicher ist: confidence "niedrig" oder unmatchedNotes.',
           '- proposedFeatures nur für echte Feature-Ideen, nicht für allgemeine Notizen.',
+          '- Prüfe, ob frühere Unmatched Notes jetzt sinnvoll Projekten zugeordnet werden können.',
+          '- Wenn ja: in projectUpdates[*].notes oder proposedFeatures ausgeben.',
+          '- Wenn weiterhin unklar: erneut in unmatchedNotes ausgeben.',
+          '- Keine Projektzuordnung erfinden, wenn der Kontext nicht reicht.',
           '- focusUpdate und nextStep nur setzen, wenn aus dem Text klar ableitbar.',
           '',
           'Antworte ausschließlich als gültiges JSON im folgenden Schema:',
@@ -2637,7 +2771,7 @@
                   ${update.notes && update.notes.length ? `<div style="margin-top:8px;"><strong>Notes</strong><div class="list" style="margin-top:6px;">${update.notes.map(note => `<div class="item" style="${note._done || note._ignored ? 'opacity:.72;' : ''}"><div>${escapeHtml(note.text || '')}</div><div class="mini">${escapeHtml(note.type || 'note')} · ${escapeHtml(note.confidence || 'mittel')}</div><div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-note="${update._idx}|${note._idx}" ${note._done || note._ignored ? 'disabled' : ''}>${note._done ? '✓ Note übernommen' : 'Als Note übernehmen'}</button><button class="btn" data-multi-ignore="note|${update._idx}|${note._idx}" ${note._done || note._ignored ? 'disabled' : ''}>${note._ignored ? '✓ Ignoriert' : 'Ignorieren'}</button>${note._done ? '<span class="pill" style="background:var(--green);color:#0d2615;">übernommen</span>' : ''}${note._ignored ? '<span class="pill">ignoriert</span>' : ''}</div></div>`).join('')}</div></div>` : ''}
                   ${update.proposedFeatures && update.proposedFeatures.length ? `<div style="margin-top:8px;"><strong>Proposed Features</strong><div class="list" style="margin-top:6px;">${update.proposedFeatures.map(feature => `<div class="item" style="${feature._done || feature._ignored ? 'opacity:.72;' : ''}"><div><strong>${escapeHtml(feature.title || 'Ohne Titel')}</strong></div><div class="mini">${escapeHtml(feature.category || 'Sonstiges')} · ${escapeHtml(feature.priority || 'mittel')} · ${escapeHtml(feature.status || 'idea')}</div>${feature.description ? `<div class="mini">${escapeHtml(shorten(feature.description, 220))}</div>` : ''}<div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-feature="${update._idx}|${feature._idx}" ${feature._done || feature._ignored ? 'disabled' : ''}>${feature._done ? '✓ Feature übernommen' : 'Als Feature übernehmen'}</button><button class="btn" data-multi-ignore="feature|${update._idx}|${feature._idx}" ${feature._done || feature._ignored ? 'disabled' : ''}>${feature._ignored ? '✓ Ignoriert' : 'Ignorieren'}</button>${feature._done ? '<span class="pill" style="background:var(--green);color:#0d2615;">übernommen</span>' : ''}${feature._ignored ? '<span class="pill">ignoriert</span>' : ''}</div></div>`).join('')}</div></div>` : ''}
                 </div>`).join('')}</div>` : '<div class="mini">Noch keine geladenen Vorschläge.</div>'}
-              ${unmatched.length ? `<details open><summary>Unmatched Notes (${unmatched.length})</summary><div class="list" style="margin-top:8px;">${unmatched.map(item => `<div class="item"><div>${escapeHtml(item.text || '')}</div><div class="mini">${escapeHtml(item.reason || 'ohne Grund')}</div></div>`).join('')}</div></details>` : ''}
+              ${unmatched.length ? `<details open><summary>Unmatched Notes (${unmatched.length})</summary><div class="stack-row" style="margin:8px 0;"><button class="btn" id="btnSaveCurrentUnmatchedNotes">Alle unmatched speichern</button></div><div class="list" style="margin-top:8px;">${unmatched.map(item => `<div class="item"><div>${escapeHtml(item.text || '')}</div><div class="mini">${escapeHtml(item.reason || 'ohne Grund')}</div></div>`).join('')}</div></details>` : ''}
             </div>
           </details>
         `;
@@ -2759,6 +2893,7 @@
             buildButtonLabel: 'Brainstorm bereinigen',
             promptLabel: 'Brainstorm-Cleanup-Prompt'
           })}
+          ${renderUnmatchedNotesBucketSection()}
           <div class="list momentum-dashboard-list">
             ${projects.map(renderMomentumDashboardCard).join('')}
           </div>
