@@ -6742,6 +6742,114 @@
         return { version: 1, exported: new Date().toISOString(), state: S };
       }
 
+      function getGistPayloadState(raw) {
+        const candidate = (raw && typeof raw === 'object' && !Array.isArray(raw) && raw.state && typeof raw.state === 'object' && !Array.isArray(raw.state))
+          ? raw.state
+          : raw;
+        if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null;
+        return candidate;
+      }
+
+      function getPayloadTimestamp(payload, state) {
+        const candidates = [
+          payload && payload.exported,
+          state && state._lastGistPushAt,
+          state && state._lastExported,
+          state && state._lastLocalSaveAt
+        ];
+        for (const ts of candidates) {
+          if (typeof ts === 'string' && Number.isFinite(Date.parse(ts))) return ts;
+        }
+        return '';
+      }
+
+      function getStateLatestEntityTimestamp(state) {
+        const st = (state && typeof state === 'object' && !Array.isArray(state)) ? state : {};
+        const arrays = ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes'];
+        const fields = ['updatedAt', 'createdAt', 'importedAt', 'completedAt'];
+        let newestMs = Number.NEGATIVE_INFINITY;
+        arrays.forEach(key => {
+          const list = Array.isArray(st[key]) ? st[key] : [];
+          list.forEach(item => {
+            if (!item || typeof item !== 'object') return;
+            fields.forEach(f => {
+              const ms = Date.parse(item[f]);
+              if (Number.isFinite(ms) && ms > newestMs) newestMs = ms;
+            });
+          });
+        });
+        return Number.isFinite(newestMs) ? new Date(newestMs).toISOString() : '';
+      }
+
+      function isRoadtripStateEffectivelyEmpty(state) {
+        if (!state || typeof state !== 'object' || Array.isArray(state)) return true;
+        const arrays = ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes'];
+        return arrays.every(k => !Array.isArray(state[k]) || state[k].length === 0);
+      }
+
+      function normalizeStateForSyncCompare(state) {
+        const clone = JSON.parse(JSON.stringify((state && typeof state === 'object') ? state : {}));
+        const volatileKeys = [
+          '_lastLocalSaveAt', '_lastExported', '_lastGistPushAt', '_lastGistPullAt',
+          '_lastSaveError', '_lastSaveErrorAt', '_lastSaveErrorMessage'
+        ];
+        volatileKeys.forEach(k => { delete clone[k]; });
+        return clone;
+      }
+
+      function areStatesSyncEquivalent(localState, remoteState) {
+        return JSON.stringify(normalizeStateForSyncCompare(localState)) === JSON.stringify(normalizeStateForSyncCompare(remoteState));
+      }
+
+      function mergeRemoteStateForGistPull(localState, remoteState) {
+        const localBase = Object.assign(defaultState(), localState || {});
+        const remoteBase = Object.assign(defaultState(), remoteState || {});
+        const merged = JSON.parse(JSON.stringify(localBase));
+        merged.deletedIds = mergeDeletedIds(localBase.deletedIds || {}, remoteBase.deletedIds || {});
+
+        const tsFor = (item) => {
+          if (!item || typeof item !== 'object') return NaN;
+          for (const key of ['updatedAt', 'createdAt', 'importedAt', 'completedAt']) {
+            const ms = Date.parse(item[key]);
+            if (Number.isFinite(ms)) return ms;
+          }
+          return NaN;
+        };
+        const shouldPreferRemote = (localItem, remoteItem, entityType) => {
+          const localMs = tsFor(localItem);
+          const remoteMs = tsFor(remoteItem);
+          if (!Number.isFinite(localMs) || !Number.isFinite(remoteMs)) return false;
+          if (entityType === 'chats' && String(localItem.status || '').toLowerCase() === 'abgeschlossen' && String(remoteItem.status || '').toLowerCase() !== 'abgeschlossen') {
+            return remoteMs > localMs;
+          }
+          if (entityType === 'features' && (localItem.pool || localItem.status) && remoteMs <= localMs) return false;
+          return remoteMs > localMs;
+        };
+        const mergeEntityArray = (entityType) => {
+          const localList = Array.isArray(localBase[entityType]) ? localBase[entityType] : [];
+          const remoteList = Array.isArray(remoteBase[entityType]) ? remoteBase[entityType] : [];
+          const byId = new Map();
+          localList.forEach(item => {
+            if (!item || typeof item !== 'object' || !item.id) return;
+            byId.set(item.id, item);
+          });
+          remoteList.forEach(item => {
+            if (!item || typeof item !== 'object' || !item.id) return;
+            if (merged.deletedIds[item.id]) return;
+            const localItem = byId.get(item.id);
+            if (!localItem) {
+              byId.set(item.id, item);
+              return;
+            }
+            if (shouldPreferRemote(localItem, item, entityType)) byId.set(item.id, item);
+          });
+          merged[entityType] = Array.from(byId.values()).filter(item => item && item.id && !merged.deletedIds[item.id]);
+        };
+
+        ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes'].forEach(mergeEntityArray);
+        return merged;
+      }
+
       function updateGistStatusUI() {
         const el = $('gistStatusInfo');
         if (!el) return;
@@ -6776,7 +6884,11 @@
         if (!C.gistId || !C.gistToken) {
           return alert('Bitte zuerst Gist ID und GitHub Token in den Settings eintragen.');
         }
+        let prevLastExported = '';
+        let prevLastGistPushAt = '';
         try {
+          prevLastExported = S._lastExported || '';
+          prevLastGistPushAt = S._lastGistPushAt || '';
           const syncTs = new Date().toISOString();
           S._lastExported = syncTs;
           S._lastGistPushAt = syncTs;
@@ -6799,6 +6911,8 @@
           updateGistStatusUI();
           alert('Zum Gist gespeichert: ' + formatDateTime(syncTs));
         } catch (e) {
+          S._lastExported = prevLastExported;
+          S._lastGistPushAt = prevLastGistPushAt;
           _gistStatus.lastError = e.message.slice(0, 80);
           updateGistStatusUI();
           alert('Gist-Push fehlgeschlagen: ' + e.message);
@@ -6815,34 +6929,51 @@
           });
           if (!r.ok) throw new Error('HTTP ' + r.status);
           const gist = await r.json();
-          const remote = await readGistFileJson(gist, GIST_FILE);
-          const remoteState = remote.state || remote; // handle both wrapped and legacy
-          if (!remoteState || typeof remoteState !== 'object' || Array.isArray(remoteState)) throw new Error('Ungültiger Gist-State.');
-          const remoteTs = remote.exported || remoteState._lastGistPushAt || remoteState._lastExported || '';
-          const localTs = S._lastGistPushAt || S._lastExported || '';
-          const remoteNewer = remoteTs > localTs;
-          const localHasData = S.projects.length > 0 || S.features.length > 0 || S.notes.length > 0;
-
-          let action;
-          if (!localHasData) {
-            action = 'replace';
-          } else {
-            const msg = 'Gist-Daten gefunden.\n\n'
-              + 'Gist-Stand: ' + (remoteTs ? formatDateTime(remoteTs) : '?') + '\n'
-              + 'Lokal: ' + (localTs ? formatDateTime(localTs) : '?') + '\n'
-              + (remoteNewer ? '(Gist ist neuer)' : '(Lokal ist aktueller oder gleich)') + '\n\n'
-              + 'Was soll passieren?\n'
-              + 'OK = Ersetzen (Gist überschreibt lokalen Stand)\n'
-              + 'Abbrechen = Nichts tun';
-            if (!confirm(msg)) return;
-            action = 'replace';
+          const remotePayload = await readGistFileJson(gist, GIST_FILE);
+          const remoteState = getGistPayloadState(remotePayload);
+          if (!remoteState) throw new Error('Ungültiger Gist-State.');
+          const localStateSnapshot = JSON.parse(JSON.stringify(S || {}));
+          const remoteTs = getPayloadTimestamp(remotePayload, remoteState) || getStateLatestEntityTimestamp(remoteState);
+          const localTs = getPayloadTimestamp({ exported: S._lastExported }, localStateSnapshot) || getStateLatestEntityTimestamp(localStateSnapshot);
+          const localIsEmpty = isRoadtripStateEffectivelyEmpty(localStateSnapshot);
+          const statesEqual = areStatesSyncEquivalent(localStateSnapshot, remoteState);
+          if (statesEqual) {
+            const pullTs = new Date().toISOString();
+            S._lastGistPullAt = pullTs;
+            _gistStatus.lastPull = pullTs;
+            _gistStatus.lastError = '';
+            save();
+            updateGistStatusUI();
+            alert('Gist-Pull: Keine Änderungen (No-Op). Lokaler Stand ist bereits identisch.');
+            return;
           }
 
-          if (action === 'replace') {
-            const localDeletedIds = S.deletedIds || {};
+          const remoteMs = Date.parse(remoteTs);
+          const localMs = Date.parse(localTs);
+          const remoteIsNewer = Number.isFinite(remoteMs) && Number.isFinite(localMs) ? remoteMs > localMs : null;
+
+          if (!localIsEmpty && remoteIsNewer === false) {
+            alert('Gist ist nicht neuer als lokal. Kein Pull durchgeführt.\n\nWenn du dennoch importieren willst, erstelle vorher ein ZIP-Backup oder einen Notfall-Export.');
+            return;
+          }
+          if (!localIsEmpty && remoteIsNewer === null) {
+            alert('Gist-Pull abgebrochen: Zeitstempel-Lage unklar.\nBitte vorher ZIP-Backup oder Notfall-Export erstellen und dann bewusst erneut prüfen.');
+            return;
+          }
+
+          if (!localIsEmpty) {
+            const proceed = confirm('Gist scheint neuer zu sein. Lokale Daten werden tombstone-sicher gemergt (kein blindes Ersetzen).\n\nVorher ZIP-Backup/Notfall-Export empfohlen.\n\nWeiter?');
+            if (!proceed) return;
+          }
+
+          if (localIsEmpty) {
+            const localDeletedIds = localStateSnapshot.deletedIds || {};
             const newState = Object.assign(defaultState(), remoteState);
             newState.deletedIds = mergeDeletedIds(localDeletedIds, remoteState.deletedIds || {});
             S = newState;
+          } else {
+            S = mergeRemoteStateForGistPull(localStateSnapshot, remoteState);
+          }
             ensureDefaults();
             pruneDeletedIds();
             S.projects = (S.projects || []).filter(p => !isDeleted(p.id));
@@ -6851,6 +6982,7 @@
             S.analyses = (S.analyses || []).filter(a => !isDeleted(a.id));
             S.chats = (S.chats || []).filter(c => !isDeleted(c.id));
             S.importVersions = (S.importVersions || []).filter(v => !isDeleted(v.id));
+            S.unmatchedNotes = (S.unmatchedNotes || []).filter(n => !isDeleted(n.id));
             const pullTs = new Date().toISOString();
             S._lastGistPullAt = pullTs;
             _gistStatus.lastPull = pullTs;
@@ -6858,8 +6990,9 @@
             save();
             renderAll();
             updateGistStatusUI();
-            alert('Vom Gist geladen (' + S.projects.length + ' Projekte, ' + S.features.length + ' Features, ' + S.notes.length + ' Notizen).');
-          }
+            alert(localIsEmpty
+              ? ('Vom Gist geladen (' + S.projects.length + ' Projekte, ' + S.features.length + ' Features, ' + S.notes.length + ' Notizen).')
+              : ('Gist-Pull Merge durchgeführt (' + S.projects.length + ' Projekte, ' + S.features.length + ' Features, ' + S.notes.length + ' Notizen).'));
         } catch (e) {
           _gistStatus.lastError = e.message.slice(0, 80);
           updateGistStatusUI();
