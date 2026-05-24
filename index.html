@@ -805,7 +805,8 @@
           analyses: [],
           chats: [],
           importVersions: [],
-          unmatchedNotes: []
+          unmatchedNotes: [],
+          deletedIds: {}
         };
       }
 
@@ -978,6 +979,7 @@
         if (!Array.isArray(S.chats)) S.chats = [];
         if (!Array.isArray(S.importVersions)) S.importVersions = [];
         if (!Array.isArray(S.unmatchedNotes)) S.unmatchedNotes = [];
+        if (!S.deletedIds || typeof S.deletedIds !== 'object' || Array.isArray(S.deletedIds)) S.deletedIds = {};
         if (!S._lastLocalSaveAt && S._lastExported) S._lastLocalSaveAt = S._lastExported;
         if (!S._lastGistPushAt && S._lastExported) S._lastGistPushAt = S._lastExported;
         S.projects = S.projects.map(ensureProjectDefaults);
@@ -4456,11 +4458,20 @@
         const p = S.projects.find(x => x.id === id);
         if (!p) return;
         if (!confirm(`Projekt "${p.title}" wirklich löschen? Zugehörige Features und Projekt-Notizen werden ebenfalls gelöscht.`)) return;
+        const deletedProjectIds = new Set();
+        if (id) deletedProjectIds.add(id);
+        (S.features || []).forEach(f => { if (f && f.projectId === id && f.id) deletedProjectIds.add(f.id); });
+        (S.notes || []).forEach(n => { if (n && n.projectId === id && n.id) deletedProjectIds.add(n.id); });
+        (S.chats || []).forEach(c => { if (c && c.projectId === id && c.id) deletedProjectIds.add(c.id); });
+        (S.importVersions || []).forEach(v => { if (v && v.projectId === id && v.id) deletedProjectIds.add(v.id); });
+        (S.analyses || []).forEach(a => { if (a && a.projectId === id && a.id) deletedProjectIds.add(a.id); });
+        deletedProjectIds.forEach(recordDeletion);
         S.projects = S.projects.filter(x => x.id !== id);
         S.features = S.features.filter(f => f.projectId !== id);
         S.notes = S.notes.filter(n => n.projectId !== id);
         S.chats = S.chats.filter(c => c.projectId !== id);
         S.importVersions = (S.importVersions || []).filter(v => v.projectId !== id);
+        S.analyses = (S.analyses || []).filter(a => a.projectId !== id);
         ui.projectEditMode = false;
         ui.editingProjectId = null;
         ui.activeProjectId = S.projects.length ? S.projects[0].id : ALL_PROJECTS_KEY;
@@ -4485,6 +4496,7 @@
       }
 
       function deleteNote(id) {
+        recordDeletion(id);
         S.notes = S.notes.filter(n => n.id !== id);
         save();
         renderView();
@@ -6682,6 +6694,7 @@
         const c = S.chats.find(x => x.id === id);
         if (!c) return;
         if (!confirm(`Chat "${c.title}" löschen?`)) return;
+        recordDeletion(id);
         const project = S.projects.find(p => p.id === c.projectId);
         const wasMainChat = !!(project && project.mainChatId === c.id);
         if (wasMainChat) {
@@ -6821,9 +6834,18 @@
           }
 
           if (action === 'replace') {
+            const localDeletedIds = S.deletedIds || {};
             const newState = Object.assign(defaultState(), remoteState);
+            newState.deletedIds = mergeDeletedIds(localDeletedIds, remoteState.deletedIds || {});
             S = newState;
             ensureDefaults();
+            pruneDeletedIds();
+            S.projects = (S.projects || []).filter(p => !isDeleted(p.id));
+            S.features = (S.features || []).filter(f => !isDeleted(f.id));
+            S.notes = (S.notes || []).filter(n => !isDeleted(n.id));
+            S.analyses = (S.analyses || []).filter(a => !isDeleted(a.id));
+            S.chats = (S.chats || []).filter(c => !isDeleted(c.id));
+            S.importVersions = (S.importVersions || []).filter(v => !isDeleted(v.id));
             const pullTs = new Date().toISOString();
             S._lastGistPullAt = pullTs;
             _gistStatus.lastPull = pullTs;
@@ -6865,28 +6887,79 @@
 
       let _importDraftData = null;
 
+      function recordDeletion(id) {
+        if (!id) return;
+        if (!S.deletedIds || typeof S.deletedIds !== 'object' || Array.isArray(S.deletedIds)) S.deletedIds = {};
+        S.deletedIds[id] = new Date().toISOString();
+      }
+
+      function isDeleted(id) {
+        if (!id) return false;
+        return !!(S && S.deletedIds && typeof S.deletedIds === 'object' && !Array.isArray(S.deletedIds) && S.deletedIds[id]);
+      }
+
+      function mergeDeletedIds(local, remote) {
+        const normalizedLocal = (local && typeof local === 'object' && !Array.isArray(local)) ? local : {};
+        const normalizedRemote = (remote && typeof remote === 'object' && !Array.isArray(remote)) ? remote : {};
+        const merged = {};
+        const allIds = new Set([...Object.keys(normalizedLocal), ...Object.keys(normalizedRemote)]);
+        allIds.forEach(id => {
+          if (!id) return;
+          const localTs = normalizedLocal[id];
+          const remoteTs = normalizedRemote[id];
+          const localMs = Date.parse(localTs);
+          const remoteMs = Date.parse(remoteTs);
+          const localValid = Number.isFinite(localMs);
+          const remoteValid = Number.isFinite(remoteMs);
+          if (localValid && remoteValid) merged[id] = localMs >= remoteMs ? localTs : remoteTs;
+          else if (localValid) merged[id] = localTs;
+          else if (remoteValid) merged[id] = remoteTs;
+          else if (typeof localTs === 'string' && localTs.trim()) merged[id] = localTs;
+          else if (typeof remoteTs === 'string' && remoteTs.trim()) merged[id] = remoteTs;
+        });
+        return merged;
+      }
+
+      function pruneDeletedIds() {
+        if (!S.deletedIds || typeof S.deletedIds !== 'object' || Array.isArray(S.deletedIds)) {
+          S.deletedIds = {};
+          return;
+        }
+        const cutoffMs = Date.now() - (90 * 24 * 60 * 60 * 1000);
+        Object.keys(S.deletedIds).forEach(id => {
+          const ms = Date.parse(S.deletedIds[id]);
+          if (Number.isFinite(ms) && ms < cutoffMs) delete S.deletedIds[id];
+        });
+      }
+
       function mergeArrayById(local, incoming, idKey, titleKey) {
+        const localList = Array.isArray(local) ? local : [];
+        const incomingList = Array.isArray(incoming) ? incoming : [];
         // Merge incoming into local: add new items, keep existing items (by id or title)
-        const result = local.slice();
+        const result = localList.filter(item => item && typeof item === 'object').slice();
         const localIds = new Set(result.map(x => x[idKey]));
-        const localTitles = new Set(result.map(x => normalizeText(x[titleKey] || '')));
-        incoming.forEach(item => {
+        const localTitles = titleKey ? new Set(result.map(x => normalizeText(x[titleKey] || ''))) : null;
+        incomingList.forEach(item => {
           if (!item) return;
+          if (isDeleted(item[idKey])) return;
           if (item[idKey] && localIds.has(item[idKey])) return; // id collision → skip
-          if (titleKey && localTitles.has(normalizeText(item[titleKey] || ''))) return; // title collision → skip
+          if (titleKey && localTitles && localTitles.has(normalizeText(item[titleKey] || ''))) return; // title collision → skip
           result.push(item);
           if (item[idKey]) localIds.add(item[idKey]);
-          if (titleKey) localTitles.add(normalizeText(item[titleKey] || ''));
+          if (titleKey && localTitles) localTitles.add(normalizeText(item[titleKey] || ''));
         });
-        return result;
+        return result.filter(item => item && !isDeleted(item[idKey]));
       }
 
       function mergeFeaturesByProjectAndTitle(local, incoming) {
-        const result = local.slice();
+        const localList = Array.isArray(local) ? local : [];
+        const incomingList = Array.isArray(incoming) ? incoming : [];
+        const result = localList.filter(item => item && typeof item === 'object').slice();
         const localIds = new Set(result.map(f => f.id));
         const localKeys = new Set(result.map(f => f.projectId + '||' + normalizeText(f.title)));
-        incoming.forEach(f => {
+        incomingList.forEach(f => {
           if (!f) return;
+          if (isDeleted(f.id)) return;
           if (f.id && localIds.has(f.id)) return;
           const key = (f.projectId || '') + '||' + normalizeText(f.title || '');
           if (localKeys.has(key)) return;
@@ -6894,10 +6967,12 @@
           if (f.id) localIds.add(f.id);
           localKeys.add(key);
         });
-        return result;
+        return result.filter(f => f && !isDeleted(f.id));
       }
 
       function applySelectiveMerge(incomingState, selections) {
+        S.deletedIds = mergeDeletedIds(S.deletedIds || {}, (incomingState || {}).deletedIds || {});
+        pruneDeletedIds();
         if (selections.projects) {
           S.projects = mergeArrayById(S.projects, incomingState.projects || [], 'id', 'title');
         }
@@ -6917,6 +6992,12 @@
         if (selections.importVersions) {
           S.importVersions = mergeArrayById(S.importVersions || [], incomingState.importVersions || [], 'id', null);
         }
+        S.projects = (S.projects || []).filter(p => !isDeleted(p.id));
+        S.features = (S.features || []).filter(f => !isDeleted(f.id));
+        S.notes = (S.notes || []).filter(n => !isDeleted(n.id));
+        S.analyses = (S.analyses || []).filter(a => !isDeleted(a.id));
+        S.chats = (S.chats || []).filter(c => !isDeleted(c.id));
+        S.importVersions = (S.importVersions || []).filter(v => !isDeleted(v.id));
         ensureDefaults();
         save();
         renderAll();
@@ -6942,6 +7023,7 @@
         }
         if (!Array.isArray(normalized.chats)) normalized.chats = [];
         if (!Array.isArray(normalized.importVersions)) normalized.importVersions = [];
+        if (!normalized.deletedIds || typeof normalized.deletedIds !== 'object' || Array.isArray(normalized.deletedIds)) normalized.deletedIds = {};
         normalized.features = normalized.features.map(ensureFeatureDefaults);
         return normalized;
       }
