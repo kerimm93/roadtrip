@@ -592,6 +592,10 @@
     (function() {
       const LKEY = 'roadtrip_v0_1';
       const CONFIG_KEY = 'roadtrip_v0_1_config';
+      const STORAGE_META_KEY = 'roadtrip_v0_1_storage_meta';
+      const ROADTRIP_DB_NAME = 'roadtrip_db_v1';
+      const ROADTRIP_DB_STORE = 'state';
+      const ROADTRIP_DB_MAIN_KEY = 'main';
       const UI_SPRINT_VIS_KEY = 'roadtrip.ui.showCompletedSprintsByProject';
       const UI_MOMENTUM_COLLAPSED_KEY = 'roadtrip.ui.projectMomentumCollapsedByProject';
       const ALL_PROJECTS_KEY = 'all';
@@ -780,6 +784,11 @@
         return feature;
       }
 
+      let roadtripDbPromise = null;
+      let indexedDbUnavailable = false;
+      let storageMeta = { storageMode: 'localStorage', lastIndexedDbSaveAt: '', lastLocalStorageFallbackAt: '', hasLocalBackup: false };
+      let roadtripSaveQueue = Promise.resolve();
+
       init();
 
       function defaultState() {
@@ -815,11 +824,85 @@
         };
       }
 
-      function init() {
-        load();
+      async function init() {
+        await load();
         wireBasics();
         renderAll();
       }
+
+      function loadStorageMeta() {
+        try {
+          const raw = localStorage.getItem(STORAGE_META_KEY);
+          if (!raw) return;
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            storageMeta = Object.assign(storageMeta, parsed);
+          }
+        } catch (_) {}
+      }
+      function persistStorageMeta() {
+        try { localStorage.setItem(STORAGE_META_KEY, JSON.stringify(storageMeta)); } catch (_) {}
+      }
+
+      function openRoadtripDb() {
+        if (indexedDbUnavailable) return Promise.resolve(null);
+        if (!('indexedDB' in window)) {
+          indexedDbUnavailable = true;
+          return Promise.resolve(null);
+        }
+        if (roadtripDbPromise) return roadtripDbPromise;
+        roadtripDbPromise = new Promise((resolve) => {
+          try {
+            const req = indexedDB.open(ROADTRIP_DB_NAME, 1);
+            req.onupgradeneeded = () => {
+              const db = req.result;
+              if (!db.objectStoreNames.contains(ROADTRIP_DB_STORE)) db.createObjectStore(ROADTRIP_DB_STORE);
+            };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => { indexedDbUnavailable = true; resolve(null); };
+          } catch (_) { indexedDbUnavailable = true; resolve(null); }
+        });
+        return roadtripDbPromise;
+      }
+
+      async function idbGet(key) {
+        const db = await openRoadtripDb();
+        if (!db) return null;
+        return new Promise((resolve, reject) => {
+          try {
+            const tx = db.transaction(ROADTRIP_DB_STORE, 'readonly');
+            const req = tx.objectStore(ROADTRIP_DB_STORE).get(key);
+            req.onsuccess = () => resolve(req.result == null ? null : req.result);
+            req.onerror = () => reject(req.error || new Error('idb get failed'));
+          } catch (e) { reject(e); }
+        });
+      }
+      async function idbSet(key, value) {
+        const db = await openRoadtripDb();
+        if (!db) throw new Error('indexeddb-unavailable');
+        return new Promise((resolve, reject) => {
+          try {
+            const tx = db.transaction(ROADTRIP_DB_STORE, 'readwrite');
+            tx.objectStore(ROADTRIP_DB_STORE).put(value, key);
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => reject(tx.error || new Error('idb set failed'));
+          } catch (e) { reject(e); }
+        });
+      }
+      async function idbDelete(key) {
+        const db = await openRoadtripDb();
+        if (!db) return false;
+        return new Promise((resolve, reject) => {
+          try {
+            const tx = db.transaction(ROADTRIP_DB_STORE, 'readwrite');
+            tx.objectStore(ROADTRIP_DB_STORE).delete(key);
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => reject(tx.error || new Error('idb delete failed'));
+          } catch (e) { reject(e); }
+        });
+      }
+      async function loadStateFromIndexedDb() { return idbGet(ROADTRIP_DB_MAIN_KEY); }
+      async function saveStateToIndexedDb(state) { return idbSet(ROADTRIP_DB_MAIN_KEY, state); }
 
       function loadUiMap(key) {
         try {
@@ -833,16 +916,42 @@
         try { localStorage.setItem(key, JSON.stringify(map || {})); } catch (_) {}
       }
 
-      function load() {
+      async function load() {
+        loadStorageMeta();
+        let loadedFromIndexedDb = false;
         try {
-          const raw = localStorage.getItem(LKEY);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            const parsedState = parsed && parsed.state && typeof parsed.state === 'object' ? parsed.state : parsed;
-            if (parsedState && typeof parsedState === 'object' && !Array.isArray(parsedState)) {
-              S = Object.assign(defaultState(), parsedState);
-            } else {
-              console.warn('[load] Unexpected state shape, using defaults');
+          const idbState = await loadStateFromIndexedDb();
+          if (idbState && typeof idbState === 'object' && !Array.isArray(idbState)) {
+            S = Object.assign(defaultState(), idbState);
+            loadedFromIndexedDb = true;
+            storageMeta.storageMode = 'indexedDB';
+          }
+        } catch (e) { console.warn('[load] IndexedDB state load failed:', e); }
+        try {
+          if (!loadedFromIndexedDb) {
+            const raw = localStorage.getItem(LKEY);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              const parsedState = parsed && parsed.state && typeof parsed.state === 'object' ? parsed.state : parsed;
+              if (parsedState && typeof parsedState === 'object' && !Array.isArray(parsedState)) {
+                S = Object.assign(defaultState(), parsedState);
+                const db = await openRoadtripDb();
+                if (db) {
+                  try {
+                    await saveStateToIndexedDb(S);
+                    storageMeta.storageMode = 'indexedDB';
+                    storageMeta.lastIndexedDbSaveAt = new Date().toISOString();
+                    storageMeta.hasLocalBackup = true;
+                  } catch (migrateErr) {
+                    console.warn('[load] IndexedDB migration failed:', migrateErr);
+                    storageMeta.storageMode = 'localStorage';
+                  }
+                } else {
+                  storageMeta.storageMode = 'localStorage';
+                }
+              } else {
+                console.warn('[load] Unexpected state shape, using defaults');
+              }
             }
           }
         } catch (e) { console.warn('[load] State load failed, using defaults:', e); }
@@ -857,6 +966,7 @@
         } catch (e) { console.warn('[load] Config load failed, using defaults:', e); }
         ui.showCompletedSprintsByProject = loadUiMap(UI_SPRINT_VIS_KEY);
         ui.projectMomentumCollapsedByProject = loadUiMap(UI_MOMENTUM_COLLAPSED_KEY);
+        persistStorageMeta();
         ensureDefaults();
       }
 
@@ -924,19 +1034,44 @@
         S._lastSaveError = '';
         S._lastSaveErrorAt = '';
         S._lastSaveErrorMessage = '';
-        try {
-          const payload = JSON.stringify(S);
+        const stateSnapshot = JSON.parse(JSON.stringify(S));
+        const saveToLocalStorage = () => {
+          const payload = JSON.stringify(stateSnapshot);
           if (!payload || payload.length < 10) throw new Error('suspiciously small payload');
           localStorage.setItem(LKEY, payload);
           const verifyRaw = localStorage.getItem(LKEY);
           if (!verifyRaw) throw new Error('localStorage write verification failed');
-          try {
-            JSON.parse(verifyRaw);
-          } catch (verifyParseErr) {
-            verifyParseErr._roadtripStage = 'verify-parse';
-            throw verifyParseErr;
-          }
+          try { JSON.parse(verifyRaw); } catch (verifyParseErr) { verifyParseErr._roadtripStage = 'verify-parse'; throw verifyParseErr; }
           stateSaved = true;
+          storageMeta.storageMode = 'localStorage';
+          storageMeta.lastLocalStorageFallbackAt = new Date().toISOString();
+          persistStorageMeta();
+        };
+        const queueIndexedDbSave = () => {
+          roadtripSaveQueue = roadtripSaveQueue.then(async () => {
+            await saveStateToIndexedDb(stateSnapshot);
+            storageMeta.storageMode = 'indexedDB';
+            storageMeta.lastIndexedDbSaveAt = new Date().toISOString();
+            persistStorageMeta();
+            if (typeof updateStorageDisplay === 'function') updateStorageDisplay();
+          }).catch((err) => {
+            console.error('[save] IndexedDB save failed:', err);
+            indexedDbUnavailable = true;
+            const errorType = classifySaveError(err, 'save');
+            S._lastSaveError = errorType;
+            S._lastSaveErrorAt = new Date().toISOString();
+            S._lastSaveErrorMessage = String((err && err.message) || '');
+            maybeShowSaveAlert(errorType);
+            try { saveToLocalStorage(); } catch (fallbackErr) { console.error('[save] localStorage fallback after idb failure also failed:', fallbackErr); }
+          });
+        };
+        try {
+          if (!indexedDbUnavailable && ('indexedDB' in window)) {
+            queueIndexedDbSave();
+            stateSaved = true;
+          } else {
+            saveToLocalStorage();
+          }
         } catch (e) {
           console.error('[save] State save failed:', e);
           S._lastSaveError = prevSaveError.type || '';
@@ -1006,6 +1141,10 @@
           bar.style.background = pct < 50 ? '#22c55e' : (pct <= 80 ? '#f59e0b' : '#ef4444');
           top.innerHTML = report.areas.slice(0, 5).map(a => `<div class="mini">${escapeHtml(a.key)}: ${a.mb.toFixed(2)} MB</div>`).join('') || '<div class="mini">Keine Bereiche gefunden.</div>';
           const explain = 'Hinweis: 5 MB sind eine grobe Anzeigeannahme. Browser-/Origin-Quota kann abweichen; auch bei niedriger angezeigter Größe sind Save-Fehler möglich.';
+          const modeLine = `Aktiver Speichermodus: ${storageMeta.storageMode === 'indexedDB' ? 'IndexedDB' : 'localStorage Fallback'}.`;
+          const idbLine = `Letzter erfolgreicher IndexedDB-Save: ${storageMeta.lastIndexedDbSaveAt ? formatDateTime(storageMeta.lastIndexedDbSaveAt) : '—'}.`;
+          const localFallbackLine = `Letzter localStorage-Fallback-Save: ${storageMeta.lastLocalStorageFallbackAt ? formatDateTime(storageMeta.lastLocalStorageFallbackAt) : '—'}.`;
+          const backupLine = 'Hinweis: Bestehende localStorage-Altdaten bleiben zunächst als Sicherheitskopie erhalten.';
           const saveErrType = String(S._lastSaveError || '').trim();
           const saveErrAt = String(S._lastSaveErrorAt || '').trim();
           const saveErrMsg = String(S._lastSaveErrorMessage || '').trim();
@@ -1017,7 +1156,7 @@
           const saveErrLine = saveErrType
             ? `\nLetzter Save-Fehler: ${saveErrType}${saveErrAt ? ` (${formatDateTime(saveErrAt)})` : ''}. ${saveErrExplain}${saveErrMsg ? ` Detail: ${saveErrMsg}.` : ''} Empfehlung: Notfall-Export erstellen, bevor neu geladen wird.`
             : '';
-          warn.textContent = (pct > 80 ? '⚠ Speicher fast voll. Bitte JSON exportieren oder Rohdaten komprimieren.' : '') + '\n' + explain + saveErrLine;
+          warn.textContent = (pct > 80 ? '⚠ Speicher fast voll. Bitte JSON exportieren oder Rohdaten komprimieren.' : '') + '\n' + modeLine + '\n' + idbLine + '\n' + localFallbackLine + '\n' + backupLine + '\n' + explain + saveErrLine;
           wrap.style.display = 'block';
         } catch (err) {
           console.warn('[updateStorageDisplay] failed:', err);
@@ -6988,7 +7127,11 @@
         const saved = save();
         updateStorageDisplay();
         if (saved) {
-          alert(`✓ Rohdaten komprimiert und gespeichert. Ersparnis: ${(savedBytes / 1024).toFixed(1)} KB.`);
+          if (storageMeta.storageMode === 'indexedDB') {
+            alert(`✓ Rohdaten komprimiert. Speicherung wurde angestoßen. Ersparnis: ${(savedBytes / 1024).toFixed(1)} KB. Bitte nach kurzem Moment neu laden und prüfen.`);
+          } else {
+            alert(`✓ Rohdaten komprimiert und gespeichert. Ersparnis: ${(savedBytes / 1024).toFixed(1)} KB.`);
+          }
         } else {
           const recentSaveAlert = window.__roadtripSaveAlertState && (Date.now() - Number(window.__roadtripSaveAlertState.lastAt || 0) < 12000);
           if (!recentSaveAlert) {
