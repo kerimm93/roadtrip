@@ -1329,6 +1329,8 @@
         if ($('btnEmergencyExportFull')) $('btnEmergencyExportFull').addEventListener('click', exportFullEmergencyJson);
         if ($('btnCompactExport')) $('btnCompactExport').addEventListener('click', exportCompactJson);
         if ($('btnCompactRawData')) $('btnCompactRawData').addEventListener('click', compactRoadtripRawData);
+        if ($('btnZipBackupExport')) $('btnZipBackupExport').addEventListener('click', exportRoadtripZipBackup);
+        if ($('importZipBackupInput')) $('importZipBackupInput').addEventListener('change', startRoadtripZipImport);
         if ($('btnBackfillImportMetadata')) $('btnBackfillImportMetadata').addEventListener('click', runImportHistoryMetadataBackfill);
         updateStorageDisplay();
         updateGistStatusUI();
@@ -4083,6 +4085,9 @@
           <div class="stack-row" style="margin:8px 0;">
             <button class="btn btn-danger" id="btnEmergencyExportFull">Notfall-Export vollständig</button>
             <button class="btn" id="btnCompactExport">Kompakt-Export</button>
+            <button class="btn" id="btnZipBackupExport">ZIP-Backup exportieren</button>
+            <label class="btn" for="importZipBackupInput">ZIP-Backup prüfen/importieren</label>
+            <input id="importZipBackupInput" type="file" accept=".zip,application/zip,application/x-zip-compressed" style="display:none;">
             <button class="btn" id="btnCompactRawData">Rohdaten komprimieren</button>
             <button class="btn" id="btnBackfillImportMetadata">Fehlende Projekt-Summarys aus Import-Historie ergänzen</button>
           </div>
@@ -7140,6 +7145,213 @@
         downloadJson('roadtrip_export.json', S);
       }
 
+      async function ensureJSZipLoaded() {
+        if (window.JSZip) return window.JSZip;
+        if (window.__roadtripJsZipLoadingPromise) return window.__roadtripJsZipLoadingPromise;
+        window.__roadtripJsZipLoadingPromise = new Promise((resolve, reject) => {
+          const existing = document.querySelector('script[data-roadtrip-jszip="1"]');
+          if (existing) {
+            existing.addEventListener('load', () => window.JSZip ? resolve(window.JSZip) : reject(new Error('JSZip konnte nicht geladen werden.')));
+            existing.addEventListener('error', () => reject(new Error('JSZip konnte nicht geladen werden.')));
+            return;
+          }
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
+          script.async = true;
+          script.dataset.roadtripJszip = '1';
+          script.onload = () => window.JSZip ? resolve(window.JSZip) : reject(new Error('JSZip konnte nicht geladen werden.'));
+          script.onerror = () => reject(new Error('JSZip konnte nicht geladen werden.'));
+          document.head.appendChild(script);
+        }).finally(() => {
+          if (!window.JSZip) window.__roadtripJsZipLoadingPromise = null;
+        });
+        return window.__roadtripJsZipLoadingPromise;
+      }
+
+      function prepareChatsForZip(chats) {
+        const rawKeys = ['rawReportText', 'rawHandoffText', 'rawPrompt', 'rawResponse'];
+        const clean = [];
+        const raw = {};
+        (Array.isArray(chats) ? chats : []).forEach(item => {
+          const clone = Object.assign({}, item || {});
+          const chatId = String(clone.id || '');
+          const rawEntry = {};
+          rawKeys.forEach(key => {
+            if (typeof clone[key] === 'string' && clone[key]) {
+              rawEntry[key] = clone[key];
+              delete clone[key];
+            }
+          });
+          if (chatId && Object.keys(rawEntry).length) raw[chatId] = rawEntry;
+          clean.push(clone);
+        });
+        return { clean, raw };
+      }
+
+      function prepareImportVersionsForZip(importVersions) {
+        const rawKeys = ['rawAnalysisText', 'rawHtml', 'sourceHtml', 'fullHtml', 'rawCode', 'sourceCode'];
+        const clean = [];
+        const raw = {};
+        (Array.isArray(importVersions) ? importVersions : []).forEach(item => {
+          const clone = Object.assign({}, item || {});
+          const versionId = String(clone.id || '');
+          const rawEntry = {};
+          rawKeys.forEach(key => {
+            if (typeof clone[key] === 'string' && clone[key]) {
+              rawEntry[key] = clone[key];
+              delete clone[key];
+            }
+          });
+          if (versionId && Object.keys(rawEntry).length) raw[versionId] = rawEntry;
+          clean.push(clone);
+        });
+        return { clean, raw };
+      }
+
+      function getRoadtripEntityCounts(stateLike) {
+        const source = stateLike || {};
+        return {
+          projectCount: Array.isArray(source.projects) ? source.projects.length : 0,
+          featureCount: Array.isArray(source.features) ? source.features.length : 0,
+          noteCount: Array.isArray(source.notes) ? source.notes.length : 0,
+          unmatchedNoteCount: Array.isArray(source.unmatchedNotes) ? source.unmatchedNotes.length : 0,
+          chatCount: Array.isArray(source.chats) ? source.chats.length : 0,
+          analysisCount: Array.isArray(source.analyses) ? source.analyses.length : 0,
+          importVersionCount: Array.isArray(source.importVersions) ? source.importVersions.length : 0,
+          deletedIdCount: source.deletedIds && typeof source.deletedIds === 'object' && !Array.isArray(source.deletedIds) ? Object.keys(source.deletedIds).length : 0
+        };
+      }
+
+      async function exportRoadtripZipBackup() {
+        try {
+          const JSZip = await ensureJSZipLoaded();
+          const zip = new JSZip();
+          const nowIso = new Date().toISOString();
+          const preparedChats = prepareChatsForZip(S.chats);
+          const preparedImportVersions = prepareImportVersionsForZip(S.importVersions);
+          const exportData = {
+            projects: Array.isArray(S.projects) ? S.projects : [],
+            features: Array.isArray(S.features) ? S.features : [],
+            notes: Array.isArray(S.notes) ? S.notes : [],
+            unmatchedNotes: Array.isArray(S.unmatchedNotes) ? S.unmatchedNotes : [],
+            chats: preparedChats.clean,
+            analyses: Array.isArray(S.analyses) ? S.analyses : [],
+            importVersions: preparedImportVersions.clean,
+            deletedIds: S.deletedIds && typeof S.deletedIds === 'object' && !Array.isArray(S.deletedIds) ? S.deletedIds : {}
+          };
+          const counts = getRoadtripEntityCounts(exportData);
+          const manifest = {
+            exportFormat: 'roadtrip-zip-v1',
+            exportedAt: nowIso,
+            app: 'Roadtrip',
+            version: S.version || 1,
+            counts,
+            sectionSummary: {
+              projects: 'projects.json',
+              features: 'features.json',
+              notes: 'notes.json',
+              unmatchedNotes: 'unmatchedNotes.json',
+              chats: 'chats.json',
+              analyses: 'analyses.json',
+              importVersions: 'importVersions.json',
+              deletedIds: 'deletedIds.json'
+            }
+          };
+          const meta = {
+            version: S.version || 1,
+            createdAt: S.createdAt || '',
+            _lastExported: S._lastExported || '',
+            _lastGistPushAt: S._lastGistPushAt || '',
+            _lastGistPullAt: S._lastGistPullAt || '',
+            _lastLocalSaveAt: S._lastLocalSaveAt || ''
+          };
+          zip.file('manifest.json', JSON.stringify(manifest, null, 2));
+          zip.file('meta.json', JSON.stringify(meta, null, 2));
+          Object.keys(exportData).forEach(key => zip.file(`${key}.json`, JSON.stringify(exportData[key], null, 2)));
+          zip.file('raw/chats_raw.json', JSON.stringify(preparedChats.raw, null, 2));
+          zip.file('raw/importVersions_raw.json', JSON.stringify(preparedImportVersions.raw, null, 2));
+          const blob = await zip.generateAsync({ type: 'blob' });
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = `roadtrip-export-${dateStamp()}.zip`;
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+        } catch (err) {
+          alert(err && err.message ? err.message : 'ZIP-Export fehlgeschlagen.');
+        }
+      }
+
+      async function parseZipJsonFile(zip, path, fallbackValue, required) {
+        const entry = zip.file(path);
+        if (!entry) {
+          if (required) throw new Error(`Datei fehlt im ZIP: ${path}`);
+          return fallbackValue;
+        }
+        try {
+          const txt = await entry.async('string');
+          return JSON.parse(txt);
+        } catch (_err) {
+          throw new Error(`Beschädigte JSON-Datei im ZIP: ${path}`);
+        }
+      }
+
+      function applyRoadtripZipMeta(reconstructedS, meta) {
+        if (!reconstructedS || typeof reconstructedS !== 'object' || !meta || typeof meta !== 'object' || Array.isArray(meta)) return;
+        const blockedKeys = new Set(['gistToken', 'rawGistToken', 'trelloToken', 'token', 'apiKey', 'key', 'password', 'secret']);
+        const allowedStringKeys = ['createdAt', '_lastExported', '_lastGistPushAt', '_lastGistPullAt', '_lastLocalSaveAt'];
+        if (blockedKeys.has('version')) return;
+        const rawVersion = meta.version;
+        if (typeof rawVersion === 'number' && Number.isFinite(rawVersion)) {
+          reconstructedS.version = rawVersion;
+        } else if (typeof rawVersion === 'string') {
+          const trimmed = rawVersion.trim();
+          if (trimmed) {
+            const maybeNum = Number(trimmed);
+            reconstructedS.version = Number.isFinite(maybeNum) ? maybeNum : trimmed;
+          }
+        }
+        allowedStringKeys.forEach(key => {
+          if (blockedKeys.has(key)) return;
+          if (typeof meta[key] === 'string') reconstructedS[key] = meta[key];
+        });
+      }
+
+      async function analyzeRoadtripZipBackupFile(file) {
+        const JSZip = await ensureJSZipLoaded();
+        const zip = await JSZip.loadAsync(file);
+        const manifest = await parseZipJsonFile(zip, 'manifest.json', null, true);
+        if (!manifest || manifest.exportFormat !== 'roadtrip-zip-v1') throw new Error('Ungültiges ZIP-Format: manifest.json exportFormat muss roadtrip-zip-v1 sein.');
+        const meta = await parseZipJsonFile(zip, 'meta.json', {}, true);
+        const reconstructedS = Object.assign(defaultState(), {
+          projects: await parseZipJsonFile(zip, 'projects.json', [], true),
+          features: await parseZipJsonFile(zip, 'features.json', [], true),
+          notes: await parseZipJsonFile(zip, 'notes.json', [], true),
+          unmatchedNotes: await parseZipJsonFile(zip, 'unmatchedNotes.json', [], true),
+          chats: await parseZipJsonFile(zip, 'chats.json', [], true),
+          analyses: await parseZipJsonFile(zip, 'analyses.json', [], true),
+          importVersions: await parseZipJsonFile(zip, 'importVersions.json', [], true),
+          deletedIds: await parseZipJsonFile(zip, 'deletedIds.json', {}, true)
+        });
+        applyRoadtripZipMeta(reconstructedS, meta);
+        const chatRaw = await parseZipJsonFile(zip, 'raw/chats_raw.json', {}, false);
+        const importVersionsRaw = await parseZipJsonFile(zip, 'raw/importVersions_raw.json', {}, false);
+        const chatMap = new Map((reconstructedS.chats || []).map(ch => [String(ch.id || ''), ch]));
+        Object.keys(chatRaw || {}).forEach(id => { if (chatMap.has(id)) Object.assign(chatMap.get(id), chatRaw[id] || {}); });
+        const importVersionMap = new Map((reconstructedS.importVersions || []).map(v => [String(v.id || ''), v]));
+        Object.keys(importVersionsRaw || {}).forEach(id => { if (importVersionMap.has(id)) Object.assign(importVersionMap.get(id), importVersionsRaw[id] || {}); });
+        const counts = getRoadtripEntityCounts(reconstructedS);
+        const localCounts = getRoadtripEntityCounts(S);
+        const warnings = [];
+        const manifestCounts = manifest && manifest.counts ? manifest.counts : {};
+        Object.keys(counts).forEach(key => {
+          if (typeof manifestCounts[key] === 'number' && manifestCounts[key] !== counts[key]) {
+            warnings.push(`Count-Mismatch bei ${key}: Manifest ${manifestCounts[key]} vs ZIP ${counts[key]}`);
+          }
+        });
+        return { manifest, meta, reconstructedS, counts, localCounts, warnings };
+      }
+
       function dateStamp() {
         return new Date().toISOString().slice(0, 10);
       }
@@ -7226,6 +7438,73 @@
 
       function exportRawNotes() {
         downloadJson('roadtrip_raw_notes_backup.json', { exported: new Date().toISOString(), notes: S.notes });
+      }
+
+      function confirmRoadtripZipImport(reconstructedS) {
+        if (!confirm('Lokale Roadtrip-Daten durch ZIP-Backup ersetzen? Dieser Schritt überschreibt den lokalen State.')) return;
+        S = Object.assign(defaultState(), reconstructedS || {});
+        ensureDefaults();
+        save();
+        renderAll();
+        alert('ZIP-Backup erfolgreich importiert.');
+      }
+
+      function showRoadtripZipImportPreview(analysis) {
+        if (!analysis || !analysis.reconstructedS) return;
+        const modal = document.createElement('div');
+        modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;';
+        const warnings = Array.isArray(analysis.warnings) ? analysis.warnings : [];
+        const meta = analysis.meta && typeof analysis.meta === 'object' ? analysis.meta : {};
+        const metaInfo = [
+          (analysis.reconstructedS && analysis.reconstructedS.version !== undefined && analysis.reconstructedS.version !== null) ? `Version: ${escapeHtml(String(analysis.reconstructedS.version))}` : '',
+          meta.createdAt ? `createdAt: ${escapeHtml(String(meta.createdAt))}` : '',
+          meta._lastExported ? `_lastExported: ${escapeHtml(String(meta._lastExported))}` : '',
+          meta._lastGistPushAt ? `_lastGistPushAt: ${escapeHtml(String(meta._lastGistPushAt))}` : '',
+          meta._lastGistPullAt ? `_lastGistPullAt: ${escapeHtml(String(meta._lastGistPullAt))}` : ''
+        ].filter(Boolean).join(' · ');
+        modal.innerHTML = `
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;max-width:520px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow);">
+            <h3 style="margin:0 0 8px;">ZIP-Import Vorschau</h3>
+            <p class="mini" style="margin:0 0 10px;">Dry-Run abgeschlossen, noch nichts importiert.</p>
+            <div class="mini" style="margin-bottom:12px;">Format: ${(analysis.manifest && analysis.manifest.exportFormat) || '-'} · Exportiert: ${(analysis.manifest && analysis.manifest.exportedAt) || '-'}</div>
+            ${metaInfo ? `<div class="mini" style="margin-bottom:12px;">${metaInfo}</div>` : ''}
+            <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px;">
+              <div class="mini" style="margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;">Import-Counts</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                ${Object.entries(analysis.counts || {}).map(([k,v]) => `<span class="pill">${escapeHtml(k)}: ${Number(v || 0)}</span>`).join('')}
+              </div>
+            </div>
+            <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px;">
+              <div class="mini" style="margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;">Lokale Counts</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                ${Object.entries(analysis.localCounts || {}).map(([k,v]) => `<span class="pill">${escapeHtml(k)}: ${Number(v || 0)}</span>`).join('')}
+              </div>
+            </div>
+            ${warnings.length ? `<div class="notice" style="margin-bottom:12px;color:#f59e0b;">${warnings.map(w => escapeHtml(w)).join('<br>')}</div>` : ''}
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button id="btnZipImportConfirm" class="btn btn-danger" style="flex:1;">ZIP-Backup importieren / ersetzen</button>
+              <button id="btnZipImportCancel" class="btn" style="flex:1;">Abbrechen</button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(modal);
+        modal.querySelector('#btnZipImportCancel').addEventListener('click', () => modal.remove());
+        modal.querySelector('#btnZipImportConfirm').addEventListener('click', () => {
+          confirmRoadtripZipImport(analysis.reconstructedS);
+          modal.remove();
+        });
+      }
+
+      async function startRoadtripZipImport(e) {
+        const file = e && e.target && e.target.files ? e.target.files[0] : null;
+        if (e && e.target) e.target.value = '';
+        if (!file) return;
+        try {
+          const analysis = await analyzeRoadtripZipBackupFile(file);
+          showRoadtripZipImportPreview(analysis);
+        } catch (err) {
+          alert(err && err.message ? err.message : 'ZIP-Import fehlgeschlagen.');
+        }
       }
 
       function importJson(e) {
