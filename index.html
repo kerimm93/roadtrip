@@ -885,31 +885,70 @@
       }
 
       function save() {
+        if (!window.__roadtripSaveAlertState || typeof window.__roadtripSaveAlertState !== 'object') {
+          window.__roadtripSaveAlertState = { lastType: '', lastAt: 0 };
+        }
+        const classifySaveError = (err, stage) => {
+          const message = String((err && err.message) || '');
+          const lowered = message.toLowerCase();
+          const code = Number((err && err.code) || 0);
+          const quotaLike =
+            (err && err.name === 'QuotaExceededError') ||
+            code === 22 || code === 1014 ||
+            /quota|quota exceeded|exceeded the quota|storage full|disk full|not enough space/.test(lowered);
+          if (quotaLike) return 'quota-exceeded';
+          if (stage === 'verify-parse') return 'invalid-json-after-write';
+          if (stage === 'verify-read') return 'write-verify-failed';
+          return 'save-failed-unknown';
+        };
+        const maybeShowSaveAlert = (type) => {
+          const now = Date.now();
+          const cooldownMs = 12000;
+          const last = window.__roadtripSaveAlertState || { lastType: '', lastAt: 0 };
+          if (last.lastType === type && now - last.lastAt < cooldownMs) return;
+          window.__roadtripSaveAlertState = { lastType: type, lastAt: now };
+          if (type === 'quota-exceeded') {
+            alert('Browser-Speicher voll. Bitte sofort Notfall-Export erstellen.');
+          } else {
+            alert('Lokales Speichern fehlgeschlagen. Ursache unklar. Bitte Notfall-Export erstellen, bevor du neu lädst.');
+          }
+        };
         S._lastLocalSaveAt = new Date().toISOString();
         ensureDefaults();
         let stateSaved = false;
+        const prevSaveError = {
+          type: S._lastSaveError,
+          at: S._lastSaveErrorAt,
+          message: S._lastSaveErrorMessage
+        };
+        S._lastSaveError = '';
+        S._lastSaveErrorAt = '';
+        S._lastSaveErrorMessage = '';
         try {
           const payload = JSON.stringify(S);
           if (!payload || payload.length < 10) throw new Error('suspiciously small payload');
           localStorage.setItem(LKEY, payload);
           const verifyRaw = localStorage.getItem(LKEY);
           if (!verifyRaw) throw new Error('localStorage write verification failed');
-          JSON.parse(verifyRaw);
+          try {
+            JSON.parse(verifyRaw);
+          } catch (verifyParseErr) {
+            verifyParseErr._roadtripStage = 'verify-parse';
+            throw verifyParseErr;
+          }
           stateSaved = true;
-          if (typeof S._lastSaveError === 'string' && S._lastSaveError) S._lastSaveError = '';
         } catch (e) {
           console.error('[save] State save failed:', e);
+          S._lastSaveError = prevSaveError.type || '';
+          S._lastSaveErrorAt = prevSaveError.at || '';
+          S._lastSaveErrorMessage = prevSaveError.message || '';
+          const stage = (e && e._roadtripStage) || ((e && e.message === 'localStorage write verification failed') ? 'verify-read' : 'save');
+          const errorType = classifySaveError(e, stage);
           const msg = String((e && e.message) || '');
-          const quotaLike = (e && e.name === 'QuotaExceededError') || /quota|exceeded/i.test(msg);
-          if (quotaLike) {
-            S._lastSaveError = 'quota-exceeded';
-            alert('⚠ Lokales Speichern fehlgeschlagen: Browser-Speicher voll. Bitte sofort Notfall-Export erstellen. Nicht neu laden.');
-            const shouldExport = confirm('Soll jetzt ein vollständiger Notfall-Export aus dem aktuellen Arbeitsspeicher erstellt werden?');
-            if (shouldExport) exportFullEmergencyJson();
-          } else {
-            S._lastSaveError = msg || 'save-failed';
-            alert('Warnung: Lokales Speichern fehlgeschlagen. ' + msg);
-          }
+          S._lastSaveError = errorType;
+          S._lastSaveErrorAt = new Date().toISOString();
+          S._lastSaveErrorMessage = msg;
+          maybeShowSaveAlert(errorType);
         }
         try {
           localStorage.setItem(CONFIG_KEY, JSON.stringify(C));
@@ -966,7 +1005,19 @@
           bar.style.width = pct.toFixed(1) + '%';
           bar.style.background = pct < 50 ? '#22c55e' : (pct <= 80 ? '#f59e0b' : '#ef4444');
           top.innerHTML = report.areas.slice(0, 5).map(a => `<div class="mini">${escapeHtml(a.key)}: ${a.mb.toFixed(2)} MB</div>`).join('') || '<div class="mini">Keine Bereiche gefunden.</div>';
-          warn.textContent = pct > 80 ? '⚠ Speicher fast voll. Bitte JSON exportieren oder Rohdaten komprimieren.' : '';
+          const explain = 'Hinweis: 5 MB sind eine grobe Anzeigeannahme. Browser-/Origin-Quota kann abweichen; auch bei niedriger angezeigter Größe sind Save-Fehler möglich.';
+          const saveErrType = String(S._lastSaveError || '').trim();
+          const saveErrAt = String(S._lastSaveErrorAt || '').trim();
+          const saveErrMsg = String(S._lastSaveErrorMessage || '').trim();
+          const saveErrExplain =
+            saveErrType === 'quota-exceeded' ? 'Quota/Speicherlimit erreicht.' :
+            saveErrType === 'invalid-json-after-write' ? 'Verify-Parse schlug nach dem Schreiben fehl.' :
+            saveErrType === 'write-verify-failed' ? 'Verify-Read aus localStorage schlug nach dem Schreiben fehl.' :
+            (saveErrType ? 'Unbekannter Save-Fehler.' : '');
+          const saveErrLine = saveErrType
+            ? `\nLetzter Save-Fehler: ${saveErrType}${saveErrAt ? ` (${formatDateTime(saveErrAt)})` : ''}. ${saveErrExplain}${saveErrMsg ? ` Detail: ${saveErrMsg}.` : ''} Empfehlung: Notfall-Export erstellen, bevor neu geladen wird.`
+            : '';
+          warn.textContent = (pct > 80 ? '⚠ Speicher fast voll. Bitte JSON exportieren oder Rohdaten komprimieren.' : '') + '\n' + explain + saveErrLine;
           wrap.style.display = 'block';
         } catch (err) {
           console.warn('[updateStorageDisplay] failed:', err);
@@ -6939,9 +6990,12 @@
         if (saved) {
           alert(`✓ Rohdaten komprimiert und gespeichert. Ersparnis: ${(savedBytes / 1024).toFixed(1)} KB.`);
         } else {
-          alert('⚠ Rohdaten wurden im aktuellen Arbeitsspeicher komprimiert, aber noch nicht erfolgreich gespeichert. Bitte sofort vollständigen Notfall-Export erstellen und nicht neu laden.');
-          const shouldExport = confirm('Soll jetzt ein vollständiger Notfall-Export aus dem aktuellen Arbeitsspeicher erstellt werden?');
-          if (shouldExport) exportFullEmergencyJson();
+          const recentSaveAlert = window.__roadtripSaveAlertState && (Date.now() - Number(window.__roadtripSaveAlertState.lastAt || 0) < 12000);
+          if (!recentSaveAlert) {
+            alert('⚠ Rohdaten wurden im aktuellen Arbeitsspeicher komprimiert, aber noch nicht erfolgreich gespeichert. Bitte sofort vollständigen Notfall-Export erstellen und nicht neu laden.');
+            const shouldExport = confirm('Soll jetzt ein vollständiger Notfall-Export aus dem aktuellen Arbeitsspeicher erstellt werden?');
+            if (shouldExport) exportFullEmergencyJson();
+          }
         }
       }
 
