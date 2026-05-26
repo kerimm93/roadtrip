@@ -1321,6 +1321,9 @@
         if ($('fontSelect')) $('fontSelect').addEventListener('change', e => { C.font = e.target.value; applyTheme(); save(); });
         if ($('gistId')) $('gistId').addEventListener('input', e => { C.gistId = e.target.value; save(); });
         if ($('gistToken')) $('gistToken').addEventListener('input', e => { C.gistToken = e.target.value; save(); });
+        if ($('gistPassphrase')) $('gistPassphrase').addEventListener('input', setRoadtripGistSessionPassphraseFromUi);
+        if ($('gistPassphrase')) $('gistPassphrase').addEventListener('change', setRoadtripGistSessionPassphraseFromUi);
+        if ($('gistRememberPassphraseSession')) $('gistRememberPassphraseSession').addEventListener('change', setRoadtripGistSessionPassphraseFromUi);
         if ($('rawGistId')) $('rawGistId').addEventListener('input', e => { C.rawGistId = e.target.value; save(); });
         if ($('rawGistToken')) $('rawGistToken').addEventListener('input', e => { C.rawGistToken = e.target.value; save(); });
         if ($('btnGistPush')) $('btnGistPush').addEventListener('click', gistPush);
@@ -4060,6 +4063,9 @@
           <div class="panel-title" style="margin-top:8px;"><h3>GitHub Gist Sync</h3><div class="mini">Manueller Cloud-Backup</div></div>
           <div class="field"><label for="gistId">Gist ID</label><input id="gistId" type="text" value="${escapeAttr(C.gistId || '')}" /></div>
           <div class="field"><label for="gistToken">GitHub Token</label><input id="gistToken" type="password" value="${escapeAttr(C.gistToken || '')}" /></div>
+          <div class="field"><label for="gistPassphrase">Gist-Passphrase</label><input id="gistPassphrase" type="password" value="" autocomplete="off" /></div>
+          <label class="mini" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;"><input id="gistRememberPassphraseSession" type="checkbox" ${_gistRememberPassphraseForSession ? 'checked' : ''} /> Passphrase für diese Sitzung merken</label>
+          <div class="notice" style="font-size:12px;margin-bottom:8px;">Gist-Sync ist verschlüsselt.<br>Ohne Passphrase kann ein verschlüsselter Gist nicht gelesen werden.<br>Passphrase wird standardmäßig nicht dauerhaft gespeichert.<br>Bei vergessener Passphrase ist der Gist nicht wiederherstellbar. Lokale ZIP-Backups behalten.</div>
           <div class="stack-row" style="margin-bottom:8px;">
             <button class="btn btn-primary" id="btnGistPush">☁ Zum Gist speichern</button>
             <button class="btn" id="btnGistPull">↓ Vom Gist laden</button>
@@ -4072,6 +4078,7 @@
           <div class="stack-row" style="margin-bottom:8px;">
             <button class="btn" id="btnGistRawBackup">📦 Raw-Backup zum Gist</button>
           </div>
+          <div class="notice" style="font-size:12px;">Hinweis: Raw Backup Gist ist nicht Teil der verschlüsselten Haupt-Gist-Sync-Änderung. Für private Daten bis zu einem separaten Patch nicht verwenden.</div>
           <hr style="border:none;border-top:1px solid var(--border);margin:12px 0;">
           <div class="panel-title" style="margin-top:8px;"><h3>Daten & Speicher</h3><div class="mini">Diagnose und Notfall-Werkzeuge</div></div>
           <div id="storageDiagWrap" class="notice" style="display:block;">
@@ -6727,7 +6734,108 @@
       // ─── GITHUB GIST SYNC ────────────────────────────────────────────────────
 
       const GIST_FILE = 'roadtrip_data.json';
+      const ROADTRIP_GIST_ENCRYPTION_FORMAT = 'roadtrip-encrypted-v1';
+      const ROADTRIP_GIST_KDF_ITERATIONS = 250000;
+      let _gistPassphraseSession = '';
+      let _gistRememberPassphraseForSession = false;
       let _gistStatus = { lastPush: '', lastPull: '', lastError: '' };
+
+
+      function roadtripBytesToBase64(bytes) {
+        const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
+        let bin = '';
+        for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+        return btoa(bin);
+      }
+
+      function roadtripBase64ToBytes(base64) {
+        const bin = atob(String(base64 || ''));
+        const out = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+        return out;
+      }
+
+      async function deriveRoadtripGistKey(passphrase, salt) {
+        const passphraseBytes = new TextEncoder().encode(String(passphrase || ''));
+        const keyMaterial = await crypto.subtle.importKey('raw', passphraseBytes, 'PBKDF2', false, ['deriveKey']);
+        return crypto.subtle.deriveKey(
+          { name: 'PBKDF2', hash: 'SHA-256', salt, iterations: ROADTRIP_GIST_KDF_ITERATIONS },
+          keyMaterial,
+          { name: 'AES-GCM', length: 256 },
+          false,
+          ['encrypt', 'decrypt']
+        );
+      }
+
+      async function encryptRoadtripGistPayload(plainObject, passphrase) {
+        const salt = crypto.getRandomValues(new Uint8Array(16));
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const key = await deriveRoadtripGistKey(passphrase, salt);
+        const plaintext = new TextEncoder().encode(JSON.stringify(plainObject));
+        const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext);
+        return {
+          format: ROADTRIP_GIST_ENCRYPTION_FORMAT,
+          app: 'Roadtrip',
+          kdf: 'PBKDF2-SHA256',
+          cipher: 'AES-GCM',
+          iterations: ROADTRIP_GIST_KDF_ITERATIONS,
+          salt: roadtripBytesToBase64(salt),
+          iv: roadtripBytesToBase64(iv),
+          ciphertext: roadtripBytesToBase64(new Uint8Array(ciphertext)),
+          createdAt: new Date().toISOString()
+        };
+      }
+
+      async function decryptRoadtripGistPayload(envelope, passphrase) {
+        const salt = roadtripBase64ToBytes(envelope.salt);
+        const iv = roadtripBase64ToBytes(envelope.iv);
+        const ciphertext = roadtripBase64ToBytes(envelope.ciphertext);
+        const key = await deriveRoadtripGistKey(passphrase, salt);
+        const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+        return JSON.parse(new TextDecoder().decode(new Uint8Array(plaintext)));
+      }
+
+      function isRoadtripEncryptedGistPayload(value) {
+        return !!(value && typeof value === 'object' && !Array.isArray(value)
+          && value.format === ROADTRIP_GIST_ENCRYPTION_FORMAT
+          && typeof value.ciphertext === 'string' && value.ciphertext
+          && typeof value.salt === 'string' && value.salt
+          && typeof value.iv === 'string' && value.iv);
+      }
+
+      function hasRoadtripStateShape(obj) {
+        if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
+        const arrayKeys = ['projects', 'features', 'notes', 'chats', 'analyses', 'importVersions', 'unmatchedNotes'];
+        const hasArrays = arrayKeys.some(k => Array.isArray(obj[k]));
+        const hasDeletedIds = obj.deletedIds && typeof obj.deletedIds === 'object' && !Array.isArray(obj.deletedIds);
+        return !!(hasArrays || hasDeletedIds);
+      }
+
+      function isLegacyPlainRoadtripGistPayload(value) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+        if (isRoadtripEncryptedGistPayload(value)) return false;
+        const stateObj = value.state && typeof value.state === 'object' && !Array.isArray(value.state) ? value.state : null;
+        if (stateObj && hasRoadtripStateShape(stateObj)) return true;
+        if (hasRoadtripStateShape(value)) return true;
+        if (stateObj && (typeof value.version === 'number' || typeof value.exported === 'string')) return true;
+        return false;
+      }
+
+      function getRoadtripGistPassphrase() {
+        if (_gistRememberPassphraseForSession && _gistPassphraseSession) return _gistPassphraseSession;
+        const input = $('gistPassphrase');
+        const passphrase = input ? String(input.value || '') : '';
+        if (_gistRememberPassphraseForSession) _gistPassphraseSession = passphrase;
+        return passphrase;
+      }
+
+      function setRoadtripGistSessionPassphraseFromUi() {
+        const rememberEl = $('gistRememberPassphraseSession');
+        const passEl = $('gistPassphrase');
+        _gistRememberPassphraseForSession = !!(rememberEl && rememberEl.checked);
+        if (_gistRememberPassphraseForSession) _gistPassphraseSession = passEl ? String(passEl.value || '') : '';
+        else _gistPassphraseSession = '';
+      }
 
       function githubHeaders(token, includeContentType) {
         const h = {
@@ -6889,15 +6997,21 @@
         try {
           prevLastExported = S._lastExported || '';
           prevLastGistPushAt = S._lastGistPushAt || '';
+          const passphrase = getRoadtripGistPassphrase();
+          if (!passphrase) {
+            alert('Push ohne Passphrase nicht möglich. Gist-Sync ist verschlüsselt. Bitte Passphrase eingeben oder stattdessen ZIP-Backup/JSON-Export nutzen.');
+            return;
+          }
           const syncTs = new Date().toISOString();
           S._lastExported = syncTs;
           S._lastGistPushAt = syncTs;
           const payload = buildGistPayload();
           payload.exported = syncTs;
+          const envelope = await encryptRoadtripGistPayload(payload, passphrase);
           const r = await fetch('https://api.github.com/gists/' + C.gistId, {
             method: 'PATCH',
             headers: githubHeaders(C.gistToken, true),
-            body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(payload, null, 2) } } })
+            body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(envelope, null, 2) } } })
           });
           if (!r.ok) {
             const errText = await r.text().catch(() => '');
@@ -6909,13 +7023,13 @@
           _gistStatus.lastError = '';
           save();
           updateGistStatusUI();
-          alert('Zum Gist gespeichert: ' + formatDateTime(syncTs));
+          alert('Verschlüsselt zum Gist gespeichert: ' + formatDateTime(syncTs));
         } catch (e) {
           S._lastExported = prevLastExported;
           S._lastGistPushAt = prevLastGistPushAt;
           _gistStatus.lastError = e.message.slice(0, 80);
           updateGistStatusUI();
-          alert('Gist-Push fehlgeschlagen: ' + e.message);
+          alert('Gist-Push fehlgeschlagen: ' + e.message + ' Bitte ZIP-Backup oder JSON-Export als Recovery nutzen.');
         }
       }
 
@@ -6929,7 +7043,30 @@
           });
           if (!r.ok) throw new Error('HTTP ' + r.status);
           const gist = await r.json();
-          const remotePayload = await readGistFileJson(gist, GIST_FILE);
+          const remoteRaw = await readGistFileJson(gist, GIST_FILE);
+          let remotePayload = null;
+          let pulledLegacyPlain = false;
+          if (isRoadtripEncryptedGistPayload(remoteRaw)) {
+            const passphrase = getRoadtripGistPassphrase();
+            if (!passphrase) {
+              alert('Passphrase erforderlich. Ohne Passphrase kann ein verschlüsselter Gist nicht gelesen werden.');
+              return;
+            }
+            try {
+              remotePayload = await decryptRoadtripGistPayload(remoteRaw, passphrase);
+            } catch (err) {
+              alert('Falsche Passphrase oder beschädigter Gist. Kein Merge durchgeführt. Bitte ZIP-Backup oder JSON-Export als Recovery nutzen.');
+              return;
+            }
+          } else if (isLegacyPlainRoadtripGistPayload(remoteRaw)) {
+            const proceedLegacy = confirm('Legacy-Klartext-Gist erkannt. Dieser Gist ist unverschlüsselt. Vor Migration ZIP-Backup empfohlen. Klartext-Gist einmalig lesen und danach verschlüsselt neu pushen?');
+            if (!proceedLegacy) return;
+            remotePayload = remoteRaw;
+            pulledLegacyPlain = true;
+          } else {
+            alert('Unbekanntes Gist-Format. Kein Pull/Merge durchgeführt.');
+            return;
+          }
           const remoteState = getGistPayloadState(remotePayload);
           if (!remoteState) throw new Error('Ungültiger Gist-State.');
           const localStateSnapshot = JSON.parse(JSON.stringify(S || {}));
@@ -6945,6 +7082,9 @@
             save();
             updateGistStatusUI();
             alert('Gist-Pull: Keine Änderungen (No-Op). Lokaler Stand ist bereits identisch.');
+            if (pulledLegacyPlain) {
+              alert('Legacy-Klartext wurde gelesen. Bitte jetzt mit Passphrase verschlüsselt neu pushen.');
+            }
             return;
           }
 
@@ -6993,10 +7133,11 @@
             alert(localIsEmpty
               ? ('Vom Gist geladen (' + S.projects.length + ' Projekte, ' + S.features.length + ' Features, ' + S.notes.length + ' Notizen).')
               : ('Gist-Pull Merge durchgeführt (' + S.projects.length + ' Projekte, ' + S.features.length + ' Features, ' + S.notes.length + ' Notizen).'));
+            if (pulledLegacyPlain) alert('Legacy-Klartext wurde gelesen. Bitte jetzt mit Passphrase verschlüsselt neu pushen.');
         } catch (e) {
           _gistStatus.lastError = e.message.slice(0, 80);
           updateGistStatusUI();
-          alert('Gist-Pull fehlgeschlagen: ' + e.message);
+          alert('Gist-Pull fehlgeschlagen: ' + e.message + ' Bitte ZIP-Backup oder JSON-Export als Recovery nutzen.');
         }
       }
 
