@@ -4067,9 +4067,15 @@
           <label class="mini" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;"><input id="gistRememberPassphraseSession" type="checkbox" ${_gistRememberPassphraseForSession ? 'checked' : ''} /> Passphrase für diese Sitzung merken</label>
           <div class="notice" style="font-size:12px;margin-bottom:8px;">Gist-Sync ist verschlüsselt.<br>Ohne Passphrase kann ein verschlüsselter Gist nicht gelesen werden.<br>Passphrase wird standardmäßig nicht dauerhaft gespeichert.<br>Bei vergessener Passphrase ist der Gist nicht wiederherstellbar. Lokale ZIP-Backups behalten.</div>
           <div class="stack-row" style="margin-bottom:8px;">
-            <button class="btn btn-primary" id="btnGistPush">☁ Zum Gist speichern</button>
-            <button class="btn" id="btnGistPull">↓ Vom Gist laden</button>
+            <button class="btn btn-primary" id="btnGistPull">↓ Gist prüfen &amp; mergen</button>
           </div>
+          <details style="margin-bottom:8px;">
+            <summary>Erweiterte / riskante Gist-Aktionen</summary>
+            <div class="notice" style="font-size:12px;margin-top:8px;">Diese Aktionen können Daten auf einem anderen Gerät überschreiben. Vorher ZIP-Backup exportieren.</div>
+            <div class="stack-row" style="margin-top:8px;">
+              <button class="btn btn-danger" id="btnGistPush">Remote mit lokalem Stand überschreiben</button>
+            </div>
+          </details>
           <div class="notice" id="gistStatusInfo" style="font-size:12px;">Noch kein Sync durchgeführt.</div>
           <hr style="border:none;border-top:1px solid var(--border);margin:12px 0;">
           <div class="panel-title" style="margin-top:8px;"><h3>Raw Backup Gist</h3><div class="mini">Nur Notizen &amp; Analysen (optional separates Gist)</div></div>
@@ -6992,6 +6998,8 @@
         if (!C.gistId || !C.gistToken) {
           return alert('Bitte zuerst Gist ID und GitHub Token in den Settings eintragen.');
         }
+        const proceed = confirm('Riskante Aktion: Diese Aktion überschreibt den Remote-Gist mit dem aktuellen lokalen Stand. Wenn auf einem anderen Gerät neuere Daten liegen, können diese verloren gehen. Vorher ZIP-Backup oder JSON-Export erstellen. Fortfahren?');
+        if (!proceed) return;
         let prevLastExported = '';
         let prevLastGistPushAt = '';
         try {
@@ -7023,7 +7031,7 @@
           _gistStatus.lastError = '';
           save();
           updateGistStatusUI();
-          alert('Verschlüsselt zum Gist gespeichert: ' + formatDateTime(syncTs));
+          alert('Remote-Gist wurde verschlüsselt mit lokalem Stand überschrieben: ' + formatDateTime(syncTs));
         } catch (e) {
           S._lastExported = prevLastExported;
           S._lastGistPushAt = prevLastGistPushAt;
