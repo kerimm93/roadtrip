@@ -7178,16 +7178,23 @@
         return Number.isFinite(newestMs) ? new Date(newestMs).toISOString() : '';
       }
 
-      function isRoadtripStateEffectivelyEmpty(state) {
-        if (!state || typeof state !== 'object' || Array.isArray(state)) return true;
+      function hasRoadtripUserData(state) {
+        if (!state || typeof state !== 'object' || Array.isArray(state)) return false;
         const arrays = ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes'];
-        return arrays.every(k => !Array.isArray(state[k]) || state[k].length === 0);
+        const hasEntityData = arrays.some(k => Array.isArray(state[k]) && state[k].some(item => item && typeof item === 'object'));
+        const deletedIds = state.deletedIds && typeof state.deletedIds === 'object' && !Array.isArray(state.deletedIds) ? state.deletedIds : {};
+        const hasTombstones = Object.keys(deletedIds).some(id => !!deletedIds[id]);
+        return hasEntityData || hasTombstones;
+      }
+
+      function isRoadtripStateEffectivelyEmpty(state) {
+        return !hasRoadtripUserData(state);
       }
 
       function normalizeStateForSyncCompare(state) {
         const clone = JSON.parse(JSON.stringify((state && typeof state === 'object') ? state : {}));
         const volatileKeys = [
-          '_lastLocalSaveAt', '_lastExported', '_lastGistPushAt', '_lastGistPullAt',
+          'createdAt', '_lastLocalSaveAt', '_lastExported', '_lastGistPushAt', '_lastGistPullAt',
           '_lastSaveError', '_lastSaveErrorAt', '_lastSaveErrorMessage'
         ];
         volatileKeys.forEach(k => { delete clone[k]; });
@@ -7350,7 +7357,9 @@
             try {
               remotePayload = await decryptRoadtripGistPayload(remoteRaw, passphrase);
             } catch (err) {
-              alert('Sync fehlgeschlagen beim Entschlüsseln des Gist.');
+              _gistStatus.lastError = 'wrong-passphrase-or-invalid-gist';
+              updateGistStatusUI();
+              alert('Falsche Passphrase oder beschädigter Gist.');
               return;
             }
           } else if (isLegacyPlainRoadtripGistPayload(remoteRaw)) {
@@ -7381,28 +7390,27 @@
           const localEqualsMerged = areStatesSyncEquivalent(localStateSnapshot, mergedState);
           const remoteEqualsMerged = areStatesSyncEquivalent(remoteState, mergedState);
           const didChange = !localEqualsMerged;
+          const localHasUserData = hasRoadtripUserData(localStateSnapshot);
+          const remoteHasUserData = hasRoadtripUserData(remoteState);
+          const initialRemoteAdopted = didChange && !localHasUserData && remoteHasUserData && remoteEqualsMerged;
           const needsPush = !remoteEqualsMerged || pulledLegacyPlain;
-          const localVsRemoteTs = (() => {
-            const remoteTs = getPayloadTimestamp(remotePayload, remoteState) || getStateLatestEntityTimestamp(remoteState);
-            const localTs = getPayloadTimestamp({ exported: S._lastExported }, localStateSnapshot) || getStateLatestEntityTimestamp(localStateSnapshot);
-            const remoteMs = Date.parse(remoteTs);
-            const localMs = Date.parse(localTs);
-            if (!Number.isFinite(remoteMs) || !Number.isFinite(localMs)) return 'divergent';
-            if (localMs > remoteMs) return 'local-newer';
-            if (remoteMs > localMs) return 'remote-newer';
-            return 'divergent';
-          })();
+          let syncOutcome = 'merged-and-pushed';
+          if (!didChange && !needsPush) syncOutcome = 'already-synced';
+          else if (pulledLegacyPlain) syncOutcome = 'legacy-migrated';
+          else if (initialRemoteAdopted) syncOutcome = 'initial-remote-adopted';
+          else if (didChange && !needsPush) syncOutcome = 'remote-adopted';
+          else if (!didChange && needsPush && localHasUserData) syncOutcome = 'local-pushed';
 
           if (didChange) S = mergedState;
-            ensureDefaults();
-            pruneDeletedIds();
-            S.projects = (S.projects || []).filter(p => !isDeleted(p.id));
-            S.features = (S.features || []).filter(f => !isDeleted(f.id));
-            S.notes = (S.notes || []).filter(n => !isDeleted(n.id));
-            S.analyses = (S.analyses || []).filter(a => !isDeleted(a.id));
-            S.chats = (S.chats || []).filter(c => !isDeleted(c.id));
-            S.importVersions = (S.importVersions || []).filter(v => !isDeleted(v.id));
-            S.unmatchedNotes = (S.unmatchedNotes || []).filter(n => !isDeleted(n.id));
+          ensureDefaults();
+          pruneDeletedIds();
+          S.projects = (S.projects || []).filter(p => !isDeleted(p.id));
+          S.features = (S.features || []).filter(f => !isDeleted(f.id));
+          S.notes = (S.notes || []).filter(n => !isDeleted(n.id));
+          S.analyses = (S.analyses || []).filter(a => !isDeleted(a.id));
+          S.chats = (S.chats || []).filter(c => !isDeleted(c.id));
+          S.importVersions = (S.importVersions || []).filter(v => !isDeleted(v.id));
+          S.unmatchedNotes = (S.unmatchedNotes || []).filter(n => !isDeleted(n.id));
           const pullTs = new Date().toISOString();
           S._lastGistPullAt = pullTs;
           _gistStatus.lastPull = pullTs;
@@ -7428,15 +7436,14 @@
           }
 
           if (didChange || needsPush) save();
-            renderAll();
-            updateGistStatusUI();
-            if (!didChange && !needsPush) alert('Gist und lokaler Stand sind bereits synchron.');
-            else if (!didChange && needsPush && pulledLegacyPlain) alert('Legacy-Klartext-Gist wurde verschlüsselt migriert. Gist und lokaler Stand sind synchron.');
-            else if (!didChange && needsPush) alert('Lokaler Stand war neuer. Verschlüsselt in den Gist synchronisiert.');
-            else if (didChange && !needsPush) alert('Remote-Stand wurde entschlüsselt, tombstone-sicher gemergt und lokal synchronisiert.');
-            else if (localVsRemoteTs === 'remote-newer') alert('Remote-Stand wurde entschlüsselt, tombstone-sicher gemergt und lokal synchronisiert.');
-            else if (localVsRemoteTs === 'local-newer') alert('Lokaler Stand war neuer. Verschlüsselt in den Gist synchronisiert.');
-            else alert('Lokaler und Remote-Stand wurden tombstone-sicher zusammengeführt und verschlüsselt synchronisiert.');
+          renderAll();
+          updateGistStatusUI();
+          if (syncOutcome === 'already-synced') alert('Gist und lokaler Stand sind bereits synchron.');
+          else if (syncOutcome === 'initial-remote-adopted') alert('Erster Sync auf diesem Gerät abgeschlossen. Remote-Stand wurde lokal übernommen.');
+          else if (syncOutcome === 'remote-adopted') alert('Remote-Stand wurde lokal übernommen.');
+          else if (syncOutcome === 'local-pushed') alert('Lokaler Stand war neuer und wurde verschlüsselt in den Gist synchronisiert.');
+          else if (syncOutcome === 'legacy-migrated') alert('Legacy-Klartext-Gist wurde übernommen und verschlüsselt migriert.');
+          else alert('Lokale und Remote-Änderungen wurden gemergt und verschlüsselt synchronisiert.');
         } catch (e) {
           if (String(e.message || '').startsWith('cloud-write:')) {
             S = Object.assign(defaultState(), JSON.parse(JSON.stringify(prevStateSnapshot || {})));
@@ -7447,7 +7454,7 @@
           S._lastGistPullAt = prevLastGistPullAt;
           _gistStatus.lastError = e.message.slice(0, 80);
           updateGistStatusUI();
-          if (String(e.message || '').startsWith('cloud-write:')) alert('Sync lokal gemergt, aber Cloud-Write fehlgeschlagen.');
+          if (String(e.message || '').startsWith('cloud-write:')) alert('Cloud-Schreibfehler: Lokaler Runtime-State wurde auf den vorherigen Stand zurückgesetzt.');
           else alert('Sync fehlgeschlagen beim Abrufen des Gist.');
         }
       }
