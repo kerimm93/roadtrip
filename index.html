@@ -667,7 +667,7 @@
         showAllProjects: false,
         projectEditMode: false,
         importDraft: { html: '', prompt: '', analysisPrompt: '', cleanupPrompt: '', projectId: '' },
-        chatWorkflow: { projectId: '', sourceChatId: '', sprintGoal: '', prompt: '', mode: '' },
+        chatWorkflow: { projectId: '', sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', sprintStartJson: '', mainChatBootstrapJson: '', prompt: '', mode: '' },
         chatWorkflowByProject: {},
         chatWorkflowHandoff: { projectId: '', sourceChatId: '', rawJson: '' },
         chatWorkflowHandoffByProject: {},
@@ -1589,6 +1589,11 @@
           if (!projectId || projectId === ALL_PROJECTS_KEY) return;
           getChatWorkflowState(projectId).sprintStartJson = e.target.value;
         });
+        if ($('mainChatBootstrapJsonInput')) $('mainChatBootstrapJsonInput').addEventListener('input', e => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          getChatWorkflowState(projectId).mainChatBootstrapJson = e.target.value;
+        });
         if ($('chatWorkflowPromptOutput')) $('chatWorkflowPromptOutput').addEventListener('input', e => {
           const projectId = ui.activeProjectId || '';
           if (!projectId || projectId === ALL_PROJECTS_KEY) return;
@@ -1630,6 +1635,14 @@
           if (!st.sourceChatId) return alert('Bitte zuerst einen Ausgangschat auswählen.');
           st.mode = 'bootstrap-main';
           st.prompt = buildMainChatBootstrapPrompt(projectId, st.sourceChatId);
+          renderView();
+        });
+        if ($('btnChatWorkflowBuildLegacyMainBootstrap')) $('btnChatWorkflowBuildLegacyMainBootstrap').addEventListener('click', () => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          const st = getChatWorkflowState(projectId);
+          st.mode = 'legacy-mainchat-bootstrap';
+          st.prompt = buildLegacyMainChatBootstrapPrompt(projectId);
           renderView();
         });
         if ($('btnChatWorkflowBuildSprint')) $('btnChatWorkflowBuildSprint').addEventListener('click', () => {
@@ -1713,6 +1726,12 @@
           const st = getChatWorkflowState(projectId);
           const handoff = getChatWorkflowHandoffState(projectId);
           importSprintHandoffFromJson(projectId, st.sourceChatId || '', handoff.rawJson || '');
+        });
+        if ($('btnImportMainChatBootstrapJson')) $('btnImportMainChatBootstrapJson').addEventListener('click', () => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          const st = getChatWorkflowState(projectId);
+          importMainChatBootstrapJson(projectId, st.mainChatBootstrapJson || '');
         });
         if ($('btnBuildDailyLogProjectPrompt')) $('btnBuildDailyLogProjectPrompt').addEventListener('click', () => {
           ui.dailyLogQuery.prompt = buildDailyLogProjectPrompt();
@@ -1976,7 +1995,7 @@
 
       function getChatWorkflowState(projectId) {
         if (!projectId || projectId === ALL_PROJECTS_KEY) {
-          ui.chatWorkflow = { projectId: projectId || '', sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', prompt: '', mode: '' };
+          ui.chatWorkflow = { projectId: projectId || '', sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', sprintStartJson: '', mainChatBootstrapJson: '', prompt: '', mode: '' };
           ui.chatWorkflowHandoff = { projectId: projectId || '', sourceChatId: '', rawJson: '' };
           return ui.chatWorkflow;
         }
@@ -1984,10 +2003,12 @@
         const existingState = ui.chatWorkflowByProject[projectId];
         const state = (existingState && typeof existingState === 'object')
           ? existingState
-          : { projectId, sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', prompt: '', mode: '' };
+          : { projectId, sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', sprintStartJson: '', mainChatBootstrapJson: '', prompt: '', mode: '' };
         state.projectId = projectId;
         if (typeof state.sprintStartPrompt !== 'string') state.sprintStartPrompt = '';
         if (typeof state.sprintHandoffPrompt !== 'string') state.sprintHandoffPrompt = '';
+        if (typeof state.sprintStartJson !== 'string') state.sprintStartJson = '';
+        if (typeof state.mainChatBootstrapJson !== 'string') state.mainChatBootstrapJson = '';
         ui.chatWorkflowByProject[projectId] = state;
         ui.chatWorkflow = state;
         const sourceChats = getProjectSourceChats(projectId);
@@ -2792,6 +2813,259 @@
           '- Halte offene Entscheidungen und Annahmen sichtbar fest.',
           '- Schlage einen pragmatischen Ausführungsplan für den nächsten Sprint vor.'
         ].join('\n');
+      }
+
+
+      function buildLegacyMainChatBootstrapPrompt(projectId) {
+        const project = S.projects.find(p => p.id === projectId);
+        if (!project) return '';
+        const featureLines = getRelevantFeatureTitles(projectId, 8);
+        const noteLines = getRelevantUnprocessedNotes(projectId, 6);
+        return [
+          'Analysiere den folgenden alten Legacy-Chat als Quelle für einen neuen Roadtrip-Hauptchat.',
+          '',
+          'Wichtig:',
+          'Erzeuge keinen Sprintabschluss.',
+          'Rekonstruiere keine historischen Sprintchats.',
+          'Versuche nicht, alte unsaubere Chatphasen künstlich in Sprintstruktur zu pressen.',
+          '',
+          'Ziel:',
+          'Erzeuge einen sauberen project-main Hauptchat-Kontext, mit dem das Projekt künftig im normalen Roadtrip-Zyklus weitergeführt werden kann.',
+          '',
+          'Der alte Chat kann enthalten:',
+          '- Hauptchat-Anteile',
+          '- Sprintchat-Anteile',
+          '- Debugging',
+          '- Analyse',
+          '- Feature-Ideen',
+          '- Architekturentscheidungen',
+          '- offene Fragen',
+          '- erledigte Arbeit',
+          '',
+          'Behandle diese Inhalte als Legacy-Projektkontext, nicht als saubere Sprint-Historie.',
+          'Alte Teilaspekte dürfen als früherer Arbeitskontext erwähnt werden, aber nicht als künstliche Sprint-Historie importiert werden.',
+          '',
+          'Extrahiere:',
+          '- Was ist das Projekt?',
+          '- Was wurde im alten Chat zuletzt gemacht?',
+          '- Welche Funktionen, Features oder Architekturentscheidungen existieren bereits?',
+          '- Welche nächsten Schritte wurden erwähnt?',
+          '- Welche offenen Fragen gibt es?',
+          '- Welche geplanten Features lassen sich ableiten?',
+          '- Welche Risiken oder technischen Schulden sind sichtbar?',
+          '- Was muss ein neuer Hauptchat unbedingt wissen?',
+          '- Was wäre der nächste sinnvolle Sprint?',
+          '',
+          'Gib danach exakt zwei Teile aus:',
+          '',
+          'TEIL 1: HAUPTCHAT-STARTPROMPT',
+          '',
+          'Ein vollständiger Prompt, den ich in einen neuen project-main Hauptchat kopieren kann.',
+          'Der Prompt soll den Projektkontext, aktuellen Stand, Fokus, nächste Schritte, bekannte erledigte Arbeit, offene Fragen und sinnvolle nächste Sprint-Richtung enthalten.',
+          '',
+          'TEIL 2: ROADTRIP-IMPORT-JSON',
+          '',
+          'Gib ausschließlich gültiges JSON in folgendem Schema aus:',
+          '',
+          '{',
+          '  "type": "roadtrip-mainchat-bootstrap",',
+          '  "chatTitle": "...",',
+          '  "chatType": "project-main",',
+          '  "status": "aktiv",',
+          '  "projectSummary": "...",',
+          '  "currentFocus": "...",',
+          '  "nextStep": "...",',
+          '  "mainChatPrompt": "...",',
+          '  "knownContext": ["..."],',
+          '  "recentWork": ["..."],',
+          '  "proposedFeatures": [',
+          '    {',
+          '      "title": "...",',
+          '      "description": "...",',
+          '      "category": "Workflow",',
+          '      "priority": "mittel",',
+          '      "status": "planned"',
+          '    }',
+          '  ],',
+          '  "openQuestions": ["..."],',
+          '  "legacySourceNotes": ["..."]',
+          '}',
+          '',
+          'Regeln für das JSON:',
+          '- type muss "roadtrip-mainchat-bootstrap" sein.',
+          '- chatType muss "project-main" sein.',
+          '- status soll "aktiv" sein.',
+          '- proposedFeatures nur für geplante Features verwenden.',
+          '- Keine implemented Features erzeugen.',
+          '- Keine historischen Sprintchats erzeugen.',
+          '- Unklare Punkte lieber in openQuestions oder legacySourceNotes schreiben.',
+          '- Antworte in TEIL 2 mit gültigem JSON ohne Markdown-Kommentare innerhalb des JSON.',
+          '',
+          'Roadtrip-Projektkontext als Orientierung:',
+          `- Projekttitel: ${project.title || '—'}`,
+          `- Projektsummary: ${project.summary || '—'}`,
+          `- Aktueller Fokus: ${project.currentFocus || '—'}`,
+          `- Nächster Schritt: ${project.nextStep || '—'}`,
+          '',
+          'Bestehende offene/geplante Features in Roadtrip:',
+          ...(featureLines.length ? featureLines : ['- Keine offenen Features hinterlegt.']),
+          ...(noteLines.length ? ['', 'Relevante unverarbeitete Notizen in Roadtrip:', ...noteLines] : []),
+          '',
+          'Füge unterhalb dieses Prompts den alten Legacy-Chat ein.'
+        ].join('\n');
+      }
+
+      function parseMainChatBootstrapJson(rawJson) {
+        const extractedJson = extractJsonObjectFromText(rawJson || '');
+        const parsed = JSON.parse(extractedJson);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid-mainchat-bootstrap-object');
+        if (String(parsed.type || '').trim() !== 'roadtrip-mainchat-bootstrap') throw new Error('invalid-mainchat-bootstrap-type');
+        if (String(parsed.chatType || '').trim() !== 'project-main') throw new Error('invalid-mainchat-bootstrap-chat-type');
+        const chatTitle = String(parsed.chatTitle || '').trim();
+        const projectSummary = String(parsed.projectSummary || '').trim();
+        const currentFocus = String(parsed.currentFocus || '').trim();
+        if (!chatTitle) throw new Error('mainchat-bootstrap-chat-title');
+        if (!projectSummary && !currentFocus) throw new Error('mainchat-bootstrap-context-required');
+
+        const toStringArray = (value, errorCode) => {
+          if (value == null) return [];
+          if (!Array.isArray(value)) throw new Error(errorCode);
+          return value.map(x => String(x || '').trim()).filter(Boolean);
+        };
+        let proposedFeatures = [];
+        if (parsed.proposedFeatures != null) {
+          if (!Array.isArray(parsed.proposedFeatures)) throw new Error('mainchat-bootstrap-proposed-features');
+          proposedFeatures = parsed.proposedFeatures.map(item => {
+            if (!item || typeof item !== 'object') return null;
+            const title = String(item.title || '').trim();
+            if (!title) return null;
+            return {
+              title,
+              description: String(item.description || '').trim(),
+              category: mapHandoffFeatureCategory(item.category),
+              priority: mapHandoffFeaturePriority(item.priority),
+              status: 'planned'
+            };
+          }).filter(Boolean);
+        }
+        return {
+          parsed,
+          extractedJson,
+          normalized: {
+            type: 'roadtrip-mainchat-bootstrap',
+            chatTitle,
+            chatType: 'project-main',
+            status: 'aktiv',
+            projectSummary,
+            currentFocus,
+            nextStep: String(parsed.nextStep || '').trim(),
+            mainChatPrompt: String(parsed.mainChatPrompt || '').trim(),
+            knownContext: toStringArray(parsed.knownContext, 'mainchat-bootstrap-known-context'),
+            recentWork: toStringArray(parsed.recentWork, 'mainchat-bootstrap-recent-work'),
+            openQuestions: toStringArray(parsed.openQuestions, 'mainchat-bootstrap-open-questions'),
+            legacySourceNotes: toStringArray(parsed.legacySourceNotes, 'mainchat-bootstrap-legacy-source-notes'),
+            proposedFeatures
+          }
+        };
+      }
+
+      function importMainChatBootstrapJson(projectId, rawJson) {
+        const project = S.projects.find(p => p && p.id === projectId);
+        if (!project) return alert('Projekt wurde nicht gefunden.');
+        if (project.status === 'archiviert') return alert('Archivierte Projekte können keinen Hauptchat-Bootstrap importieren.');
+        if (!String(rawJson || '').trim()) return alert('Bitte roadtrip-mainchat-bootstrap JSON einfügen.');
+        let result;
+        try {
+          result = parseMainChatBootstrapJson(rawJson);
+        } catch (err) {
+          if (err && err.message === 'invalid-json-not-found') return alert('Ungültiges JSON: Kein JSON-Objekt erkannt.');
+          if (err && err.message === 'invalid-mainchat-bootstrap-object') return alert('Ungültiges JSON: Erwartet wird ein JSON-Objekt.');
+          if (err && err.message === 'invalid-mainchat-bootstrap-type') return alert('Ungültiges JSON: type muss "roadtrip-mainchat-bootstrap" sein.');
+          if (err && err.message === 'invalid-mainchat-bootstrap-chat-type') return alert('Ungültiges JSON: chatType muss "project-main" sein.');
+          if (err && err.message === 'mainchat-bootstrap-chat-title') return alert('Ungültiges JSON: chatTitle fehlt.');
+          if (err && err.message === 'mainchat-bootstrap-context-required') return alert('Ungültiges JSON: projectSummary oder currentFocus muss vorhanden sein.');
+          if (err && err.message && err.message.startsWith('mainchat-bootstrap-')) return alert('Ungültiges JSON: Kontextfelder müssen Arrays aus Strings sein.');
+          return alert('Hauptchat-Bootstrap konnte nicht importiert werden: ' + (err && err.message ? err.message : 'Unbekannter Fehler'));
+        }
+
+        const normalized = result.normalized;
+        const now = new Date().toISOString();
+        let mainChat = getProjectMainChat(projectId);
+        if (mainChat) mainChat = S.chats.find(c => c && c.id === mainChat.id && c.projectId === projectId) || mainChat;
+        if (!mainChat) {
+          mainChat = ensureChatDefaults({
+            id: uid('ch'),
+            projectId,
+            title: normalized.chatTitle,
+            type: 'project-main',
+            status: 'aktiv',
+            url: project.mainChatUrl || '',
+            startedAt: now,
+            updatedAt: now
+          });
+          S.chats.push(mainChat);
+        }
+        mainChat.title = normalized.chatTitle;
+        mainChat.type = 'project-main';
+        mainChat.status = 'aktiv';
+        mainChat.summary = normalized.projectSummary || mainChat.summary || project.summary || '';
+        if (normalized.nextStep) mainChat.nextStep = normalized.nextStep;
+        mainChat.mainChatId = mainChat.id;
+        mainChat.rawReportText = result.extractedJson;
+        mainChat.rawHandoffText = result.extractedJson;
+        mainChat.mainChatPrompt = normalized.mainChatPrompt;
+        mainChat.knownContext = normalized.knownContext;
+        mainChat.recentWork = normalized.recentWork;
+        mainChat.openQuestions = normalized.openQuestions;
+        mainChat.legacySourceNotes = normalized.legacySourceNotes;
+        mainChat.updatedAt = now;
+        appendHandoffToChat(mainChat, result.extractedJson, now);
+
+        project.mainChatId = mainChat.id;
+        if (mainChat.url && mainChat.url.trim()) project.mainChatUrl = mainChat.url.trim();
+        if (normalized.projectSummary) project.summary = normalized.projectSummary;
+        if (normalized.currentFocus) project.currentFocus = normalized.currentFocus;
+        if (normalized.nextStep) project.nextStep = normalized.nextStep;
+        project.updatedAt = now;
+
+        let createdFeatures = 0;
+        const existingByTitle = new Set(
+          getVisibleFeatures(S.features)
+            .filter(f => f.projectId === projectId)
+            .map(f => normalizeText(f.title || ''))
+            .filter(Boolean)
+        );
+        normalized.proposedFeatures.forEach(item => {
+          const normalizedTitle = normalizeText(item.title);
+          if (!normalizedTitle || existingByTitle.has(normalizedTitle)) return;
+          S.features.push(ensureFeatureDefaults({
+            id: uid('f'),
+            projectId,
+            title: item.title,
+            description: item.description || 'Aus Legacy-Hauptchat-Bootstrap abgeleitet.',
+            category: item.category,
+            priority: item.priority,
+            status: 'planned',
+            pool: 'planned',
+            reviewStatus: 'needs-review',
+            sourceType: 'mainchat-bootstrap',
+            sourceChatId: mainChat.id,
+            sourceNoteIds: [],
+            createdAt: now,
+            updatedAt: now
+          }));
+          existingByTitle.add(normalizedTitle);
+          createdFeatures++;
+        });
+
+        const st = getChatWorkflowState(projectId);
+        st.sourceChatId = mainChat.id;
+        st.mode = 'legacy-mainchat-bootstrap-import';
+        st.mainChatBootstrapJson = result.extractedJson;
+        st.prompt = normalized.mainChatPrompt || st.prompt || '';
+        save();
+        renderView();
+        alert('Hauptchat-Bootstrap importiert. project-main Chat aktualisiert. Neue geplante Features: ' + createdFeatures + '.');
       }
 
       function buildSprintPromptFromMainChat(projectId, sprintGoal) {
@@ -3778,6 +4052,15 @@
                   <button class="btn btn-ghost" id="btnChatWorkflowSetMain" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Als Hauptchat markieren</button>
                   <button class="btn btn-ghost" id="btnChatWorkflowBuildReturn" ${isArchivedProject || !chatWorkflow.sourceChatId || !projectMainChat ? 'disabled' : ''}>Zum Hauptchat-Kontext zurück</button>
                   <button class="btn btn-ghost" id="btnChatWorkflowBuildBootstrap" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Neuen Hauptchat-Kontext bauen</button>
+                  <button class="btn btn-ghost" id="btnChatWorkflowBuildLegacyMainBootstrap" ${isArchivedProject ? 'disabled' : ''}>Legacy-Chat → Hauptchat-Bootstrap</button>
+                </div>
+                <div class="field" style="margin-top:8px;">
+                  <label for="mainChatBootstrapJsonInput">roadtrip-mainchat-bootstrap JSON importieren</label>
+                  <div class="mini" style="margin-bottom:6px;">Importiert nur einen project-main Hauptchat-Kontext und geplante Features; es werden keine historischen Sprintchats erzeugt.</div>
+                  <textarea id="mainChatBootstrapJsonInput" style="min-height:140px;font-family:var(--font-mono);font-size:12px;" placeholder='{"type":"roadtrip-mainchat-bootstrap","chatTitle":"...","chatType":"project-main"}'>${escapeHtml(chatWorkflow.mainChatBootstrapJson || '')}</textarea>
+                  <div class="stack-row" style="margin-top:6px;">
+                    <button class="btn btn-secondary" id="btnImportMainChatBootstrapJson" ${isArchivedProject ? 'disabled' : ''}>Hauptchat-Bootstrap importieren</button>
+                  </div>
                 </div>
               </details>
               <details style="margin-bottom:8px;">
@@ -7916,6 +8199,11 @@
           nextStep: '',
           rawReportText: '',
           rawHandoffText: '',
+          mainChatPrompt: '',
+          knownContext: [],
+          recentWork: [],
+          openQuestions: [],
+          legacySourceNotes: [],
           handoffImportedAt: '',
           handoffHistory: [],
           sourceChatId: '',
@@ -7927,6 +8215,11 @@
           workMode: '',
           learningMeta: {}
         }, input);
+        clone.knownContext = Array.isArray(clone.knownContext) ? clone.knownContext.map(x => String(x || '').trim()).filter(Boolean) : [];
+        clone.recentWork = Array.isArray(clone.recentWork) ? clone.recentWork.map(x => String(x || '').trim()).filter(Boolean) : [];
+        clone.openQuestions = Array.isArray(clone.openQuestions) ? clone.openQuestions.map(x => String(x || '').trim()).filter(Boolean) : [];
+        clone.legacySourceNotes = Array.isArray(clone.legacySourceNotes) ? clone.legacySourceNotes.map(x => String(x || '').trim()).filter(Boolean) : [];
+        clone.mainChatPrompt = String(clone.mainChatPrompt || '');
         clone.learningMeta = Object.assign({
           learningsExtracted: false,
           ankiCreated: false,
