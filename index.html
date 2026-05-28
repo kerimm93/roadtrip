@@ -1327,7 +1327,7 @@
         if ($('rawGistId')) $('rawGistId').addEventListener('input', e => { C.rawGistId = e.target.value; save(); });
         if ($('rawGistToken')) $('rawGistToken').addEventListener('input', e => { C.rawGistToken = e.target.value; save(); });
         if ($('btnGistPush')) $('btnGistPush').addEventListener('click', gistPush);
-        if ($('btnGistPull')) $('btnGistPull').addEventListener('click', gistPull);
+        if ($('btnGistPull')) $('btnGistPull').addEventListener('click', gistSync);
         if ($('btnGistRawBackup')) $('btnGistRawBackup').addEventListener('click', gistRawBackup);
         if ($('btnEmergencyExportFull')) $('btnEmergencyExportFull').addEventListener('click', exportFullEmergencyJson);
         if ($('btnCompactExport')) $('btnCompactExport').addEventListener('click', exportCompactJson);
@@ -4067,7 +4067,7 @@
           <label class="mini" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;"><input id="gistRememberPassphraseSession" type="checkbox" ${_gistRememberPassphraseForSession ? 'checked' : ''} /> Passphrase für diese Sitzung merken</label>
           <div class="notice" style="font-size:12px;margin-bottom:8px;">Gist-Sync ist verschlüsselt.<br>Ohne Passphrase kann ein verschlüsselter Gist nicht gelesen werden.<br>Passphrase wird standardmäßig nicht dauerhaft gespeichert.<br>Bei vergessener Passphrase ist der Gist nicht wiederherstellbar. Lokale ZIP-Backups behalten.</div>
           <div class="stack-row" style="margin-bottom:8px;">
-            <button class="btn btn-primary" id="btnGistPull">↓ Gist prüfen &amp; mergen</button>
+            <button class="btn btn-primary" id="btnGistPull">↕️ Gist synchronisieren</button>
           </div>
           <details style="margin-bottom:8px;">
             <summary>Erweiterte / riskante Gist-Aktionen</summary>
@@ -7041,10 +7041,19 @@
         }
       }
 
-      async function gistPull() {
+      async function gistSync() {
         if (!C.gistId || !C.gistToken) {
           return alert('Bitte zuerst Gist ID und GitHub Token in den Settings eintragen.');
         }
+        const passphrase = getRoadtripGistPassphrase();
+        if (!passphrase) {
+          alert('Passphrase erforderlich. Ohne Passphrase kann der verschlüsselte Gist-Sync nicht ausgeführt werden.');
+          return;
+        }
+        const prevLastExported = S._lastExported || '';
+        const prevLastGistPushAt = S._lastGistPushAt || '';
+        const prevLastGistPullAt = S._lastGistPullAt || '';
+        const prevStateSnapshot = JSON.parse(JSON.stringify(S || {}));
         try {
           const r = await fetch('https://api.github.com/gists/' + C.gistId, {
             headers: githubHeaders(C.gistToken, false)
@@ -7055,15 +7064,10 @@
           let remotePayload = null;
           let pulledLegacyPlain = false;
           if (isRoadtripEncryptedGistPayload(remoteRaw)) {
-            const passphrase = getRoadtripGistPassphrase();
-            if (!passphrase) {
-              alert('Passphrase erforderlich. Ohne Passphrase kann ein verschlüsselter Gist nicht gelesen werden.');
-              return;
-            }
             try {
               remotePayload = await decryptRoadtripGistPayload(remoteRaw, passphrase);
             } catch (err) {
-              alert('Falsche Passphrase oder beschädigter Gist. Kein Merge durchgeführt. Bitte ZIP-Backup oder JSON-Export als Recovery nutzen.');
+              alert('Sync fehlgeschlagen beim Entschlüsseln des Gist.');
               return;
             }
           } else if (isLegacyPlainRoadtripGistPayload(remoteRaw)) {
@@ -7078,50 +7082,35 @@
           const remoteState = getGistPayloadState(remotePayload);
           if (!remoteState) throw new Error('Ungültiger Gist-State.');
           const localStateSnapshot = JSON.parse(JSON.stringify(S || {}));
-          const remoteTs = getPayloadTimestamp(remotePayload, remoteState) || getStateLatestEntityTimestamp(remoteState);
-          const localTs = getPayloadTimestamp({ exported: S._lastExported }, localStateSnapshot) || getStateLatestEntityTimestamp(localStateSnapshot);
-          const localIsEmpty = isRoadtripStateEffectivelyEmpty(localStateSnapshot);
           const statesEqual = areStatesSyncEquivalent(localStateSnapshot, remoteState);
-          if (statesEqual) {
+          if (statesEqual && !pulledLegacyPlain) {
             const pullTs = new Date().toISOString();
             S._lastGistPullAt = pullTs;
             _gistStatus.lastPull = pullTs;
             _gistStatus.lastError = '';
             save();
             updateGistStatusUI();
-            alert('Gist-Pull: Keine Änderungen (No-Op). Lokaler Stand ist bereits identisch.');
-            if (pulledLegacyPlain) {
-              alert('Legacy-Klartext wurde gelesen. Bitte jetzt mit Passphrase verschlüsselt neu pushen.');
-            }
+            alert('Gist und lokaler Stand sind bereits synchron.');
             return;
           }
 
-          const remoteMs = Date.parse(remoteTs);
-          const localMs = Date.parse(localTs);
-          const remoteIsNewer = Number.isFinite(remoteMs) && Number.isFinite(localMs) ? remoteMs > localMs : null;
+          const mergedState = mergeRemoteStateForGistPull(localStateSnapshot, remoteState);
+          const localEqualsMerged = areStatesSyncEquivalent(localStateSnapshot, mergedState);
+          const remoteEqualsMerged = areStatesSyncEquivalent(remoteState, mergedState);
+          const didChange = !localEqualsMerged;
+          const needsPush = !remoteEqualsMerged || pulledLegacyPlain;
+          const localVsRemoteTs = (() => {
+            const remoteTs = getPayloadTimestamp(remotePayload, remoteState) || getStateLatestEntityTimestamp(remoteState);
+            const localTs = getPayloadTimestamp({ exported: S._lastExported }, localStateSnapshot) || getStateLatestEntityTimestamp(localStateSnapshot);
+            const remoteMs = Date.parse(remoteTs);
+            const localMs = Date.parse(localTs);
+            if (!Number.isFinite(remoteMs) || !Number.isFinite(localMs)) return 'divergent';
+            if (localMs > remoteMs) return 'local-newer';
+            if (remoteMs > localMs) return 'remote-newer';
+            return 'divergent';
+          })();
 
-          if (!localIsEmpty && remoteIsNewer === false) {
-            alert('Gist ist nicht neuer als lokal. Kein Pull durchgeführt.\n\nWenn du dennoch importieren willst, erstelle vorher ein ZIP-Backup oder einen Notfall-Export.');
-            return;
-          }
-          if (!localIsEmpty && remoteIsNewer === null) {
-            alert('Gist-Pull abgebrochen: Zeitstempel-Lage unklar.\nBitte vorher ZIP-Backup oder Notfall-Export erstellen und dann bewusst erneut prüfen.');
-            return;
-          }
-
-          if (!localIsEmpty) {
-            const proceed = confirm('Gist scheint neuer zu sein. Lokale Daten werden tombstone-sicher gemergt (kein blindes Ersetzen).\n\nVorher ZIP-Backup/Notfall-Export empfohlen.\n\nWeiter?');
-            if (!proceed) return;
-          }
-
-          if (localIsEmpty) {
-            const localDeletedIds = localStateSnapshot.deletedIds || {};
-            const newState = Object.assign(defaultState(), remoteState);
-            newState.deletedIds = mergeDeletedIds(localDeletedIds, remoteState.deletedIds || {});
-            S = newState;
-          } else {
-            S = mergeRemoteStateForGistPull(localStateSnapshot, remoteState);
-          }
+          if (didChange) S = mergedState;
             ensureDefaults();
             pruneDeletedIds();
             S.projects = (S.projects || []).filter(p => !isDeleted(p.id));
@@ -7131,23 +7120,56 @@
             S.chats = (S.chats || []).filter(c => !isDeleted(c.id));
             S.importVersions = (S.importVersions || []).filter(v => !isDeleted(v.id));
             S.unmatchedNotes = (S.unmatchedNotes || []).filter(n => !isDeleted(n.id));
-            const pullTs = new Date().toISOString();
-            S._lastGistPullAt = pullTs;
-            _gistStatus.lastPull = pullTs;
-            _gistStatus.lastError = '';
-            save();
+          const pullTs = new Date().toISOString();
+          S._lastGistPullAt = pullTs;
+          _gistStatus.lastPull = pullTs;
+          _gistStatus.lastError = '';
+
+          if (needsPush) {
+            const syncTs = new Date().toISOString();
+            S._lastExported = syncTs;
+            S._lastGistPushAt = syncTs;
+            const payload = buildGistPayload();
+            payload.exported = syncTs;
+            const envelope = await encryptRoadtripGistPayload(payload, passphrase);
+            const w = await fetch('https://api.github.com/gists/' + C.gistId, {
+              method: 'PATCH',
+              headers: githubHeaders(C.gistToken, true),
+              body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(envelope, null, 2) } } })
+            });
+            if (!w.ok) {
+              const errText = await w.text().catch(() => '');
+              throw new Error('cloud-write: HTTP ' + w.status + (errText ? ': ' + errText.slice(0, 120) : ''));
+            }
+            _gistStatus.lastPush = syncTs;
+          }
+
+          if (didChange || needsPush) save();
             renderAll();
             updateGistStatusUI();
-            alert(localIsEmpty
-              ? ('Vom Gist geladen (' + S.projects.length + ' Projekte, ' + S.features.length + ' Features, ' + S.notes.length + ' Notizen).')
-              : ('Gist-Pull Merge durchgeführt (' + S.projects.length + ' Projekte, ' + S.features.length + ' Features, ' + S.notes.length + ' Notizen).'));
-            if (pulledLegacyPlain) alert('Legacy-Klartext wurde gelesen. Bitte jetzt mit Passphrase verschlüsselt neu pushen.');
+            if (!didChange && !needsPush) alert('Gist und lokaler Stand sind bereits synchron.');
+            else if (!didChange && needsPush && pulledLegacyPlain) alert('Legacy-Klartext-Gist wurde verschlüsselt migriert. Gist und lokaler Stand sind synchron.');
+            else if (!didChange && needsPush) alert('Lokaler Stand war neuer. Verschlüsselt in den Gist synchronisiert.');
+            else if (didChange && !needsPush) alert('Remote-Stand wurde entschlüsselt, tombstone-sicher gemergt und lokal synchronisiert.');
+            else if (localVsRemoteTs === 'remote-newer') alert('Remote-Stand wurde entschlüsselt, tombstone-sicher gemergt und lokal synchronisiert.');
+            else if (localVsRemoteTs === 'local-newer') alert('Lokaler Stand war neuer. Verschlüsselt in den Gist synchronisiert.');
+            else alert('Lokaler und Remote-Stand wurden tombstone-sicher zusammengeführt und verschlüsselt synchronisiert.');
         } catch (e) {
+          if (String(e.message || '').startsWith('cloud-write:')) {
+            S = Object.assign(defaultState(), JSON.parse(JSON.stringify(prevStateSnapshot || {})));
+            ensureDefaults();
+          }
+          S._lastExported = prevLastExported;
+          S._lastGistPushAt = prevLastGistPushAt;
+          S._lastGistPullAt = prevLastGistPullAt;
           _gistStatus.lastError = e.message.slice(0, 80);
           updateGistStatusUI();
-          alert('Gist-Pull fehlgeschlagen: ' + e.message + ' Bitte ZIP-Backup oder JSON-Export als Recovery nutzen.');
+          if (String(e.message || '').startsWith('cloud-write:')) alert('Sync lokal gemergt, aber Cloud-Write fehlgeschlagen.');
+          else alert('Sync fehlgeschlagen beim Abrufen des Gist.');
         }
       }
+
+      async function gistPull() { return gistSync(); }
 
       async function gistRawBackup() {
         const id = C.rawGistId || C.gistId;
