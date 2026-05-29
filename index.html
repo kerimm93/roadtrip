@@ -786,7 +786,7 @@
 
       let roadtripDbPromise = null;
       let indexedDbUnavailable = false;
-      let storageMeta = { storageMode: 'localStorage', lastIndexedDbSaveAt: '', lastLocalStorageFallbackAt: '', hasLocalBackup: false };
+      let storageMeta = { storageMode: 'localStorage', lastIndexedDbSaveAt: '', lastLocalStorageFallbackAt: '', hasLocalBackup: false, lastGistSyncFingerprint: '' };
       let roadtripSaveQueue = Promise.resolve();
 
       init();
@@ -7175,6 +7175,11 @@
             });
           });
         });
+        const deletedIds = st.deletedIds && typeof st.deletedIds === 'object' && !Array.isArray(st.deletedIds) ? st.deletedIds : {};
+        Object.keys(deletedIds).forEach(id => {
+          const ms = Date.parse(deletedIds[id]);
+          if (Number.isFinite(ms) && ms > newestMs) newestMs = ms;
+        });
         return Number.isFinite(newestMs) ? new Date(newestMs).toISOString() : '';
       }
 
@@ -7192,24 +7197,74 @@
       }
 
       function normalizeStateForSyncCompare(state) {
-        const clone = JSON.parse(JSON.stringify((state && typeof state === 'object') ? state : {}));
-        const volatileKeys = [
-          'createdAt', '_lastLocalSaveAt', '_lastExported', '_lastGistPushAt', '_lastGistPullAt',
-          '_lastSaveError', '_lastSaveErrorAt', '_lastSaveErrorMessage'
+        const source = (state && typeof state === 'object' && !Array.isArray(state)) ? state : {};
+        const normalized = {};
+        const arrayKeys = ['projects', 'features', 'notes', 'chats', 'analyses', 'importVersions', 'unmatchedNotes'];
+        const normalizeValue = (value) => {
+          if (Array.isArray(value)) return value.map(normalizeValue);
+          if (value && typeof value === 'object') {
+            const obj = {};
+            Object.keys(value).sort().forEach(key => { obj[key] = normalizeValue(value[key]); });
+            return obj;
+          }
+          return value;
+        };
+        normalized.version = source.version || 1;
+        arrayKeys.forEach(key => {
+          const list = Array.isArray(source[key]) ? source[key].filter(item => item && typeof item === 'object') : [];
+          normalized[key] = list.map(normalizeValue).sort((a, b) => String(a.id || '').localeCompare(String(b.id || '')) || JSON.stringify(a).localeCompare(JSON.stringify(b)));
+        });
+        const deletedIds = source.deletedIds && typeof source.deletedIds === 'object' && !Array.isArray(source.deletedIds) ? source.deletedIds : {};
+        normalized.deletedIds = normalizeValue(deletedIds);
+        return normalized;
+      }
+
+      function createGistSyncFingerprint(state) {
+        return JSON.stringify(normalizeStateForSyncCompare(state));
+      }
+
+      function rememberSuccessfulGistSyncFingerprint(state) {
+        storageMeta.lastGistSyncFingerprint = createGistSyncFingerprint(state || S || {});
+        persistStorageMeta();
+      }
+
+      function isLocalDirtySinceLastGistSync(localState, remoteState) {
+        if (!hasRoadtripUserData(localState)) return false;
+        if (isRoadtripStateEffectivelyEmpty(remoteState)) return true;
+        const currentFingerprint = createGistSyncFingerprint(localState);
+        if (storageMeta.lastGistSyncFingerprint) return currentFingerprint !== storageMeta.lastGistSyncFingerprint;
+        const lastSyncCandidates = [
+          localState && localState._lastGistPushAt,
+          localState && localState._lastGistPullAt,
+          storageMeta && storageMeta.lastGistSyncAt
         ];
-        volatileKeys.forEach(k => { delete clone[k]; });
-        return clone;
+        let lastSyncMs = Number.NEGATIVE_INFINITY;
+        lastSyncCandidates.forEach(ts => {
+          const ms = Date.parse(ts);
+          if (Number.isFinite(ms) && ms > lastSyncMs) lastSyncMs = ms;
+        });
+        if (!Number.isFinite(lastSyncMs)) return true;
+        const latestUserMs = Date.parse(getStateLatestEntityTimestamp(localState));
+        return Number.isFinite(latestUserMs) && latestUserMs > lastSyncMs;
       }
 
       function areStatesSyncEquivalent(localState, remoteState) {
-        return JSON.stringify(normalizeStateForSyncCompare(localState)) === JSON.stringify(normalizeStateForSyncCompare(remoteState));
+        return createGistSyncFingerprint(localState) === createGistSyncFingerprint(remoteState);
       }
 
-      function mergeRemoteStateForGistPull(localState, remoteState) {
+      function mergeRemoteStateForGistPull(localState, remoteState, options) {
+        const opts = options && typeof options === 'object' ? options : {};
         const localBase = Object.assign(defaultState(), localState || {});
         const remoteBase = Object.assign(defaultState(), remoteState || {});
-        const merged = JSON.parse(JSON.stringify(localBase));
+        const merged = JSON.parse(JSON.stringify(opts.preferRemoteWhenLocalClean ? remoteBase : localBase));
         merged.deletedIds = mergeDeletedIds(localBase.deletedIds || {}, remoteBase.deletedIds || {});
+        if (opts.preferRemoteWhenLocalClean) {
+          ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes'].forEach(entityType => {
+            const list = Array.isArray(merged[entityType]) ? merged[entityType] : [];
+            merged[entityType] = list.filter(item => item && item.id && !merged.deletedIds[item.id]);
+          });
+          return merged;
+        }
 
         const tsFor = (item) => {
           if (!item || typeof item !== 'object') return NaN;
@@ -7319,6 +7374,7 @@
           if (!body || !body.files || !body.files[GIST_FILE]) throw new Error('Antwort ohne erwartete Gist-Datei.');
           _gistStatus.lastPush = syncTs;
           _gistStatus.lastError = '';
+          rememberSuccessfulGistSyncFingerprint(S);
           save();
           updateGistStatusUI();
           alert('Remote-Gist wurde verschlüsselt mit lokalem Stand überschrieben: ' + formatDateTime(syncTs));
@@ -7380,26 +7436,31 @@
             S._lastGistPullAt = pullTs;
             _gistStatus.lastPull = pullTs;
             _gistStatus.lastError = '';
+            rememberSuccessfulGistSyncFingerprint(S);
             save();
             updateGistStatusUI();
             alert('Gist und lokaler Stand sind bereits synchron.');
             return;
           }
 
-          const mergedState = mergeRemoteStateForGistPull(localStateSnapshot, remoteState);
+          const localHasUserData = hasRoadtripUserData(localStateSnapshot);
+          const remoteHasUserData = hasRoadtripUserData(remoteState);
+          const localHasUnsyncedUserChanges = isLocalDirtySinceLastGistSync(localStateSnapshot, remoteState);
+          const shouldPreferRemote = !localHasUnsyncedUserChanges && remoteHasUserData && !pulledLegacyPlain;
+          const mergedState = mergeRemoteStateForGistPull(localStateSnapshot, remoteState, { preferRemoteWhenLocalClean: shouldPreferRemote });
           const localEqualsMerged = areStatesSyncEquivalent(localStateSnapshot, mergedState);
           const remoteEqualsMerged = areStatesSyncEquivalent(remoteState, mergedState);
           const didChange = !localEqualsMerged;
-          const localHasUserData = hasRoadtripUserData(localStateSnapshot);
-          const remoteHasUserData = hasRoadtripUserData(remoteState);
           const initialRemoteAdopted = didChange && !localHasUserData && remoteHasUserData && remoteEqualsMerged;
-          const needsPush = !remoteEqualsMerged || pulledLegacyPlain;
+          const localWinsWithoutMerge = !didChange && !remoteEqualsMerged && localHasUnsyncedUserChanges;
+          const tombstoneCorrectionPush = shouldPreferRemote && !remoteEqualsMerged;
+          const needsPush = pulledLegacyPlain || localWinsWithoutMerge || (localHasUnsyncedUserChanges && !remoteEqualsMerged) || tombstoneCorrectionPush;
           let syncOutcome = 'merged-and-pushed';
           if (!didChange && !needsPush) syncOutcome = 'already-synced';
           else if (pulledLegacyPlain) syncOutcome = 'legacy-migrated';
           else if (initialRemoteAdopted) syncOutcome = 'initial-remote-adopted';
           else if (didChange && !needsPush) syncOutcome = 'remote-adopted';
-          else if (!didChange && needsPush && localHasUserData) syncOutcome = 'local-pushed';
+          else if (localWinsWithoutMerge) syncOutcome = 'local-pushed';
 
           if (didChange) S = mergedState;
           ensureDefaults();
@@ -7435,6 +7496,7 @@
             _gistStatus.lastPush = syncTs;
           }
 
+          rememberSuccessfulGistSyncFingerprint(S);
           if (didChange || needsPush) save();
           renderAll();
           updateGistStatusUI();
