@@ -599,7 +599,7 @@
       const UI_SPRINT_VIS_KEY = 'roadtrip.ui.showCompletedSprintsByProject';
       const UI_MOMENTUM_COLLAPSED_KEY = 'roadtrip.ui.projectMomentumCollapsedByProject';
       const ALL_PROJECTS_KEY = 'all';
-      const VIEWS = ['database', 'momentum', 'project', 'learning', 'import', 'settings'];
+      const VIEWS = ['database', 'momentum', 'project', 'notes', 'learning', 'import', 'settings'];
       const APP_TYPES = ['Daily Log', 'Braindump', 'Review', 'Tracker', 'Writing', 'Learning', 'Meta-App', 'Sonstiges'];
       const PROJECT_STATUS = ['aktiv', 'pausiert', 'archiviert'];
       const FEATURE_CATEGORIES = ['UI', 'Workflow', 'Sync', 'KI', 'Import/Export', 'Darstellung', 'Datenmodell', 'Ansicht', 'Sonstiges'];
@@ -654,6 +654,8 @@
       const TRELLO_SYNC_END = '--- /ROADTRIP_SYNC ---';
       const CHAT_TYPES = ['project-main', 'sprint', 'execution', 'branch'];
       const CHAT_STATUS = ['aktiv', 'pausiert', 'abgeschlossen', 'referenz'];
+      const NOTE_TYPES = ['note', 'idea', 'bug', 'question', 'decision', 'feature-candidate'];
+      const NOTE_STATUSES = ['open', 'processed', 'archived'];
 
       let S = defaultState();
       let C = defaultConfig();
@@ -682,6 +684,7 @@
         momentumSort: 'updated',
         momentumQuickNoteByProject: {},
         learningTracker: { projectId: 'all', scope: 'completed', filter: 'open', search: '' },
+        notesWorkspace: { projectId: 'all', status: 'open', type: 'all', search: '', editingNoteId: '' },
         learningPromptByChatId: {}
       };
 
@@ -984,6 +987,7 @@
         if (!S._lastGistPushAt && S._lastExported) S._lastGistPushAt = S._lastExported;
         S.projects = S.projects.map(ensureProjectDefaults);
         S.features = S.features.map(ensureFeatureDefaults);
+        S.notes = S.notes.map(ensureNoteDefaults);
         S.chats = S.chats.map(ensureChatDefaults);
         if (!ui.filters || typeof ui.filters !== 'object') ui.filters = { pool: 'alle', status: 'alle', category: 'alle', search: '' };
         if (!ui.filters.pool) ui.filters.pool = 'alle';
@@ -994,6 +998,48 @@
         if (!ui.learningTracker.filter) ui.learningTracker.filter = 'open';
         if (typeof ui.learningTracker.search !== 'string') ui.learningTracker.search = '';
         if (!ui.learningPromptByChatId || typeof ui.learningPromptByChatId !== 'object') ui.learningPromptByChatId = {};
+        if (!ui.notesWorkspace || typeof ui.notesWorkspace !== 'object') ui.notesWorkspace = { projectId: 'all', status: 'open', type: 'all', search: '', editingNoteId: '' };
+        if (!ui.notesWorkspace.projectId) ui.notesWorkspace.projectId = 'all';
+        if (!['open', 'processed', 'archived', 'all'].includes(ui.notesWorkspace.status)) ui.notesWorkspace.status = 'open';
+        if (!['all'].concat(NOTE_TYPES).includes(ui.notesWorkspace.type)) ui.notesWorkspace.type = 'all';
+        if (typeof ui.notesWorkspace.search !== 'string') ui.notesWorkspace.search = '';
+        if (typeof ui.notesWorkspace.editingNoteId !== 'string') ui.notesWorkspace.editingNoteId = '';
+      }
+
+      function ensureNoteDefaults(note) {
+        const n = note && typeof note === 'object' && !Array.isArray(note) ? note : {};
+        if (!n.id) n.id = uid('n');
+        if (typeof n.text !== 'string') n.text = String(n.text || n.title || '');
+        return n;
+      }
+
+      function getNoteType(note) {
+        const type = String((note && note.type) || '').trim();
+        return NOTE_TYPES.includes(type) ? type : 'note';
+      }
+
+      function getNoteStatus(note) {
+        const status = String((note && note.status) || '').trim();
+        if (NOTE_STATUSES.includes(status)) return status;
+        return note && note.processed ? 'processed' : 'open';
+      }
+
+      function setNoteStatus(note, status) {
+        if (!note) return;
+        const normalized = NOTE_STATUSES.includes(status) ? status : 'open';
+        note.status = normalized;
+        if (normalized === 'processed' || normalized === 'archived') note.processed = true;
+        if (normalized === 'open') note.processed = false;
+        if (normalized === 'processed' && !note.processedAt) note.processedAt = new Date().toISOString();
+        note.updatedAt = new Date().toISOString();
+      }
+
+      function isOpenNote(note) {
+        return getNoteStatus(note) === 'open';
+      }
+
+      function getNoteText(note) {
+        return String((note && (note.text || note.title)) || '').trim();
       }
 
       function save() {
@@ -1198,7 +1244,7 @@
         VIEWS.forEach(v => {
           const b = document.createElement('button');
           b.className = 'seg' + (ui.view === v ? ' active' : '');
-          b.textContent = ({database:'Database',momentum:'Momentum',project:'Project',learning:'Learning',import:'Import',settings:'Settings'})[v];
+          b.textContent = ({database:'Database',momentum:'Momentum',project:'Project',notes:'Notes',learning:'Learning',import:'Import',settings:'Settings'})[v];
           b.addEventListener('click', () => { ui.view = v; renderNav(); renderView(); });
           wrap.appendChild(b);
         });
@@ -1250,13 +1296,14 @@
         if (ui.view === 'database') c.innerHTML = renderDatabaseView();
         if (ui.view === 'momentum') c.innerHTML = renderMomentumDashboardView();
         if (ui.view === 'project') c.innerHTML = renderProjectWorkspace();
+        if (ui.view === 'notes') c.innerHTML = renderNotesWorkspace();
         if (ui.view === 'learning') c.innerHTML = renderLearningWorkspace();
         if (ui.view === 'import') c.innerHTML = renderImportWorkspace();
         if (ui.view === 'settings') c.innerHTML = renderSettingsWorkspace();
         renderProjectSelects();
         if ($('themeSelect')) $('themeSelect').value = C.theme;
         if ($('fontSelect')) $('fontSelect').value = C.font;
-        $('viewTitle').textContent = ({database:'Database',momentum:'Momentum',project:'Project',learning:'Learning',import:'Import',settings:'Settings'})[ui.view];
+        $('viewTitle').textContent = ({database:'Database',momentum:'Momentum',project:'Project',notes:'Notes',learning:'Learning',import:'Import',settings:'Settings'})[ui.view];
         wireDynamicView();
       }
 
@@ -1487,6 +1534,27 @@
         qq('[data-cleanup-ignore]').forEach(btn => btn.addEventListener('click', () => ignoreCleanupProposal(+btn.dataset.cleanupIgnore)));
         qq('[data-restore-feature]').forEach(btn => btn.addEventListener('click', () => restoreFeatureFromTrash(btn.dataset.restoreFeature)));
 
+        if ($('btnAddNotesWorkspaceNote')) $('btnAddNotesWorkspaceNote').addEventListener('click', addNotesWorkspaceNote);
+        if ($('notesWorkspaceProjectFilter')) $('notesWorkspaceProjectFilter').addEventListener('change', e => { ui.notesWorkspace.projectId = e.target.value || 'all'; renderView(); });
+        if ($('notesWorkspaceStatusFilter')) $('notesWorkspaceStatusFilter').addEventListener('change', e => { ui.notesWorkspace.status = e.target.value || 'open'; renderView(); });
+        if ($('notesWorkspaceTypeFilter')) $('notesWorkspaceTypeFilter').addEventListener('change', e => { ui.notesWorkspace.type = e.target.value || 'all'; renderView(); });
+        if ($('notesWorkspaceSearch')) $('notesWorkspaceSearch').addEventListener('input', e => { ui.notesWorkspace.search = e.target.value || ''; renderView(); });
+        qq('[data-edit-note]').forEach(btn => btn.addEventListener('click', () => { ui.notesWorkspace.editingNoteId = btn.dataset.editNote || ''; renderView(); }));
+        qq('[data-save-note-edit]').forEach(btn => btn.addEventListener('click', () => updateNotesWorkspaceNote(btn.dataset.saveNoteEdit || '')));
+        qq('[data-cancel-note-edit]').forEach(btn => btn.addEventListener('click', () => { ui.notesWorkspace.editingNoteId = ''; renderView(); }));
+        qq('[data-open-note]').forEach(btn => btn.addEventListener('click', () => markNoteOpen(btn.dataset.openNote || '')));
+        qq('[data-archive-note]').forEach(btn => btn.addEventListener('click', () => archiveNote(btn.dataset.archiveNote || '')));
+        qq('[data-open-notes-project]').forEach(btn => btn.addEventListener('click', () => {
+          const projectId = btn.dataset.openNotesProject || '';
+          if (!projectId) return;
+          ui.activeProjectId = projectId;
+          ui.editingProjectId = projectId;
+          ui.importDraft.projectId = projectId;
+          ui.view = 'project';
+          renderNav();
+          renderSidebarProjects();
+          renderView();
+        }));
         qq('[data-edit-project]').forEach(btn => btn.addEventListener('click', () => editProject(btn.dataset.editProject)));
         qq('[data-delete-project]').forEach(btn => btn.addEventListener('click', () => deleteProject(btn.dataset.deleteProject)));
         qq('[data-delete-note]').forEach(btn => btn.addEventListener('click', () => deleteNote(btn.dataset.deleteNote)));
@@ -2201,7 +2269,7 @@
         const blockedFeatures = sortedPlanned.filter(f => f.status === 'blocked');
         const deferredFeatures = sortedPlanned.filter(f => f.status === 'deferred');
         const openNotes = (projectNotes || [])
-          .filter(n => n && n.projectId === projectId && !n.processed && String(n.text || '').trim())
+          .filter(n => n && n.projectId === projectId && isOpenNote(n) && String(n.text || '').trim())
           .slice(0, 3);
         return { plannedFeatures: sortedPlanned, activeFeatures, candidateFeatures, blockedFeatures, deferredFeatures, openNotes };
       }
@@ -2214,7 +2282,7 @@
 
       function getRelevantUnprocessedNotes(projectId, maxItems) {
         return (S.notes || [])
-          .filter(n => n && n.projectId === projectId && !n.processed && String(n.text || '').trim())
+          .filter(n => n && n.projectId === projectId && isOpenNote(n) && String(n.text || '').trim())
           .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
           .slice(0, Math.max(0, maxItems || 5))
           .map(n => '- ' + shorten(String(n.text || '').trim(), 160));
@@ -3361,7 +3429,7 @@
           summary: p.summary || '',
           currentFocus: p.currentFocus || '',
           nextStep: p.nextStep || '',
-          openNotes: (S.notes || []).filter(n => n && n.projectId === p.id && !n.processed && String(n.text || '').trim())
+          openNotes: (S.notes || []).filter(n => n && n.projectId === p.id && isOpenNote(n) && String(n.text || '').trim())
             .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
             .slice(0, 6)
             .map(n => ({ id: n.id || '', text: shorten(String(n.text || '').trim(), 220), createdAt: n.createdAt || '', sourceType: n.sourceType || 'note' }))
@@ -3474,7 +3542,7 @@
         return (S.notes || []).filter(n =>
           n &&
           n.projectId === projectId &&
-          !n.processed &&
+          isOpenNote(n) &&
           String(n.text || '').trim()
         );
       }
@@ -3654,7 +3722,7 @@
           .filter(f => f.status === 'deferred')
           .slice(0, 5);
         const openNotesForPrompt = (projectNotes || [])
-          .filter(n => n && !n.processed && String(n.text || '').trim())
+          .filter(n => n && isOpenNote(n) && String(n.text || '').trim())
           .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
           .slice(0, 12);
         function formatMomentumFeatureForPrompt(feature) {
@@ -4541,6 +4609,99 @@
         `;
       }
 
+      function renderNotesWorkspace() {
+        const st = ui.notesWorkspace || { projectId: 'all', status: 'open', type: 'all', search: '', editingNoteId: '' };
+        const projectOptions = [
+          '<option value="all" ' + (st.projectId === 'all' ? 'selected' : '') + '>Alle Projekte</option>',
+          '<option value="none" ' + (st.projectId === 'none' ? 'selected' : '') + '>Ohne Projekt</option>'
+        ].concat((S.projects || []).map(project => `<option value="${escapeAttr(project.id)}" ${st.projectId === project.id ? 'selected' : ''}>${escapeHtml(project.title || 'Ohne Titel')}</option>`)).join('');
+        const typeOptions = ['all'].concat(NOTE_TYPES).map(type => `<option value="${escapeAttr(type)}" ${st.type === type ? 'selected' : ''}>${type === 'all' ? 'alle' : escapeHtml(type)}</option>`).join('');
+        const statusOptions = ['open', 'processed', 'archived', 'all'].map(status => `<option value="${escapeAttr(status)}" ${st.status === status ? 'selected' : ''}>${escapeHtml(status)}</option>`).join('');
+        const search = normalizeText(st.search || '');
+        const notes = (S.notes || [])
+          .filter(note => {
+            const projectId = String(note.projectId || '');
+            if (st.projectId === 'none' && projectId) return false;
+            if (st.projectId && st.projectId !== 'all' && st.projectId !== 'none' && projectId !== st.projectId) return false;
+            if (st.status && st.status !== 'all' && getNoteStatus(note) !== st.status) return false;
+            if (st.type && st.type !== 'all' && getNoteType(note) !== st.type) return false;
+            if (search) {
+              const haystack = normalizeText([getNoteText(note), note.title, note.sourceType, note.processedIntoFeatureId, getProjectTitle(projectId)].filter(Boolean).join(' '));
+              if (!haystack.includes(search)) return false;
+            }
+            return true;
+          })
+          .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
+        const activeProjectId = st.projectId && st.projectId !== 'all' && st.projectId !== 'none' ? st.projectId : '';
+        return `
+          <div class="panel-title"><h3>Notes Workspace</h3><div class="mini">Zentraler Workspace für rohe Projekt-Notizen aus S.notes.</div></div>
+          <div class="field">
+            <label for="notesWorkspaceText">Neue Notiz</label>
+            <textarea id="notesWorkspaceText" placeholder="Notiz, Idee, Bug, Frage, Entscheidung ..."></textarea>
+          </div>
+          <div class="toolbar" style="margin-bottom:12px;">
+            <div class="field" style="min-width:220px;"><label for="notesWorkspaceProject">Projekt</label><select id="notesWorkspaceProject"><option value="">— Kein Projekt —</option>${(S.projects || []).map(project => `<option value="${escapeAttr(project.id)}" ${activeProjectId === project.id ? 'selected' : ''}>${escapeHtml(project.title || 'Ohne Titel')}</option>`).join('')}</select></div>
+            <div class="field" style="min-width:180px;"><label for="notesWorkspaceType">Typ</label><select id="notesWorkspaceType">${NOTE_TYPES.map(type => `<option value="${escapeAttr(type)}">${escapeHtml(type)}</option>`).join('')}</select></div>
+            <button class="btn btn-primary" id="btnAddNotesWorkspaceNote">Notiz hinzufügen</button>
+          </div>
+          <div class="toolbar" style="margin-bottom:12px;">
+            <div class="field" style="min-width:220px;"><label for="notesWorkspaceProjectFilter">Projektfilter</label><select id="notesWorkspaceProjectFilter">${projectOptions}</select></div>
+            <div class="field"><label for="notesWorkspaceStatusFilter">Status</label><select id="notesWorkspaceStatusFilter">${statusOptions}</select></div>
+            <div class="field"><label for="notesWorkspaceTypeFilter">Typ</label><select id="notesWorkspaceTypeFilter">${typeOptions}</select></div>
+            <div class="field" style="min-width:240px;"><label for="notesWorkspaceSearch">Suche</label><input id="notesWorkspaceSearch" value="${escapeAttr(st.search || '')}" placeholder="Text, Projekt, Quelle ..." /></div>
+          </div>
+          ${activeProjectId ? `<div class="notice" style="margin-bottom:12px;">Batch-Pipeline für dieses Projekt bleibt im Project View: <button class="btn btn-secondary" data-open-notes-project="${escapeAttr(activeProjectId)}">Projekt öffnen</button></div>` : ''}
+          <div class="list">
+            ${notes.map(note => renderNotesWorkspaceItem(note)).join('') || '<div class="notice">Keine passenden Notizen.</div>'}
+          </div>
+        `;
+      }
+
+      function renderNotesWorkspaceItem(note) {
+        const status = getNoteStatus(note);
+        const type = getNoteType(note);
+        const projectId = String(note.projectId || '');
+        const projectName = getProjectTitle(projectId) || 'Ohne Projekt';
+        const text = getNoteText(note);
+        const isEditing = ui.notesWorkspace && ui.notesWorkspace.editingNoteId === note.id;
+        const featureHint = note.processedIntoFeatureId ? `<span class="pill pill-success">Feature: ${escapeHtml(note.processedIntoFeatureId)}</span>` : '';
+        const sourceHint = note.sourceType ? `<span class="pill">Quelle: ${escapeHtml(note.sourceType)}</span>` : '';
+        if (isEditing) {
+          return `
+            <div class="item">
+              <div class="field"><label>Inhalt</label><textarea data-note-edit-text="${escapeAttr(note.id)}">${escapeHtml(text)}</textarea></div>
+              <div class="toolbar">
+                <div class="field" style="min-width:220px;"><label>Projekt</label><select data-note-edit-project="${escapeAttr(note.id)}"><option value="">— Kein Projekt —</option>${(S.projects || []).map(project => `<option value="${escapeAttr(project.id)}" ${projectId === project.id ? 'selected' : ''}>${escapeHtml(project.title || 'Ohne Titel')}</option>`).join('')}</select></div>
+                <div class="field"><label>Typ</label><select data-note-edit-type="${escapeAttr(note.id)}">${NOTE_TYPES.map(t => `<option value="${escapeAttr(t)}" ${type === t ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}</select></div>
+                <button class="btn btn-primary" data-save-note-edit="${escapeAttr(note.id)}">Speichern</button>
+                <button class="btn btn-secondary" data-cancel-note-edit="${escapeAttr(note.id)}">Abbrechen</button>
+              </div>
+            </div>
+          `;
+        }
+        return `
+          <div class="item">
+            <div class="row-top">
+              <h4 class="item-title">${escapeHtml(projectName)}</h4>
+              <div class="stack-row" style="gap:6px;"><span class="pill">${escapeHtml(status)}</span><span class="pill">${escapeHtml(type)}</span></div>
+            </div>
+            <div class="item-desc">${escapeHtml(text || '—')}</div>
+            <div class="meta">
+              ${note.createdAt ? `<span class="pill">Erstellt: ${escapeHtml(formatDateTime(note.createdAt))}</span>` : ''}
+              ${note.updatedAt ? `<span class="pill">Aktualisiert: ${escapeHtml(formatDateTime(note.updatedAt))}</span>` : ''}
+              ${featureHint}${sourceHint}
+            </div>
+            <div class="stack-row">
+              <button class="btn" data-edit-note="${escapeAttr(note.id)}">Bearbeiten</button>
+              <button class="btn" data-add-feature-from-note="${escapeAttr(note.id)}" ${projectId ? '' : 'disabled'}>Als Feature übernehmen</button>
+              ${status === 'open' ? `<button class="btn" data-mark-note="${escapeAttr(note.id)}">Verarbeitet</button>` : `<button class="btn" data-open-note="${escapeAttr(note.id)}">Wieder offen</button>`}
+              ${status !== 'archived' ? `<button class="btn" data-archive-note="${escapeAttr(note.id)}">Archivieren</button>` : ''}
+              <button class="btn btn-danger" data-delete-note="${escapeAttr(note.id)}">Löschen</button>
+            </div>
+          </div>
+        `;
+      }
+
       function renderInbox(notes) {
         return `
           <div class="panel-title"><h3>Inbox</h3><div class="mini">Rohe Notizen, QuickAdd-Einträge und Weiterverarbeitung</div></div>
@@ -4549,16 +4710,16 @@
               <div class="item">
                 <div class="row-top">
                   <h4 class="item-title">${escapeHtml(getProjectTitle(n.projectId) || 'Ohne Projekt')}</h4>
-                  <span class="pill">${n.processed ? 'verarbeitet' : 'offen'}</span>
+                  <span class="pill">${escapeHtml(getNoteStatus(n))}</span><span class="pill">${escapeHtml(getNoteType(n))}</span>
                 </div>
-                <div class="item-desc">${escapeHtml(n.text)}</div>
+                <div class="item-desc">${escapeHtml(getNoteText(n))}</div>
                 <div class="meta">
-                  <span class="pill">${formatDateTime(n.createdAt)}</span>
+                  <span class="pill">${formatDateTime(n.createdAt)}</span>${n.updatedAt ? `<span class="pill">aktualisiert: ${formatDateTime(n.updatedAt)}</span>` : ''}
                 </div>
                 <div class="stack-row">
                   <button class="btn" data-build-note-prompt="${n.id}">Aus Notiz Feature-Vorschläge ableiten</button>
                   <button class="btn" data-add-feature-from-note="${n.id}">Als geplantes Feature übernehmen</button>
-                  <button class="btn" data-mark-note="${n.id}">Als verarbeitet markieren</button>
+                  ${isOpenNote(n) ? `<button class="btn" data-mark-note="${n.id}">Als verarbeitet markieren</button>` : `<button class="btn" data-open-note="${n.id}">Wieder offen</button>`}
                   <button class="btn btn-danger" data-delete-note="${n.id}">Löschen</button>
                 </div>
               </div>
@@ -4581,7 +4742,7 @@
                 <div class="meta">
                   <span class="pill">${escapeHtml(p.type || '—')}</span>
                   <span class="pill">${getVisibleFeatures(S.features).filter(f => f.projectId === p.id).length} Features</span>
-                  <span class="pill">${S.notes.filter(n => n.projectId === p.id && !n.processed).length} Notizen</span>
+                  <span class="pill">${S.notes.filter(n => n.projectId === p.id && isOpenNote(n)).length} Notizen</span>
                 </div>
                 <div class="stack-row">
                   <button class="btn" data-edit-project="${p.id}">Bearbeiten</button>
@@ -4781,22 +4942,82 @@
         renderView();
       }
 
+      function createRawNote(projectId, text, options) {
+        const now = new Date().toISOString();
+        const opts = options || {};
+        const note = ensureNoteDefaults({
+          id: uid('n'),
+          projectId: projectId || '',
+          text: String(text || '').trim(),
+          type: NOTE_TYPES.includes(opts.type) ? opts.type : 'note',
+          status: 'open',
+          sourceType: opts.sourceType || 'quick-note',
+          processed: false,
+          createdAt: now,
+          updatedAt: now
+        });
+        S.notes.push(note);
+        const project = S.projects.find(p => p.id === (projectId || ''));
+        if (project) project.updatedAt = now;
+        return note;
+      }
+
+      function addNotesWorkspaceNote() {
+        const text = String(($('notesWorkspaceText') && $('notesWorkspaceText').value) || '').trim();
+        if (!text) return alert('Bitte erst eine Notiz schreiben.');
+        createRawNote(($('notesWorkspaceProject') && $('notesWorkspaceProject').value) || '', text, {
+          type: ($('notesWorkspaceType') && $('notesWorkspaceType').value) || 'note',
+          sourceType: 'notes-workspace'
+        });
+        if ($('notesWorkspaceText')) $('notesWorkspaceText').value = '';
+        save();
+        renderView();
+      }
+
+      function updateNotesWorkspaceNote(id) {
+        const note = S.notes.find(x => x.id === id);
+        if (!note) return;
+        const textEl = qq('[data-note-edit-text]').find(el => el.dataset.noteEditText === id);
+        const projectEl = qq('[data-note-edit-project]').find(el => el.dataset.noteEditProject === id);
+        const typeEl = qq('[data-note-edit-type]').find(el => el.dataset.noteEditType === id);
+        const text = String((textEl && textEl.value) || '').trim();
+        if (!text) return alert('Bitte eine Notiz eintragen.');
+        note.text = text;
+        note.projectId = (projectEl && projectEl.value) || '';
+        note.type = getNoteType({ type: (typeEl && typeEl.value) || note.type });
+        note.updatedAt = new Date().toISOString();
+        ui.notesWorkspace.editingNoteId = '';
+        save();
+        renderView();
+      }
+
+      function markNoteOpen(id) {
+        const n = S.notes.find(x => x.id === id);
+        if (!n) return;
+        setNoteStatus(n, 'open');
+        save();
+        renderView();
+      }
+
+      function archiveNote(id) {
+        const n = S.notes.find(x => x.id === id);
+        if (!n) return;
+        setNoteStatus(n, 'archived');
+        save();
+        renderView();
+      }
+
       function addQuickNote() {
         const text = $('quickNote').value.trim();
         if (!text) return alert('Bitte erst eine Notiz schreiben.');
-        S.notes.push({
-          id: uid('n'),
-          projectId: $('quickProject').value || '',
-          text,
-          processed: false,
-          createdAt: new Date().toISOString()
-        });
+        createRawNote($('quickProject').value || '', text, { sourceType: 'project-quick-note' });
         $('quickNote').value = '';
         save();
         renderView();
       }
 
       function deleteNote(id) {
+        if (!confirm('Notiz löschen?')) return;
         recordDeletion(id);
         S.notes = S.notes.filter(n => n.id !== id);
         save();
@@ -4806,8 +5027,8 @@
       function markNoteProcessed(id) {
         const n = S.notes.find(x => x.id === id);
         if (!n) return;
-        n.processed = true;
-        n.processedAt = new Date().toISOString();
+        setNoteStatus(n, 'processed');
+        n.processedAt = n.processedAt || new Date().toISOString();
         save();
         renderView();
       }
@@ -4829,6 +5050,7 @@
       function promoteNoteToFeature(id) {
         const n = S.notes.find(x => x.id === id);
         if (!n) return;
+        if (!n.projectId) return alert('Bitte der Notiz zuerst ein Projekt zuweisen.');
         const now = new Date().toISOString();
         const suggested = getFirstMeaningfulNoteLine(n.text);
         let title = suggested;
@@ -4855,7 +5077,7 @@
           createdAt: now,
           updatedAt: now
         }));
-        n.processed = true;
+        setNoteStatus(n, 'processed');
         n.processedAt = now;
         n.processedIntoFeatureId = featureId;
         n.updatedAt = now;
@@ -4871,7 +5093,7 @@
         if (!project) return '';
         const planned = getVisibleFeatures(S.features).filter(f => f.projectId === projectId && isPlannedFeature(f));
         const implemented = getVisibleFeatures(S.features).filter(f => f.projectId === projectId && isImplementedFeature(f)).slice(0, 10);
-        const notes = (S.notes || []).filter(n => n && n.projectId === projectId && !n.processed && String(n.text || '').trim());
+        const notes = (S.notes || []).filter(n => n && n.projectId === projectId && isOpenNote(n) && String(n.text || '').trim());
         return `# Roadtrip Raw Notes -> Planned Features\nProjekt: ${project.title || '—'}\nSummary: ${project.summary || '—'}\nCurrent Focus: ${project.currentFocus || '—'}\nNext Step: ${project.nextStep || '—'}\n\nBestehende planned Features:\n${planned.map(f => `- ${f.id} | ${f.title} | ${f.status}`).join('\n') || '- —'}\n\nBestehende implemented Features (gekürzt):\n${implemented.map(f => `- ${f.id} | ${f.title} | ${f.status}`).join('\n') || '- —'}\n\nOffene Raw Notes:\n${notes.map(n => `- ID: ${n.id} | createdAt: ${n.createdAt || '—'} | sourceType: ${n.sourceType || 'note'} | Text: ${shorten(String(n.text || '').trim(), 800)}`).join('\n') || '- —'}\n\nRegeln:\n- Raw Notes sind noch keine Features.\n- Nur echte Feature-Ideen in proposedFeatures.\n- Keine bestehenden Features doppeln.\n- Keine implemented Features neu als planned anlegen.\n- Wenn unklar, rationale erklären und lieber keinen Vorschlag machen.\n\nGib ausschließlich JSON zurück:\n{\n  \"proposedFeatures\": [{\"title\":\"...\",\"description\":\"...\",\"sourceNoteIds\":[\"n_...\"],\"rationale\":\"...\",\"suggestedPriority\":\"niedrig|mittel|hoch|kritisch\",\"suggestedCategory\":\"UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges\",\"suggestedStatus\":\"idea|planned\"}],\n  \"notesToMarkProcessed\": [\"n_...\"],\n  \"summary\": \"...\"\n}`;
       }
 
@@ -5622,7 +5844,7 @@
         (proposal.sourceNoteIds || []).forEach(noteId => {
           const note = (S.notes || []).find(n => n && n.id === noteId && n.projectId === projectId);
           if (!note) return;
-          note.processed = true;
+          setNoteStatus(note, 'processed');
           note.processedAt = now;
           note.processedIntoFeatureId = featureId;
           note.updatedAt = now;
@@ -6457,7 +6679,7 @@
           .filter(tok => tok.length >= 4);
 
         S.notes
-          .filter(n => n.projectId === projectId && !n.processed)
+          .filter(n => n.projectId === projectId && isOpenNote(n))
           .forEach(note => {
             const textNorm = normalizeText(note.text || '');
             if (!textNorm) return;
