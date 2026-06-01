@@ -656,6 +656,7 @@
       const CHAT_STATUS = ['aktiv', 'pausiert', 'abgeschlossen', 'referenz'];
       const NOTE_TYPES = ['note', 'idea', 'bug', 'question', 'decision', 'feature-candidate'];
       const NOTE_STATUSES = ['open', 'processed', 'archived'];
+      const SPRINT_EXECUTION_MODES = { codexControl: 'codex-control', direct: 'direct' };
 
       let S = defaultState();
       let C = defaultConfig();
@@ -669,7 +670,7 @@
         showAllProjects: false,
         projectEditMode: false,
         importDraft: { html: '', prompt: '', analysisPrompt: '', cleanupPrompt: '', projectId: '' },
-        chatWorkflow: { projectId: '', sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', sprintStartJson: '', mainChatBootstrapJson: '', prompt: '', mode: '' },
+        chatWorkflow: { projectId: '', sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', sprintStartJson: '', mainChatBootstrapJson: '', prompt: '', mode: '', sprintExecutionMode: SPRINT_EXECUTION_MODES.codexControl },
         chatWorkflowByProject: {},
         chatWorkflowHandoff: { projectId: '', sourceChatId: '', rawJson: '' },
         chatWorkflowHandoffByProject: {},
@@ -1652,6 +1653,13 @@
           if (!projectId || projectId === ALL_PROJECTS_KEY) return;
           getChatWorkflowState(projectId).sprintGoal = e.target.value;
         });
+        if ($('sprintExecutionModeSelect')) $('sprintExecutionModeSelect').addEventListener('change', e => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          const st = getChatWorkflowState(projectId);
+          st.sprintExecutionMode = Object.values(SPRINT_EXECUTION_MODES).includes(e.target.value) ? e.target.value : SPRINT_EXECUTION_MODES.codexControl;
+          renderView();
+        });
         if ($('sprintCycleStartJsonInput')) $('sprintCycleStartJsonInput').addEventListener('input', e => {
           const projectId = ui.activeProjectId || '';
           if (!projectId || projectId === ALL_PROJECTS_KEY) return;
@@ -1711,6 +1719,14 @@
           const st = getChatWorkflowState(projectId);
           st.mode = 'legacy-mainchat-bootstrap';
           st.prompt = buildLegacyMainChatBootstrapPrompt(projectId);
+          renderView();
+        });
+        if ($('btnBuildClaudeDesignConceptPrompt')) $('btnBuildClaudeDesignConceptPrompt').addEventListener('click', () => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          const st = getChatWorkflowState(projectId);
+          st.mode = 'claude-design-concept';
+          st.prompt = buildClaudeDesignConceptPrompt(projectId);
           renderView();
         });
         if ($('btnChatWorkflowBuildSprint')) $('btnChatWorkflowBuildSprint').addEventListener('click', () => {
@@ -2063,7 +2079,7 @@
 
       function getChatWorkflowState(projectId) {
         if (!projectId || projectId === ALL_PROJECTS_KEY) {
-          ui.chatWorkflow = { projectId: projectId || '', sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', sprintStartJson: '', mainChatBootstrapJson: '', prompt: '', mode: '' };
+          ui.chatWorkflow = { projectId: projectId || '', sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', sprintStartJson: '', mainChatBootstrapJson: '', prompt: '', mode: '', sprintExecutionMode: SPRINT_EXECUTION_MODES.codexControl };
           ui.chatWorkflowHandoff = { projectId: projectId || '', sourceChatId: '', rawJson: '' };
           return ui.chatWorkflow;
         }
@@ -2071,12 +2087,13 @@
         const existingState = ui.chatWorkflowByProject[projectId];
         const state = (existingState && typeof existingState === 'object')
           ? existingState
-          : { projectId, sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', sprintStartJson: '', mainChatBootstrapJson: '', prompt: '', mode: '' };
+          : { projectId, sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', sprintStartJson: '', mainChatBootstrapJson: '', prompt: '', mode: '', sprintExecutionMode: SPRINT_EXECUTION_MODES.codexControl };
         state.projectId = projectId;
         if (typeof state.sprintStartPrompt !== 'string') state.sprintStartPrompt = '';
         if (typeof state.sprintHandoffPrompt !== 'string') state.sprintHandoffPrompt = '';
         if (typeof state.sprintStartJson !== 'string') state.sprintStartJson = '';
         if (typeof state.mainChatBootstrapJson !== 'string') state.mainChatBootstrapJson = '';
+        if (!Object.values(SPRINT_EXECUTION_MODES).includes(state.sprintExecutionMode)) state.sprintExecutionMode = SPRINT_EXECUTION_MODES.codexControl;
         ui.chatWorkflowByProject[projectId] = state;
         ui.chatWorkflow = state;
         const sourceChats = getProjectSourceChats(projectId);
@@ -3136,6 +3153,34 @@
         alert('Hauptchat-Bootstrap importiert. project-main Chat aktualisiert. Neue geplante Features: ' + createdFeatures + '.');
       }
 
+      function getSprintExecutionMode(projectId) {
+        const state = getChatWorkflowState(projectId);
+        const mode = state && state.sprintExecutionMode;
+        return Object.values(SPRINT_EXECUTION_MODES).includes(mode) ? mode : SPRINT_EXECUTION_MODES.codexControl;
+      }
+
+      function isCodexControlMode(projectId) {
+        return getSprintExecutionMode(projectId) !== SPRINT_EXECUTION_MODES.direct;
+      }
+
+      function buildSprintExecutionGuardrail(mode) {
+        if (mode === SPRINT_EXECUTION_MODES.direct) return '';
+        return [
+          'Wichtig:',
+          'Du sollst die App nicht selbst bearbeiten.',
+          'Du sollst keine Dateien verändern.',
+          'Du sollst stattdessen einen vollständigen Codex-Prompt formulieren.',
+          'Dieser Sprintchat arbeitet als Steuerungs-/Planungschat, Reviewer und Prompt-Designer für Codex.'
+        ].join('\n');
+      }
+
+      function appendSprintExecutionGuardrail(prompt, mode) {
+        const cleanPrompt = String(prompt || '').trimEnd();
+        const guardrail = buildSprintExecutionGuardrail(mode).trim();
+        if (!guardrail) return cleanPrompt;
+        return [cleanPrompt, '', guardrail].filter(Boolean).join('\n');
+      }
+
       function buildSprintPromptFromMainChat(projectId, sprintGoal) {
         const project = S.projects.find(p => p.id === projectId);
         if (!project) return '';
@@ -3143,7 +3188,8 @@
         if (!mainChat) return 'Kein interner project-main-Chat vorhanden. Importiere zuerst ein Sprint-Handoff oder lege einen Hauptchat an.';
         const featureLines = getRelevantFeatureTitles(projectId, 8);
         const cleanGoal = String(sprintGoal || '').trim();
-        return [
+        const executionMode = getSprintExecutionMode(projectId);
+        const prompt = [
           'Bitte hilf mir, den nächsten Sprintchat vorzubereiten.',
           '',
           '## Projektkontext',
@@ -3168,6 +3214,7 @@
           '- Nenne Deliverables und klare Akzeptanzkriterien.',
           '- Schlage den ersten konkreten Umsetzungsschritt vor.'
         ].join('\n');
+        return appendSprintExecutionGuardrail(prompt, executionMode);
       }
 
       function getSelectedSprintFeatureIds(projectId) {
@@ -3192,7 +3239,8 @@
           ? 'Agentenmodus'
           : (selectedWorkMode === CHAT_WORK_MODES.learning ? 'Lernmodus / manuell' : 'Nicht festgelegt');
         const cleanGoal = String(sprintGoal || '').trim() || 'Kein separates Sprintziel hinterlegt.';
-        return [
+        const executionMode = getSprintExecutionMode(projectId);
+        const prompt = [
           'Bitte bereite für Roadtrip den Sprint-Start vor.',
           'Wichtig: Erzeuge NICHT nur eine allgemeine Antwort, sondern genau zwei Codeblöcke im geforderten Format.',
           'Aktualisiere deinen Hauptchat-Kontext aktiv anhand der folgenden Projektdaten, bevor du den Sprintstart planst.',
@@ -3222,6 +3270,7 @@
             : (selectedWorkMode === CHAT_WORK_MODES.learning ? '- Hinweis: Lernmodus -> Schritt-für-Schritt mit nachvollziehbaren Änderungen/Befehlen.' : '- Hinweis: Arbeitsmodus nicht vorgegeben.'),
           '',
           '## Deine Ausgabe muss exakt so strukturiert sein',
+          executionMode === SPRINT_EXECUTION_MODES.direct ? '- Direktmodus: Codeblock 1 darf einen normalen Umsetzungs-Sprintchat vorbereiten.' : '- Codex-Steuerungsmodus: Codeblock 1 muss den unten stehenden Hinweis am Ende des Sprintchat-Startprompts enthalten.',
           '1) Codeblock: fertiger Sprintchat-Startprompt (zum Kopieren in einen neuen Sprintchat).',
           '2) Codeblock: gültiges JSON für Roadtrip, damit der Sprintchat als aktiv angelegt/aktualisiert werden kann.',
           '',
@@ -3241,6 +3290,112 @@
           '  "acceptanceCriteria": ["..."],',
           '  "notes": ["..."]',
           '}'
+        ].join('\n');
+        return appendSprintExecutionGuardrail(prompt, executionMode);
+      }
+
+      function compactPromptText(value, maxChars) {
+        const text = String(value || '').replace(/\s+/g, ' ').trim();
+        const limit = Number(maxChars) || 400;
+        return text.length > limit ? text.slice(0, limit - 1).trimEnd() + '…' : text;
+      }
+
+      function getRecentDesignBriefingHandoffs(projectId, limit) {
+        return getProjectChats(projectId)
+          .filter(c => c && (c.rawHandoffText || c.summary || c.nextStep))
+          .sort((a, b) => String(b.updatedAt || b.completedAt || b.startedAt || '').localeCompare(String(a.updatedAt || a.completedAt || a.startedAt || '')))
+          .slice(0, limit || 5)
+          .map(c => [
+            `- ${c.title || 'Ohne Titel'} (${c.type || 'chat'} · ${c.status || '—'} · ${formatDateTime(c.updatedAt || c.completedAt || c.startedAt)})`,
+            `  Summary: ${compactPromptText(c.summary || '—', 280)}`,
+            `  Next Step: ${compactPromptText(c.nextStep || '—', 220)}`,
+            c.rawHandoffText ? `  Handoff-Auszug: ${compactPromptText(c.rawHandoffText, 520)}` : ''
+          ].filter(Boolean).join('\n'));
+      }
+
+      function getClaudeDesignDirectionLines(projectId) {
+        const features = getVisibleFeatures(S.features).filter(f => f.projectId === projectId);
+        const notes = (S.notes || []).filter(n => n && n.projectId === projectId && n.status !== 'archived');
+        const selected = features.filter(f => f.status === 'selected-for-sprint').slice(0, 6);
+        const planned = features.filter(f => isPlannedFeature(f) && f.status !== 'selected-for-sprint').slice(0, 6);
+        const recentNotes = notes.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).slice(0, 6);
+        return [
+          '### Ausgewählte / sprintnahe Features',
+          ...(selected.length ? selected.map(f => `- ${f.title || 'Ohne Titel'} (${getFeatureStatusLabel(f.status)} · ${f.priority || 'prio-offen'})`) : ['- —']),
+          '',
+          '### Weitere geplante Richtung',
+          ...(planned.length ? planned.map(f => `- ${f.title || 'Ohne Titel'} (${getFeatureStatusLabel(f.status)} · ${f.priority || 'prio-offen'})`) : ['- —']),
+          '',
+          '### Aktuelle Notizen / Momentum-Signale',
+          ...(recentNotes.length ? recentNotes.map(n => `- ${compactPromptText(n.text || n.title || 'Ohne Text', 220)}`) : ['- —'])
+        ];
+      }
+
+      function buildClaudeDesignConceptPrompt(projectId) {
+        const project = S.projects.find(p => p && p.id === projectId);
+        if (!project) return '';
+        const mainChat = getProjectMainChat(projectId);
+        const handoffLines = getRecentDesignBriefingHandoffs(projectId, 5);
+        const directionLines = getClaudeDesignDirectionLines(projectId);
+        return [
+          '# Analyseauftrag: Claude-Design-Nutzung für gezielte Roadtrip-Design-Überarbeitungen',
+          '',
+          'Du bist Strategie-Reviewer für einen bestehenden App-/Design-Workflow. Analysiere bisherige Claude-Design-Arbeiten, Outputs und Handoffs. Leite daraus ein kompaktes Strategie-/Ergebnisdokument und ein späteres Roadtrip-Modulkonzept ab.',
+          '',
+          'Wichtig: In diesem Auftrag sollst du keine App-Dateien bearbeiten und kein Redesign umsetzen. Es geht nur um Analyse, Strategie, Modulkonzept und ein anschlussfähiges Handoff-Format für spätere Codex-Sprints.',
+          '',
+          '## Projektkontext aus Roadtrip',
+          `- Projekttitel: ${project.title || '—'}`,
+          `- Projektsummary: ${project.summary || '—'}`,
+          `- Aktueller Fokus: ${project.currentFocus || '—'}`,
+          `- Nächster Schritt: ${project.nextStep || '—'}`,
+          `- Hauptchat: ${(mainChat && mainChat.title) || '—'}`,
+          `- Hauptchat-Summary: ${(mainChat && mainChat.summary) || '—'}`,
+          `- Hauptchat-Next-Step: ${(mainChat && mainChat.nextStep) || '—'}`,
+          '',
+          '## Letzte relevante Sprint-/Chat-Handoffs',
+          ...(handoffLines.length ? handoffLines : ['- —']),
+          '',
+          '## Aktuelle Feature-/Notiz-/Momentum-Richtung',
+          ...directionLines,
+          '',
+          '## Ziel der Analyse',
+          'Claude Design soll später gezielt für optische Überarbeitungen genutzt werden: fokussiert, token-schonend, gut an Codex anschließbar und ohne unkontrollierten Großumbau. Bitte bewerte, wie bisherige Designarbeit dafür genutzt werden kann.',
+          '',
+          '## Bitte beantworte mindestens diese Fragen',
+          '- Wie wurde Claude Design bisher genutzt?',
+          '- Welche Outputs sind entstanden?',
+          '- Was war davon nützlich?',
+          '- Was war zu groß, zu unpräzise oder nicht gut an Codex anschließbar?',
+          '- Wie kann Claude Design effizienter und token-schonender genutzt werden?',
+          '- Welche Inputs braucht Claude Design wirklich?',
+          '- Welche Inputs sind unnötig oder zu teuer?',
+          '- Wie sollte ein Roadtrip-Modul aussehen, das gezielte Design-Überarbeitungen vorbereitet?',
+          '- Wie sollte ein Claude-Design-Prompt aufgebaut sein, wenn ein GitHub-ZIP-Export einer App mitgeschickt wird?',
+          '- Wie sollte ein Claude-Design-Handoff aussehen, damit Codex später gezielt weiterarbeiten kann?',
+          '- Welche Design-Änderungen sollten als auswählbare Vorschläge gespeichert werden?',
+          '- Welche Design-Ideen sollten für später geparkt werden?',
+          '',
+          '## Späterer Zielworkflow, den dein Konzept berücksichtigen soll',
+          '1. Roadtrip nimmt Projektkontext.',
+          '2. Roadtrip fasst letzte Sprints / Handoffs / App-Richtung zusammen.',
+          '3. Roadtrip erzeugt Analyseprompt für GPT/Claude.',
+          '4. Ergebnis kann später als JSON-Handoff importiert werden.',
+          '5. Design-Überarbeitungen werden vorgeschlagen.',
+          '6. Nutzer wählt Überarbeitungen aus oder speichert sie für später.',
+          '7. Roadtrip erzeugt daraus gezielten Claude-Design-Prompt.',
+          '8. Nutzer schickt Prompt + GitHub-ZIP an Claude Design.',
+          '9. Claude Design liefert ein Handoff für Codex.',
+          '10. Nächster Codex-Sprint setzt gewählte Designänderungen um.',
+          '',
+          '## Gewünschtes Ergebnisformat',
+          '1. Kurzfazit: bisherige Claude-Design-Nutzung und wichtigste Learnings.',
+          '2. Strategie: effiziente, token-schonende Nutzung mit minimal nötigen Inputs.',
+          '3. Roadtrip-Modulkonzept: Felder, Aktionen, Prompt-Ausgaben, Nicht-Ziele.',
+          '4. Claude-Design-Prompt-Template für den Fall „Prompt + GitHub-ZIP-Export“.',
+          '5. Claude-Design-Handoff-Format für Codex: klare Abschnitte, konkrete Dateien/Komponenten, Akzeptanzkriterien, Risiken.',
+          '6. Vorschlagslogik: auswählbare Designänderungen vs. später geparkte Ideen.',
+          '7. Offene Fragen und Risiken.'
         ].join('\n');
       }
 
@@ -4052,6 +4207,14 @@
                       <textarea id="sprintCycleSprintGoal" style="min-height:70px;" placeholder="z.B. Checkout-Flow stabilisieren und offene Fehler beheben">${escapeHtml(chatWorkflow.sprintGoal || '')}</textarea>
                     </div>
                     <div class="field">
+                      <label for="sprintExecutionModeSelect">Arbeitsmodus</label>
+                      <select id="sprintExecutionModeSelect">
+                        <option value="${SPRINT_EXECUTION_MODES.codexControl}" ${isCodexControlMode(p.id) ? 'selected' : ''}>Codex-Steuerung</option>
+                        <option value="${SPRINT_EXECUTION_MODES.direct}" ${getSprintExecutionMode(p.id) === SPRINT_EXECUTION_MODES.direct ? 'selected' : ''}>Direkte Umsetzung</option>
+                      </select>
+                      <div class="mini" style="margin-top:4px;">Standard: Sprintchat bearbeitet nicht selbst, sondern erzeugt Codex-Auftrag.</div>
+                    </div>
+                    <div class="field">
                       <label>Features mit Status „Für Sprint ausgewählt“</label>
                       <div class="notice" style="margin:0;">
                         ${getSelectedSprintFeatureIds(p.id).length
@@ -4121,6 +4284,7 @@
                   <button class="btn btn-ghost" id="btnChatWorkflowBuildReturn" ${isArchivedProject || !chatWorkflow.sourceChatId || !projectMainChat ? 'disabled' : ''}>Zum Hauptchat-Kontext zurück</button>
                   <button class="btn btn-ghost" id="btnChatWorkflowBuildBootstrap" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Neuen Hauptchat-Kontext bauen</button>
                   <button class="btn btn-ghost" id="btnChatWorkflowBuildLegacyMainBootstrap" ${isArchivedProject ? 'disabled' : ''}>Legacy-Chat → Hauptchat-Bootstrap</button>
+                  <button class="btn btn-ghost" id="btnBuildClaudeDesignConceptPrompt" ${isArchivedProject ? 'disabled' : ''}>Claude-Design-Konzeptprompt erzeugen</button>
                 </div>
                 <div class="field" style="margin-top:8px;">
                   <label for="mainChatBootstrapJsonInput">roadtrip-mainchat-bootstrap JSON importieren</label>
@@ -6592,6 +6756,14 @@
         else if (textareaId === 'chatWorkflowPromptOutput') {
           const projectId = ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : (ui.chatWorkflow && ui.chatWorkflow.projectId) || '';
           if (projectId) getChatWorkflowState(projectId).prompt = text;
+        }
+        else if (textareaId === 'sprintCycleStartPromptOutput') {
+          const projectId = ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : (ui.chatWorkflow && ui.chatWorkflow.projectId) || '';
+          if (projectId) getChatWorkflowState(projectId).sprintStartPrompt = text;
+        }
+        else if (textareaId === 'sprintCycleHandoffPromptOutput') {
+          const projectId = ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : (ui.chatWorkflow && ui.chatWorkflow.projectId) || '';
+          if (projectId) getChatWorkflowState(projectId).sprintHandoffPrompt = text;
         }
         else if (textareaId === 'dailyLogProjectPromptOutput') {
           if (!ui.dailyLogQuery) ui.dailyLogQuery = { prompt: '' };
