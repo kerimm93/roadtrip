@@ -1844,9 +1844,14 @@
           const updatedAt = p.updatedAt || p.lastAnalyzedAt || p.lastHtmlImportedAt || p.createdAt || '';
           const updatedLabel = `aktualisiert: ${updatedAt ? formatDateTime(updatedAt) : '—'}`;
           const emptyHint = featureCount === 0 ? ' · noch keine Features' : '';
-          return `<button class="sidebar-project ${isActive ? 'active' : ''}" data-open-project="${p.id}" style="${isActive ? 'border-left:3px solid var(--accent);font-weight:700;' : ''}text-align:left;">
-            <div>${escapeHtml(p.title)} (${featureCount})${p.status === 'archiviert' ? '<span class="mini"> (arch.)</span>' : ''}</div>
-            <div class="mini">${escapeHtml(updatedLabel + emptyHint)}</div>
+          const chatStructure = getProjectChatStructure(p.id);
+          const chatIcons = `${chatStructure.hasMainChat ? '🧭' : '🕸️'}${chatStructure.hasSprintChat ? '🏃' : ''}`;
+          const mainChatLabel = chatStructure.hasMainChat ? 'Hauptchat vorhanden' : 'Kein Hauptchat';
+          const sprintLabel = `${chatStructure.sprintCount} ${chatStructure.sprintCount === 1 ? 'Sprint' : 'Sprints'}`;
+          const chatStatusLabel = `${mainChatLabel} · ${sprintLabel}`;
+          return `<button class="sidebar-project ${isActive ? 'active' : ''}" data-open-project="${escapeAttr(p.id)}" title="${escapeAttr(chatStatusLabel)}" style="${isActive ? 'border-left:3px solid var(--accent);font-weight:700;' : ''}text-align:left;">
+            <div>${escapeHtml(chatIcons)} ${escapeHtml(p.title)} (${featureCount})${p.status === 'archiviert' ? '<span class="mini"> (arch.)</span>' : ''}</div>
+            <div class="mini">${escapeHtml(updatedLabel + ' · ' + chatStatusLabel + emptyHint)}</div>
           </button>`;
         }).join('');
         // Re-wire after DOM update
@@ -1921,6 +1926,22 @@
           .filter(c => c && c.projectId === projectId)
           .map(ensureChatDefaults)
           .sort((a, b) => String(b.updatedAt || b.startedAt || '').localeCompare(String(a.updatedAt || a.startedAt || '')));
+      }
+
+      function getProjectChatStructure(projectId) {
+        const project = (S.projects || []).find(p => p && p.id === projectId) || null;
+        const chats = (S.chats || []).filter(c => c && c.projectId === projectId);
+        const mainChatById = project && project.mainChatId
+          ? chats.find(c => c && c.id === project.mainChatId)
+          : null;
+        const mainChatByType = chats.find(c => c && c.type === 'project-main') || null;
+        const sprintCount = chats.filter(c => c && c.type === 'sprint').length;
+
+        return {
+          hasMainChat: !!(mainChatById || mainChatByType),
+          hasSprintChat: sprintCount > 0,
+          sprintCount
+        };
       }
 
       function getChatLearningMeta(chat) {
