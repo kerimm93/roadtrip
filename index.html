@@ -750,12 +750,22 @@
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
       gap: 10px;
+      min-width: 0;
     }
     .overview-destination-card {
       --node-color: var(--hue-sage);
+      min-width: 0;
       border-left: 4px solid var(--node-color);
       cursor: pointer;
       text-align: left;
+    }
+    .overview-destination-card .row-top,
+    .overview-destination-card .row-top > div {
+      min-width: 0;
+    }
+    .overview-destination-card strong {
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     .overview-momentum-list {
       display: grid;
@@ -4410,7 +4420,7 @@
             <div class="notice">Noch keine aktiven Projekte vorhanden. Lege ein Reiseziel an, um die Karte zu füllen.</div>
           `;
         }
-        const useListFallback = projects.length > 12;
+        const useListFallback = true;
         return `
           <div class="overview-hero">
             <div class="panel-title">
@@ -4421,7 +4431,6 @@
               <button class="btn btn-primary" id="btnStartNewProject">+ Neues Projekt</button>
             </div>
             ${useListFallback ? `
-              <div class="notice">Viele Reiseziele: Die Karte wechselt in eine lesbare Listendarstellung, damit nichts gedrängt wirkt.</div>
               <div class="overview-destination-list">
                 ${projects.map((project, index) => renderOverviewDestination(project, index, { asCard: true })).join('')}
               </div>
