@@ -1,156 +1,167 @@
-# Roadtrip — DESIGN.md
+# Roadtrip — DESIGN.md (Atlas-Skin)
 
-> Designsystem für Roadtrip.
+> Designsystem für Roadtrip · **helles, warmes „Atlas/Roadtrip"-Skin**.
 > Single-File-HTML · Vanilla JS · CSS Custom Properties.
 > Keine Tailwind-Klassen, kein Framework, kein Build-Step.
-> Diese Datei beschreibt Regeln und Tokens — keine React-Komponenten.
+> Diese Datei beschreibt Regeln und Tokens — sie ist ein **Skin- und IA-Refactor, kein Rewrite**.
+> Begleitprototyp: `Roadtrip Atlas Redesign.html`.
 
 ---
 
 ## 1 · Prinzipien
 
-- **Ruhig vor reich.** Wenige Borders, viel Whitespace, keine Hover-Lifts.
-- **Eine Hauptaktion pro Bereich.** Sekundäres bleibt sichtbar sekundär.
-- **Sprint-Zyklus ist linear.** Vier Stufen, immer in derselben Reihenfolge.
-- **Advanced/Legacy ist eingeklappt.** Niemals auf Primary-Hierarchieebene.
-- **Status über Pills**, niemals über volle Zeilen-/Karten-Hintergrundfarben.
-- **Dark First**, Light und E-Ink bleiben funktional erhalten.
-- **Touch-tauglich:** Tap-Targets ≥ 38 px, Listenitems ≥ 44 px effektive Höhe.
+- **Hell und warm statt dunkel.** Pergament-/Papier-Canvas als Grund. Eine Oberfläche, in die man gerne schaut.
+- **Genau ein Akzent.** Eine einzige Aktionsfarbe (Wachssiegel-Zinnober). **Niemals zwei Primärfarben.** Dekorative Kartenfarben sind erlaubt, aber strikt von UI-Aktionen getrennt.
+- **Landkarten-Optik, dosiert.** Die Übersicht ist eine echte gezeichnete Karte; sonst bleiben Kompass/Routen/Maßstab ruhige Atmosphäre — nie Lärm.
+- **Funktionsrollen-Typografie.** Display-Serif für Überschriften, humanistische Sans für Fließtext, Mono für **alle** Zahlen/Counts/Timestamps. Hierarchie über Schrift, nicht über Farblärm.
+- **Status nur über Pills.** Niemals über Zeilen-/Karten-Hintergrundflächen.
+- **Eine Hauptaktion pro Bereich.** Pro Panel-Kopf genau ein Akzent-Button; alles andere sekundär/ghost.
+- **Progressive Disclosure als Pflicht.** Pro Screen explizit definiert, was default sichtbar ist und was eingeklappt in „Advanced/Werkzeuge" liegt.
+- **Ruhig vor reich.** Wenige Linien, kein Schattenrauschen, Trennung über Linealfarbe und Flächenwechsel.
+- **Vier UI-Modi getrennt:** Navigation (Sidebar) · Arbeitsfläche · Status (Strip) · Advanced/Werkzeuge.
+- **Touch-tauglich:** Tap-Targets ≥ 40 px, Listenitems ≥ 44 px effektive Höhe.
 
 ---
 
-## 2 · Design-Tokens
+## 2 · Design-Tokens (hell)
 
-### Farben (Dark)
+### Paper / Surfaces (warmes Pergament)
 
 ```
---rt-bg:            #0E1117
---rt-bg-elevated:   #141923
---rt-surface:       #1A2030
---rt-surface-2:     #232A3C
---rt-surface-3:     #2C3447
---rt-surface-quiet: #161B26
+--paper:        #F4ECDC   /* App-Canvas */
+--paper-edge:   #EADFC9   /* gesenkt / Kartenfeld */
+--surface:      #FCF8EF   /* Karten / Panels */
+--surface-2:    #F6EFE0   /* innere / ruhige Panels */
+--surface-3:    #EFE6D2   /* Hover / Segmented aktiv */
+```
 
---rt-border-line:   #2A3346
---rt-border-strong: #3A4760
+### Ink (warmes Fast-Schwarz → blass)
 
---rt-ink:           #E8ECF3
---rt-ink-mid:       #A3AEC1
---rt-ink-dim:       #6B7689
---rt-ink-quiet:     #4F596C
---rt-on-accent:     #15161A
+```
+--ink:        #2C2419
+--ink-mid:    #6C6051
+--ink-dim:    #9A8B73
+--ink-quiet:  #BCAC90
+--on-accent:  #FBF4E8
+```
 
---rt-gold:          #C9A86A    /* einziger Primary */
---rt-gold-hi:       #DDBE85
---rt-gold-soft:     rgba(201,168,106,0.14)
---rt-gold-line:     rgba(201,168,106,0.35)
+### Lineal-Linien
 
---rt-indigo:        #7B8FE0    /* nur Sprint-Kontext */
---rt-indigo-soft:   rgba(123,143,224,0.14)
+```
+--rule:        #E3D8C1
+--rule-strong: #CFC0A3
+--rule-faint:  #ECE3D1
+```
 
---rt-success:       #6BB590
---rt-warning:       #D4A856
---rt-danger:        #D27575
---rt-info:          #7AA4D6
---rt-success-soft:  rgba(107,181,144,0.13)
---rt-warning-soft:  rgba(212,168,86,0.13)
---rt-danger-soft:   rgba(210,117,117,0.13)
---rt-info-soft:     rgba(122,164,214,0.13)
---rt-neutral-soft:  rgba(163,174,193,0.10)
+### Der eine Akzent — Wachssiegel-Zinnober
+
+```
+--accent:      #C24A2B   /* einzige Aktionsfarbe */
+--accent-hi:   #D45B3A   /* Hover */
+--accent-deep: #9F3A1E   /* Text auf hellem Grund */
+--accent-soft: rgba(194,74,43,0.10)
+--accent-line: rgba(194,74,43,0.30)
+```
+
+### Dekorative Karten-/Kategorie-Farben — **niemals UI-Aktionen**
+
+```
+--hue-sage:  #6F7E63
+--hue-slate: #5C748A
+--hue-plum:  #7E6A88
+--hue-ochre: #A9823F
+--hue-teal:  #4E8079
+```
+
+Nur für Karten-Reiseziel-Punkte, Projekt-Pips und Kategorie-Swatches. **Nie** auf Buttons.
+
+### Semantik (gedämpft, nur in Pills)
+
+```
+--ok:     #4F7A52   --ok-soft:     rgba(79,122,82,0.12)
+--warn:   #A9772B   --warn-soft:   rgba(169,119,43,0.13)
+--danger: #A8432B   --danger-soft: rgba(168,67,43,0.12)
+--info:   #4F6E89   --info-soft:   rgba(79,110,137,0.12)
+--neutral-soft: rgba(120,108,88,0.10)
 ```
 
 ### Radius
 
 ```
---r-xs:   4px      /* Tag-Chips */
---r-sm:   6px      /* Buttons, Inputs */
---r-md:   10px     /* Inner Panels, Boxen */
---r-lg:   14px     /* Karten, Hauptpanels */
---r-xl:   18px     /* Hero / App-Shell-Außenkante */
---r-pill: 9999px   /* Pills, Badges */
+--r-xs: 4px   /* Tag-Chips */
+--r-sm: 7px   /* Buttons, Inputs */
+--r-md: 11px  /* Inner Panels, Boxen */
+--r-lg: 16px  /* Karten, Hauptpanels */
+--r-xl: 22px  /* App-Shell-Außenkante */
+--r-pill: 999px
 ```
 
 ### Spacing (Base 4)
 
 ```
---s-1: 4px · --s-2: 8px · --s-3: 12px · --s-4: 16px
---s-5: 24px · --s-6: 32px · --s-7: 48px · --s-8: 64px
+--s-1:4 · --s-2:8 · --s-3:12 · --s-4:16 · --s-5:24 · --s-6:32 · --s-7:48 · --s-8:64
 ```
 
-### Shadow
+### Shadow (flüsterleise)
 
 ```
---sh-0: none                                    /* Default */
---sh-1: 0 1px 0 rgba(0,0,0,0.4)                 /* Sticky-Top/-Footer */
---sh-2: 0 4px 14px rgba(0,0,0,0.28)             /* Popover, Dropdown */
---sh-3: 0 18px 40px -10px rgba(0,0,0,0.5)       /* Modal */
---ring: 0 0 0 2px rgba(201,168,106,0.40)        /* Focus-Ring */
+--sh-1: 0 1px 2px rgba(70,52,24,0.05)        /* Default-Karten */
+--sh-2: 0 10px 30px -16px rgba(70,52,24,0.28) /* Popover, Map-Flag */
+--sh-3: 0 24px 60px -22px rgba(70,52,24,0.40) /* Modal, mobile Sidebar */
+--ring: 0 0 0 3px rgba(194,74,43,0.28)        /* Focus-Ring */
 ```
 
 ### Typografie
 
 ```
---font-ui:   'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif
---font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace
+--font-display: "Cormorant Garamond", "Iowan Old Style", Georgia, serif
+--font-ui:      "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif
+--font-mono:    "IBM Plex Mono", ui-monospace, Consolas, monospace
 
---t-display:   30px / 600 / line-height 1.15 / letter-spacing -0.015em
---t-h1:        22px / 600 / 1.25 / -0.005em
---t-h2:        17px / 600 / 1.35
---t-h3:        14px / 600 / uppercase / letter-spacing 0.10em
---t-body:      14px / 400 / 1.55
---t-body-em:   14px / 500 / 1.55
---t-meta:      12px / 400 / 1.45
---t-eyebrow:   10px / 600 / uppercase / 0.12em
---t-mono:      12px / 400 (JetBrains Mono)
+Display   34px / 600 / 1.08 / -0.01em   (Cormorant Garamond)
+H2        25px / 600 / 1.15             (Cormorant Garamond)
+H3        20px / 600 / 1.20             (Cormorant Garamond)
+Body      15px / 400 / 1.55             (IBM Plex Sans)
+Body-em   15px / 500 / 1.55
+Meta      13px / 400                    (IBM Plex Sans, --ink-dim)
+Eyebrow   11px / 500 / uppercase / 0.18em (IBM Plex Mono)
+Mono      Zahlen/Counts/Timestamps      (IBM Plex Mono, tnum)
 ```
+
+**Regel:** Jede Zahl, jeder Count, jeder Timestamp und jeder Code-Schnipsel ist Mono. Überschriften sind immer Serif. Fließtext immer Sans.
 
 ---
 
-## 3 · Mapping (bestehend → neu)
+## 3 · Mapping (Dark-Bestand → Atlas-hell)
 
-```
---bg            → --rt-bg
---bg-mid        → --rt-bg-elevated
---surface       → --rt-surface
---surface-2     → --rt-surface-quiet
---surface-3     → --rt-surface-2
---border        → --rt-border-line
---border-light  → --rt-border-strong
---ink           → --rt-ink
---ink-light     → --rt-ink-mid
---ink-dim       → --rt-ink-dim
---accent        → --rt-gold
---accent-2      → --rt-indigo
---green         → --rt-success
---yellow        → --rt-warning
---red           → --rt-danger
---blue          → --rt-info
---radius        → --r-lg          (Karten)
-                  --r-sm          (Buttons & Inputs)
-```
-
-Die alten Variablennamen können als Kompatibilitäts-Alias bestehen bleiben:
+Alte Variablennamen bleiben als **umgefärbte Aliase** bestehen, damit der Bestandscode automatisch erbt — nur die `:root`-Werte ändern sich.
 
 ```css
 :root {
-  /* neue Tokens */
-  --rt-bg: #0E1117;
-  /* … */
+  /* neue kanonische Tokens … (siehe §2) */
 
   /* Aliase für bestehenden Code */
-  --bg: var(--rt-bg);
-  --surface: var(--rt-surface);
-  --border: var(--rt-border-line);
-  --accent: var(--rt-gold);
-  --accent-2: var(--rt-indigo);
-  --green: var(--rt-success);
-  --yellow: var(--rt-warning);
-  --red: var(--rt-danger);
-  --blue: var(--rt-info);
+  --bg:           var(--paper);
+  --bg-mid:       var(--paper-edge);
+  --surface:      var(--surface);       /* bleibt, jetzt hell */
+  --border:       var(--rule);
+  --border-light: var(--rule-strong);
+  --ink:          var(--ink);
+  --ink-light:    var(--ink-mid);
+  --ink-dim:      var(--ink-dim);
+  --accent:       var(--accent);        /* Gold → Zinnober */
+  --accent-2:     var(--info);          /* Indigo → ruhiger Info-Ton, KEIN zweiter Primary */
+  --green:        var(--ok);
+  --yellow:       var(--warn);
+  --red:          var(--danger);
+  --blue:         var(--info);
+  --radius:       var(--r-lg);
 }
 ```
 
-So muss der bestehende Render-Code nicht angefasst werden, nur die `:root`-Werte ändern sich.
+**Wichtig:** `--accent-2` (vormals Indigo) wird zu einem ruhigen Info-Ton degradiert und darf **nie** mehr als Navigations-/Aktions-Akzent neben `--accent` auftreten. Wo der Bestand „Alle Projekte/Sprint" mit Indigo akzentuierte, übernimmt jetzt der dekorative `--hue-slate` (Atmosphäre) bzw. `--accent` (Aktion).
+
+E-Ink-Theme bleibt funktional erhalten (alles `--ink`/`--rule`, kein Akzent gefüllt).
 
 ---
 
@@ -159,344 +170,272 @@ So muss der bestehende Render-Code nicht angefasst werden, nur die `:root`-Werte
 ### Buttons
 
 ```
-.btn
-  height: 38px
-  padding: 0 14px
-  border-radius: 6px
-  font-weight: 500
-  font-size: 14px
-  border: 1px solid var(--rt-border-strong)
-  background: var(--rt-surface-2)
-  color: var(--rt-ink)
-
-.btn-primary
-  background: var(--rt-gold)
-  color: var(--rt-on-accent)
-  border-color: var(--rt-gold)
-  font-weight: 600
-  → maximal 1 pro Bereich
-
-.btn-secondary
-  background: transparent
-  color: var(--rt-ink)
-  border: 1px solid var(--rt-border-strong)
-
-.btn-ghost
-  background: transparent
-  border: 0
-  color: var(--rt-ink-mid)
-  → tertiär; für „Mehr…", „Advanced öffnen", „Ausblenden"
-
-.btn-danger
-  background: transparent
-  color: var(--rt-danger)
-  border: 1px solid rgba(210,117,117,0.4)
-  → niemals gefüllt; nur für destruktive Aktionen + „Nicht übernehmen"
+.btn            height 40 · padding 0 16 · radius 7 · 500 · border --rule-strong · bg --surface · color --ink
+.btn-primary    bg --accent · color --on-accent · 600        → maximal 1 pro Bereich
+.btn-secondary  transparent · border --rule-strong · color --ink
+.btn-ghost      transparent · borderless · color --ink-mid    → „Mehr…", „Advanced öffnen", Toggles
+.btn-danger     transparent · color --danger · border rgba(danger,.4) → nie gefüllt; nur destruktiv + „Nicht übernehmen"
+.btn-sm 32px · .btn-icon quadratisch
 ```
 
-Keine `transform: translateY` Hover-Effekte mehr. Hover ändert nur Background/Border.
+Hover ändert nur Background/Border, **kein** `transform: translateY`. Focus = `--ring`.
 
-### Pills / Badges
-
-```
-.pill
-  display: inline-flex
-  padding: 3px 10px
-  border-radius: 9999px
-  font-size: 12px
-  font-weight: 500
-  background: var(--rt-neutral-soft)
-  color: var(--rt-ink-mid)
-
-.pill.pill-success → bg: --rt-success-soft, color: --rt-success
-.pill.pill-warning → bg: --rt-warning-soft, color: --rt-warning
-.pill.pill-danger  → bg: --rt-danger-soft,  color: --rt-danger
-.pill.pill-info    → bg: --rt-info-soft,    color: --rt-info
-.pill.pill-gold    → bg: --rt-gold-soft,    color: --rt-gold
-.pill.pill-indigo  → bg: --rt-indigo-soft,  color: --rt-indigo
-.pill.pill-outline → bg: transparent, border: 1px solid --rt-border-line
-```
-
-Optional 6 px Dot vor dem Text (`.pill::before`). Wenn der Dot stört (z. B. in Filter-Pills mit Checkbox), via `.no-dot` deaktivieren.
-
-**Niemals** Pill-Farbe als ganzen Zeilen-Hintergrund verwenden.
-
-### Karten / Container
+### Pills / Badges — Status lebt NUR hier
 
 ```
-.card / .panel
-  background: var(--rt-surface)
-  border: 1px solid var(--rt-border-line)
-  border-radius: 14px
-  padding: 24px
-  box-shadow: none      /* Default – kein Schatten auf flächigen Karten */
+.pill           bg --neutral-soft · color --ink-mid · Mono 11.5px · radius pill
+.pill.dot       6px Punkt in currentColor davor
+.pill-ok / -warn / -danger / -info   Soft-Tint + farbige Schrift
+.pill-accent    --accent-soft + --accent-deep
+.pill-outline   transparent + 1px --rule-strong
 ```
 
-### Notices
+**Niemals** Pill-Farbe als ganzen Zeilen-/Karten-Hintergrund. Filter-Pills: genau **eine** aktive Pill pro Achse (`pill-accent` aktiv, sonst `pill-outline`).
+
+### Karten / Panels
 
 ```
-.notice
-  background: var(--rt-warning-soft)
-  border-left: 2px solid var(--rt-warning)
-  border-radius: 0 6px 6px 0
-  padding: 10px 14px
+.card / .panel  bg --surface · 1px --rule · radius 16 · shadow --sh-1 · padding var(--pad)
+.quiet          bg --surface-2 · 1px --rule · radius 11   (innere Boxen)
+.panel-head     Flex space-between; links Eyebrow(Mono)+H3(Serif), rechts 1 Aktion
+```
 
-.notice.notice-info   → linker Stripe + Soft-Tint in --rt-info
-.notice.notice-danger → linker Stripe + Soft-Tint in --rt-danger
+### Notices — 2px-Stripe, Soft-Tint
+
+```
+.notice         bg --warn-soft · border-left 2px --warn · radius 0 7 7 0
+.notice-info / .notice-danger   Stripe + Soft-Tint in jeweiliger Semantikfarbe
 ```
 
 Keine vollen Borders, kein Drop-Shadow.
 
-### Advanced-Container
+### Advanced-Container — dashed, eingeklappt, ghost-only
 
 ```
-.advanced
-  border: 1px dashed var(--rt-border-line)
-  border-radius: 10px
-  padding: 12px 14px
-
-.advanced-head
-  text-transform: uppercase
-  letter-spacing: 0.12em
-  font-size: 11px
-  color: var(--rt-ink-dim)
+.advanced       1px dashed --rule-strong · radius 11
+.advanced-head  Mono uppercase 11px / 0.16em · --ink-dim · klickbar (Caret rotiert)
+.advanced-body  nur .btn-ghost
 ```
 
-Innerhalb von `.advanced` nur **Ghost-Buttons**.
-
-### Chat-/Sprint-Karten
+### Segmented Control (Pool / View-Switch / Theme)
 
 ```
-.chat-card
-  background: var(--rt-surface-quiet)
-  border: 1px solid var(--rt-border-line)
-  border-radius: 6px
-  padding: 10px 12px
-  border-left-width: 2px
-
-.chat-card.type-main   → border-left-color: var(--rt-gold)
-.chat-card.type-sprint → border-left-color: var(--rt-indigo)
-.chat-card.type-branch → border-left-color: var(--rt-border-strong)
-.chat-card.is-done     → opacity: 0.55; border-left-color: transparent
+.segmented      bg --surface-2 · 1px --rule · radius 7 · padding 3
+  button.active bg --surface · color --ink · shadow --sh-1
 ```
 
-### Review-Karten (Import/Cleanup)
-
-Die Aktionsleiste folgt **immer** dieser Reihenfolge:
-
-1. **Primary** — `Bestehendes Feature aktualisieren` (wenn Ziel erkannt)
-   **oder** `Als neues Feature anlegen` (wenn kein Ziel erkannt).
-2. **Secondary** — `Trotzdem als neues Feature anlegen` (nur sichtbar bei erkanntem Ziel).
-3. **Danger-Secondary** — `In Papierkorb verschieben` (nur sichtbar bei `duplicateFeatureId`).
-4. **Ghost** — `Nicht übernehmen` (rechts via `margin-left: auto`).
-
-Bereits behandelte Karten:
+### Tabellen — kein Zebra, keine Zeilen-Fills
 
 ```
-.review-card.is-resolved
-  opacity: 0.45
-  pointer-events: none on Buttons
-  zeigt Status-Pill „übernommen" oder „ignoriert"
+th  Mono uppercase 10.5px / 0.1em · --ink-dim · bg --surface-2 · border-bottom --rule
+td  padding 12 14 · border-bottom --rule-faint · color --ink-mid
+td.title  --ink · 500
+tr:hover td  bg --surface-2
 ```
 
-### Momentum-Sektion
+Max. 6 Spalten. Auf schmalen Viewports horizontal scrollen (`overflow-x:auto`), kein Reflow der Tabelle selbst.
 
-Zwei Klassen-Varianten:
-
-```
-.momentum.is-open
-  Grid 2x2: Fokus · Next Step · Top-Kandidaten · Blockiert/Aufgeschoben
-
-.momentum.is-collapsed
-  Einzeiler: Fokus + Next Step + Counter-Pill
-```
-
-Toggle-Zustand persistiert per Projekt-ID in:
+### Chat-/Sprint-Karten — linker 2px-Stripe nach Typ
 
 ```
-localStorage.roadtrip.ui.momentumCollapsed[<projectId>] = true|false
+.chat-card           bg --surface-2 · 1px --rule · border-left 2px --rule-strong · radius 7
+.type-main           border-left --accent
+.type-sprint         border-left --hue-slate
+.type-branch         border-left --rule-strong
+.is-done             opacity .5 · border-left transparent
 ```
 
-### Tabellen
+### Karten-Knoten (Übersicht)
 
 ```
-table
-  width: 100%
-  border-collapse: collapse
-  font-size: 13px
-
-th
-  text-transform: uppercase
-  font-size: 11px
-  letter-spacing: 0.08em
-  color: var(--rt-ink-dim)
-  background: var(--rt-surface-quiet)
-  font-weight: 600
-
-td
-  border-bottom: 1px solid var(--rt-border-line)
-  color: var(--rt-ink-mid)
-
-td.title  /* erste Spalte */
-  color: var(--rt-ink)
-  font-weight: 500
+.map-node .dot   18px · 3px --surface-Rand · Ring --rule-strong · Fill = Projekt-Hue (dekorativ)
+.is-active .dot  Ring in --accent + --accent-soft
+.map-node .flag  --surface-Karte mit Titel (Sans 600) + Meta (Mono)
 ```
 
-Kein Zebra. Keine Zeilen-Hintergrundfarben.
+### Sprint-Zyklus — 4 nummerierte Etappen entlang einer Route
 
-### Filter-Pills
+```
+.cycle-track     4-Spalten-Grid; gestrichelte Route (--rule-strong) dahinter
+.stage .marker   44px Kreis, Mono-Nummer
+  .done          gefüllt --accent (Häkchen)
+  .current       Rand --accent + --accent-soft-Halo; zeigt den EINEN Primary-CTA
+```
 
-Statt `<select>` für ≤ 8 Werte: Reihe von `.pill.is-active` / `.pill.pill-outline`.
-Genau eine aktive Pill pro Achse (Pool, Status, Kategorie).
+### Status-Strip (Status-Modus)
 
-### App-Shell / Header
+4 ruhige Karten: **Status · Fokus · Nächster Schritt · Hauptchat**. Die Hauptchat-Karte ist klickbar (`.status-card.link`) und führt zur Chat-Liste.
 
-- Linke Sidebar 220 px, Sticky.
-- Header eines Projektes: schlanke Zeile mit Crumb („Projekt · …") + H1 + Status-Pill + 1 Primary-CTA.
-- Kein großer Hero-Block.
-- Darunter Status-Strip mit 4 Karten: Status, Fokus, Nächster Schritt, Hauptchat.
-  Die Hauptchat-Karte ist klickbar und scrollt zur Chat-Liste.
+### Momentum
+
+```
+.momentum-grid       2×2: Fokus · Nächster Schritt · Top-Kandidaten · Blockiert/Aufgeschoben
+.momentum-collapsed  Einzeiler: Fokus + Next Step + Counter-Pill
+```
+
+Toggle-Zustand persistiert: `localStorage.roadtrip.ui.momentumCollapsed[<projectId>] = true|false`.
 
 ### Empty States
 
-- Kein illustriertes Bild.
-- Aufbau: H2 + erläuternde Body-Zeile + ein Primary-Button.
-- Beispiel: „Noch keine Sprints. Starte den Zyklus mit *Hauptchat um Sprintstart bitten*."
+Kein Bild. Aufbau: H3 (Serif) + Body-Zeile + **ein** Primary-Button.
 
 ---
 
-## 5 · Screen-Regeln (Kurzform)
+## 5 · Informationsarchitektur (neu)
 
-### Projekt-Workspace
-- Header · Status-Strip · Momentum · Sprint-Zyklus · Ressourcen.
-- Primary-CTA: **Hauptchat um Sprintstart bitten**.
-- Demo-/Raw-Backup-/Theme-Buttons gehören in Settings oder Advanced.
+Die sieben Bestands-Views bleiben funktional, werden aber in **drei ruhige Gruppen** + den Projektkontext gefasst. Ein neuer Startpunkt **Karte** geht den Detail-Views voraus.
 
-### Chats & Sprints
-- Hauptchat angepinnt oben.
-- Aktive Sprints und Branches darunter, nach `updatedAt` absteigend.
-- Abgeschlossene Sprints **per Default ausgeblendet**, Toggle: **Abgeschlossene Sprints anzeigen / ausblenden**.
-- Counter-Pill über der Liste: „3 aktiv · 18 abgeschlossen ausgeblendet".
+| Gruppe | Views | Rolle |
+|---|---|---|
+| **Reise** | Karte (neu), Momentum | Ruhiger Ankerpunkt: wo bin ich, was bewegt sich |
+| **Projekt** | Projekt-Workspace | Erscheint **nach** Projektauswahl; trägt alle Projekt-Metadaten |
+| **Werkstatt** | Datenbank, Notizen, Lernen | Arbeitsflächen über Projekte hinweg |
+| **Werkzeuge** | Import · Cleanup, Einstellungen | Selten/utilitär; unten in der Sidebar, ruhig |
 
-### Sprint-Zyklus
-Vier nummerierte Stufen:
+**Sidebar-Regel (Kern des Refactors):** Ein Projekt-Item zeigt **Titel + Aktiv-Zustand + genau ein Sekundärsignal** (4 Etappen-Dots = Sprint-Zyklus-Fortschritt). Alle weiteren Metadaten (Feature-Count, Timestamp, Hauptchat-Status, Sprint-Count) wandern in den Projekt-Workspace und erscheinen erst **nach** Auswahl.
 
-1. **Start** — Hauptchat um Sprintstart bitten.
-2. **Importieren** — Sprintstart-JSON importieren.
-3. **Abschluss** — Sprintabschluss anfordern.
-4. **Übergabe** — Sprint-Handoff importieren (setzt Sprintchat auf `abgeschlossen`).
+**Was erst nach Projektauswahl erscheint:** Status-Strip, Momentum, Sprint-Zyklus, Chat-/Sprint-Liste, Ressourcen.
 
-In Advanced-Footer (eingeklappt):
-- Zum Hauptchat-Kontext zurück
-- Neuen Hauptchat-Kontext bauen
-- Hauptchat-Update-Prompt erzeugen
-- Alten Sprintchat migrieren
+---
 
-### Projekt-Momentum
-- Zwei Zustände, persistiert per Projekt-ID.
-- Kompakt zeigt nur Fokus + Next Step + Counter.
+## 6 · Screen-Regeln (Default ↔ Eingeklappt)
 
-### Feature-Datenbank
-- Pool als Segmented Control oben (Geplant · Umgesetzt).
-- Status-Filter passt sich dem Pool an (`planned` ↔ `implemented`).
-- Tabelle: max. 6 Spalten (Titel, Pool, Status, Priorität, Kategorie, Aktualisiert).
-- Kein Zebra. Pool/Status nur über Pills.
+| Screen | Default sichtbar | Eingeklappt in Advanced/Werkzeuge |
+|---|---|---|
+| **Karte (Übersicht)** | Karte mit Reisezielen, Momentum-Liste, „Neues Projekt" (1 Primary) | — |
+| **Momentum-Dashboard** | Projektzeilen (Fokus, Next Step, Status), Sortier-Segmented | — |
+| **Projekt-Workspace** | Header(1 Primary) · Status-Strip · Momentum · Sprint-Zyklus · Chats · Ressourcen | „Zum Hauptchat-Kontext zurück", „Neuen Hauptchat-Kontext bauen", „Update-Prompt erzeugen", „Alten Sprintchat migrieren" |
+| **Sprint-Zyklus** | 4 Etappen (Start · Importieren · Abschluss · Übergabe), 1 Primary an der aktuellen Etappe | Migrations-/Kontext-Werkzeuge (s. o.) |
+| **Chats & Sprints** | Hauptchat gepinnt, aktive Sprints/Branches; Counter-Pill | Abgeschlossene Sprints **default ausgeblendet** (Toggle) |
+| **Feature-Datenbank** | Pool-Segmented (Geplant·Umgesetzt) · abhängige Status-Filter-Pills · Suche · Tabelle (≤6 Spalten) · 1 Primary | — |
+| **Notizen** | Status-Filter-Pills, Notizkarten, 1 Primary | — |
+| **Lernen** | Lernpfade mit Fortschrittsbalken, 1 Primary | — |
+| **Import · Cleanup** | 3 Stufen (Quelle · Prompt+Import · Review), Counter-Pill, Review-Karten | — |
+| **Einstellungen** | Darstellung · Gist · Trello · Datenverwaltung | Gist-Token; Notfall-Export, Raw-Backup, Speicherdiagnose (Danger-Zone, 2px-Stripe) |
 
-### Import / Cleanup Review
-- Drei Stufen: Quelle · Prompt+Import · Review.
-- Counter über der Review-Liste: „x neu · y Updates · z Dubletten · w bereits übernommen".
-- Bereits behandelte Karten bleiben **gedimmt sichtbar**, Buttons deaktiviert.
+### Review-Karten (Import/Cleanup) — Aktionsleiste IMMER in dieser Reihenfolge
 
-### Settings / Sync
-Gruppen in dieser Reihenfolge:
+1. **Primary** — `Bestehendes Feature aktualisieren` (Ziel erkannt) **oder** `Als neues Feature anlegen` (kein Ziel).
+2. **Secondary** — `Trotzdem als neues Feature anlegen` (nur bei erkanntem Ziel).
+3. **Danger-Secondary** — `In Papierkorb verschieben` (nur bei `duplicateFeatureId`).
+4. **Ghost** — `Nicht übernehmen` (rechts via `margin-left:auto`).
 
-1. **Darstellung** — Theme, UI-Font, Serif-Modus.
-2. **GitHub Gist** — Push, Pull, Token.
+Bereits behandelte Karten bleiben **gedimmt sichtbar** (`opacity .5`, Buttons deaktiviert) mit Status-Pill „übernommen"/„ignoriert".
+
+### Einstellungen — Gruppenreihenfolge
+
+1. **Darstellung** — Theme (Atlas/E-Ink), UI-Font, Serif-Modus.
+2. **GitHub Gist** — Push, Pull, Token (Token in Advanced).
 3. **Trello** — Token, Board-Verbindung.
-4. **Datenverwaltung** — Export, Import, **gefolgt** von Advanced-Bereich: Notfall-Export, Raw-Backup, Speicherdiagnose.
-
-Letztere Gruppe trägt einen 2-px-Danger-Stripe links.
+4. **Datenverwaltung** — Export, Import, **gefolgt** von Danger-Zone (Notfall-Export, Raw-Backup, Speicherdiagnose) mit 2px-Danger-Stripe.
 
 ---
 
-## 6 · Buttontexte und Labels
+## 7 · Primäraktionen pro Workflow (genau eine pro Bereich)
 
-| Funktion | Empfohlenes deutsches Label |
+| Workflow | Primary | Sekundär / Ghost |
+|---|---|---|
+| Projekt anlegen | **Neues Projekt** (Karte) | — |
+| Sprint starten | **Hauptchat um Sprintstart bitten** (Projekt-Header) | Sprintstart-JSON importieren |
+| Sprint importieren | **JSON importieren** (Etappe 2) | — |
+| Sprint abschließen | **Sprintabschluss anfordern** (Etappe 3) | — |
+| Sprint übergeben | **Sprint-Handoff importieren** (Etappe 4) | — |
+| Feature anlegen | **Neues Feature** (Datenbank-Header) | — |
+| Cleanup-Review | **Vorschläge laden**, dann pro Karte 1 Primary | Trotzdem neu / Papierkorb / Nicht übernehmen |
+| Sync | **Push** (Settings) | Pull |
+
+---
+
+## 8 · Microcopy / Labels
+
+| Funktion | Label |
 |---|---|
 | Hauptchat markieren | Als Hauptchat markieren |
-| Prompt-Workflow auswählen | Prompt-Workflow wählen |
 | In Hauptchat zurückkehren | Zum Hauptchat-Kontext zurück |
 | Neuen Hauptchat-Kontext vorbereiten | Neuen Hauptchat-Kontext bauen |
 | Sprintabschluss anfordern | Sprintabschluss anfordern |
-| Sprintabschluss / Handoff importieren | Sprint-Handoff importieren |
-| Abgeschlossene Sprints anzeigen | Abgeschlossene Sprints anzeigen |
-| Abgeschlossene Sprints ausblenden | Abgeschlossene ausblenden |
-| Projekt-Momentum einklappen | Momentum einklappen |
-| Projekt-Momentum ausklappen | Momentum ausklappen |
-| Bestehendes Feature aktualisieren | Bestehendes Feature aktualisieren |
-| Trotzdem als neues Feature anlegen | Trotzdem als neues Feature anlegen |
-| Als neues Feature anlegen | Als neues Feature anlegen |
-| Nicht übernehmen | Nicht übernehmen |
-| Dublette in Papierkorb verschieben | In Papierkorb verschieben |
-| Advanced / Legacy | Advanced · Legacy |
+| Handoff importieren | Sprint-Handoff importieren |
+| Abgeschlossene Sprints zeigen/verbergen | Abgeschlossene Sprints anzeigen / Abgeschlossene ausblenden |
+| Momentum ein-/ausklappen | Momentum einklappen / Momentum ausklappen |
+| Feature aktualisieren | Bestehendes Feature aktualisieren |
+| Feature trotzdem neu | Trotzdem als neues Feature anlegen |
+| Feature neu | Als neues Feature anlegen |
+| Verwerfen | Nicht übernehmen |
+| Dublette | In Papierkorb verschieben |
+| Advanced | Advanced · Werkzeuge |
 
 Empty-State-Texte:
 
-- *Keine Projekte:* „Noch kein Projekt angelegt. Lege das erste Projekt an, um zu starten."
+- *Keine Projekte:* „Noch kein Projekt angelegt. Lege das erste Reiseziel an, um zu starten."
 - *Keine Sprints:* „Noch keine Sprints. Starte den Zyklus mit „Hauptchat um Sprintstart bitten"."
 - *Keine Review-Vorschläge:* „Keine Vorschläge geladen. Erzeuge den Cleanup-Prompt und füge das KI-JSON oben ein."
 - *Keine Features im Pool:* „Keine Features in diesem Pool. Wechsle den Pool oder lege ein neues Feature an."
 
 ---
 
-## 7 · Umsetzungsreihenfolge
+## 9 · Mobile / Schmal-Viewport
 
-1. **Token-Block im `:root` ersetzen.** Bestehende Variablen­namen als Alias beibehalten.
-2. **Button-CSS.** Radius 6 px, klare Hierarchie primary / secondary / ghost / danger. Hover-Lift entfernen.
-3. **Pills umbauen** auf Soft-Tint + farbige Schrift + optional Dot.
-4. **Notices** auf 2-px-Stripe-Style.
-5. **Chat-Karten** mit linkem 2-px-Stripe nach Typ. Default-Filter „abgeschlossene Sprints ausgeblendet".
-6. **Sprint-Zyklus-Block** strukturieren in 4 nummerierte Stufen + Advanced-Footer.
-7. **Review-Cards** Aktionsleiste in der spezifizierten Reihenfolge, inkl. Dublette-Fall.
-8. **Momentum-Toggle** + Persistierung pro Projekt.
-9. **Feature-Datenbank-Toolbar:** Pool als Segmented Control, abhängiger Status-Filter.
-10. **Settings-Gruppen** sortieren, Notfall/Raw in Advanced.
+- **≤ 940 px:** Sidebar kollabiert zu Off-Canvas-Drawer (Hamburger im Topbar + Scrim). Status-Strip 2-spaltig, Momentum 1-spaltig, Sprint-Zyklus 2-spaltig (Route-Linie aus).
+- **≤ 560 px:** Status-Strip & Sprint-Zyklus 1-spaltig.
+- Im Topbar bleibt **ein** Primary sichtbar (kontextabhängig: „Sprintstart erbitten" im Projekt, sonst „Sync").
+- Tabellen scrollen horizontal in ihrem Container.
 
 ---
 
-## 8 · Was nicht angefasst wird
+## 10 · Umsetzungsreihenfolge
 
-- State-Struktur (`S.projects`, `S.features`, `S.notes`, `S.analyses`, `S.chats`, `S.importVersions`).
-- Migrations- und Normalisierungslogik beim Laden (alte deutsche Statuswerte).
+1. **Token-Block im `:root` ersetzen** (helle Atlas-Tokens), alte Namen als Aliase behalten. Fonts laden (Cormorant Garamond, IBM Plex Sans, IBM Plex Mono).
+2. **Button-CSS** — Hierarchie primary/secondary/ghost/danger, Hover-Lift entfernen.
+3. **Pills** auf Soft-Tint + farbige Schrift + optional Dot; Filter-Pills `pill-accent`/`pill-outline`.
+4. **Notices** auf 2px-Stripe.
+5. **Karten/Panels** auf helles Surface, `--sh-1`, Serif-Köpfe.
+6. **Sidebar/IA neu** — Gruppen Reise/Werkstatt/Werkzeuge; Projekt-Item auf Titel + 1 Signal reduzieren.
+7. **Karten-Übersicht** als neuer Startpunkt (View `overview`).
+8. **Status-Strip** im Projekt-Workspace.
+9. **Sprint-Zyklus-Block** in 4 nummerierte Etappen + Advanced-Footer.
+10. **Chat-Karten** mit Typ-Stripe; Default „abgeschlossene ausgeblendet".
+11. **Review-Cards** Aktionsleiste in spezifizierter Reihenfolge.
+12. **Momentum-Toggle** + Persistierung pro Projekt.
+13. **Feature-Datenbank-Toolbar** (Pool-Segmented, abhängiger Status-Filter).
+14. **Settings-Gruppen** sortieren, Notfall/Raw in Danger-Zone.
+
+---
+
+## 11 · Schutzliste — NICHT anfassen
+
+- localStorage-**Schema** des App-Datenstands (nur neue UI-Keys unter `roadtrip.ui.*`).
+- State-Struktur: `S.projects`, `S.features`, `S.notes`, `S.analyses`, `S.chats`, `S.importVersions`.
+- Migrations-/Normalisierungslogik beim Laden (alte deutsche Statuswerte).
 - Sprintstart-JSON-Validierung (`type === "roadtrip-sprint-start"`, Pflichtfelder).
-- Gist-Sync-, Trello- und Import-/Export-Logik (Verträge, Felder, Endpoints).
-- Button-IDs und Event-Handler-Bindings — UI-Buttons behalten ihre `id`.
-- localStorage-Schema des App-Datenstands. Nur neue UI-Keys unter `roadtrip.ui.*` sind zulässig.
+- Gist-Sync-, Trello-, Import-/Export-Logik (Verträge, Felder, Endpoints).
+- Element-IDs, Event-Handler-Bindings, Funktionsnamen.
+- Funktions-Vokabular: Projekt, Feature, Sprint, Hauptchat, Handoff. **Keine** narrative Umbenennung (kein „XP→Meilen"). Die Landkarten-Metapher ist visuell/atmosphärisch, nicht im Datenmodell.
 
 ---
 
-## 9 · Risiken
+## 12 · Risiken
 
-- **Inline-Styles** im Render-Code (zahlreich): müssen weitgehend in CSS-Klassen überführt werden, sonst überschreiben sie das neue Designsystem.
-- **Pill-Verwendung als Filter-Checkbox**: Neue Pill-Optik muss `:has(input:checked)` oder eine explizite Klasse berücksichtigen.
-- **Dichte Tabellen**: auf schmalen Viewports horizontal scrollen, kein Reflow.
-- **Sprint-Status-Konsistenz**: beim Sprint-Handoff-Import muss `chats[].status` auf `abgeschlossen` gesetzt werden (Roadmap-Punkt „Sprintabschluss-Flow schärfen").
-
----
-
-## 10 · Empfohlene Smoke-Tests
-
-1. `node -e "…"`-Syntaxcheck (siehe `readme.md`).
-2. Projekt anlegen, Feature anlegen, Pool-Wechsel `planned` ↔ `implemented`.
-3. Sprint-Zyklus voll durchlaufen:
-   Start-Prompt → Sprintstart-JSON-Import → Sprintchat angelegt →
-   Sprintabschluss-Prompt → Sprint-Handoff-JSON-Import → Sprintchat = `abgeschlossen`.
-4. Cleanup-Review mit drei Fällen (Ziel erkannt · kein Ziel · Dublette).
-5. Momentum-Toggle: einklappen, neu laden, Zustand bleibt erhalten.
-6. „Abgeschlossene Sprints anzeigen / ausblenden" — Toggle persistiert.
-7. JSON-Export + Re-Import: alle Daten unverändert.
-8. Theme-Wechsel Dark / Light / E-Ink: keine Token-Lücken.
+- **Inline-Styles** im Render-Code (zahlreich): müssen weitgehend in CSS-Klassen überführt werden, sonst überschreiben sie das Designsystem.
+- **Pill als Filter-Checkbox**: neue Pill-Optik muss `:has(input:checked)` oder explizite `is-active`-Klasse berücksichtigen.
+- **`--accent-2`-Reste**: jede Stelle prüfen, an der Indigo als zweiter Akzent auftrat — muss zu Info/Hue degradieren, nicht als Aktion erscheinen.
+- **Dichte Tabellen**: schmaler Viewport → horizontal scrollen, kein Reflow.
+- **Sprint-Status-Konsistenz**: beim Handoff-Import muss `chats[].status` auf `abgeschlossen` gesetzt werden.
+- **Map-Layout**: Knoten-Koordinaten sind dekorativ/relativ; bei vielen Projekten Auto-Layout oder Liste statt Karte ab Schwelle.
 
 ---
 
-*Roadtrip · DESIGN.md · v1.0*
+## 13 · Smoke-Tests
+
+1. Syntaxcheck (`node -e`-Pattern aus `readme.md`).
+2. Projekt anlegen → Feature anlegen → Pool-Wechsel `planned` ↔ `implemented`.
+3. Sprint-Zyklus voll durchlaufen: Start-Prompt → Sprintstart-JSON-Import → Sprintchat angelegt → Abschluss-Prompt → Handoff-JSON-Import → Sprintchat = `abgeschlossen`.
+4. Cleanup-Review mit drei Fällen (Ziel erkannt · kein Ziel · Dublette) — Button-Reihenfolge stimmt.
+5. Momentum-Toggle: einklappen, neu laden, Zustand bleibt.
+6. „Abgeschlossene Sprints anzeigen/ausblenden" — persistiert.
+7. JSON-Export + Re-Import: Daten unverändert.
+8. Theme-Wechsel Atlas / E-Ink: keine Token-Lücken, kein gefüllter Akzent im E-Ink.
+9. Schmal-Viewport: Sidebar-Drawer öffnet/schließt, Strip & Zyklus reflowen, ein Primary im Topbar.
+
+---
+
+*Roadtrip · DESIGN.md · Atlas-Skin v1.0 · Sprint 25*
