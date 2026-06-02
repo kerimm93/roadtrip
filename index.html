@@ -643,6 +643,137 @@
       grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
       gap: 10px;
     }
+    .overview-hero {
+      display: grid;
+      gap: 14px;
+    }
+    .overview-map {
+      position: relative;
+      min-height: 420px;
+      overflow: hidden;
+      background:
+        linear-gradient(90deg, rgba(227,216,193,.42) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(227,216,193,.34) 1px, transparent 1px),
+        radial-gradient(circle at 20% 26%, rgba(79,110,137,.10), transparent 30%),
+        radial-gradient(circle at 74% 68%, rgba(111,126,99,.11), transparent 34%),
+        var(--surface);
+      background-size: 46px 46px, 46px 46px, auto, auto, auto;
+      border: 1px solid var(--rule);
+      border-radius: var(--r-xl);
+      padding: 18px;
+      box-shadow: var(--sh-1);
+    }
+    .overview-map::before,
+    .overview-map::after {
+      content: '';
+      position: absolute;
+      inset: 34px 30px auto 24px;
+      height: 120px;
+      border-top: 1px solid rgba(207,192,163,.75);
+      border-radius: 50%;
+      transform: rotate(-7deg);
+      pointer-events: none;
+    }
+    .overview-map::after {
+      inset: auto 26px 48px 36px;
+      height: 150px;
+      transform: rotate(9deg);
+    }
+    .overview-map-header {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .overview-map-stage {
+      position: absolute;
+      inset: 96px 22px 24px;
+    }
+    .overview-node {
+      --node-color: var(--hue-sage);
+      position: absolute;
+      left: var(--node-x);
+      top: var(--node-y);
+      transform: translate(-50%, -50%);
+      display: grid;
+      grid-template-columns: auto minmax(118px, 172px);
+      gap: 8px;
+      align-items: center;
+      max-width: 220px;
+      padding: 7px 9px;
+      color: var(--ink);
+      text-align: left;
+      background: rgba(252,248,239,.86);
+      border: 1px solid var(--rule);
+      border-radius: var(--r-pill);
+      box-shadow: var(--sh-1);
+      cursor: pointer;
+    }
+    .overview-node:hover,
+    .overview-node:focus-visible {
+      border-color: var(--rule-strong);
+      box-shadow: var(--ring);
+      outline: none;
+    }
+    .overview-node.is-active {
+      border-color: var(--accent);
+      box-shadow: var(--ring);
+    }
+    .overview-node-marker {
+      width: 20px;
+      height: 20px;
+      border: 2px solid color-mix(in srgb, var(--node-color) 78%, var(--ink) 22%);
+      border-radius: 50%;
+      background: color-mix(in srgb, var(--node-color) 24%, var(--surface) 76%);
+      box-shadow: inset 0 0 0 4px var(--surface);
+    }
+    .overview-node-title {
+      display: block;
+      overflow: hidden;
+      font-weight: 700;
+      line-height: 1.15;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .overview-node-meta {
+      display: block;
+      color: var(--ink-dim);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      line-height: 1.2;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .overview-destination-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 10px;
+    }
+    .overview-destination-card {
+      --node-color: var(--hue-sage);
+      border-left: 4px solid var(--node-color);
+      cursor: pointer;
+      text-align: left;
+    }
+    .overview-momentum-list {
+      display: grid;
+      gap: 10px;
+    }
+    .overview-momentum-card {
+      border-left: 4px solid var(--node-color, var(--hue-sage));
+    }
+    .overview-momentum-card .momentum-next-step {
+      margin-top: 0;
+      border-left-color: var(--node-color, var(--hue-sage));
+    }
+    @media (max-width: 760px) {
+      .overview-map { min-height: 0; }
+      .overview-map-stage { position: static; display: grid; gap: 10px; margin-top: 16px; }
+      .overview-node { position: static; transform: none; width: 100%; max-width: none; }
+    }
+
     .momentum-dashboard-list {
       display: flex;
       flex-direction: column;
@@ -984,7 +1115,7 @@
     <main class="workspace-main">
       <section class="panel">
         <div class="panel-title">
-          <h2 id="viewTitle">Database</h2>
+          <h2 id="viewTitle">Karte</h2>
           <div class="mini" id="lastSavedLabel">—</div>
         </div>
         <div class="stats" id="stats"></div>
@@ -1004,7 +1135,7 @@
       const UI_SPRINT_VIS_KEY = 'roadtrip.ui.showCompletedSprintsByProject';
       const UI_MOMENTUM_COLLAPSED_KEY = 'roadtrip.ui.projectMomentumCollapsedByProject';
       const ALL_PROJECTS_KEY = 'all';
-      const VIEWS = ['database', 'momentum', 'project', 'notes', 'learning', 'import', 'settings'];
+      const VIEWS = ['overview', 'database', 'momentum', 'project', 'notes', 'learning', 'import', 'settings'];
       const APP_TYPES = ['Daily Log', 'Braindump', 'Review', 'Tracker', 'Writing', 'Learning', 'Meta-App', 'Sonstiges'];
       const PROJECT_STATUS = ['aktiv', 'pausiert', 'archiviert'];
       const FEATURE_CATEGORIES = ['UI', 'Workflow', 'Sync', 'KI', 'Import/Export', 'Darstellung', 'Datenmodell', 'Ansicht', 'Sonstiges'];
@@ -1066,7 +1197,7 @@
       let S = defaultState();
       let C = defaultConfig();
       let ui = {
-        view: 'database',
+        view: 'overview',
         editingProjectId: null,
         analysisDraftFeatures: [],
         activeProjectId: ALL_PROJECTS_KEY,
@@ -1647,9 +1778,9 @@
       function renderNav() {
         const wrap = $('navTabs');
         wrap.innerHTML = '';
-        const labels = {database:'Database',momentum:'Momentum',project:'Project',notes:'Notes',learning:'Learning',import:'Import',settings:'Settings'};
+        const labels = {overview:'Karte',database:'Database',momentum:'Momentum',project:'Project',notes:'Notes',learning:'Learning',import:'Import',settings:'Settings'};
         const groups = [
-          { label: 'Reise', views: ['project', 'momentum'] },
+          { label: 'Reise', views: ['overview', 'project', 'momentum'] },
           { label: 'Werkstatt', views: ['database', 'notes', 'learning'] },
           { label: 'Werkzeuge', views: ['import', 'settings'] }
         ];
@@ -1717,6 +1848,7 @@
 
       function renderView() {
         const c = $('viewContainer');
+        if (ui.view === 'overview') c.innerHTML = renderOverview();
         if (ui.view === 'database') c.innerHTML = renderDatabaseView();
         if (ui.view === 'momentum') c.innerHTML = renderMomentumDashboardView();
         if (ui.view === 'project') c.innerHTML = renderProjectWorkspace();
@@ -1727,12 +1859,12 @@
         renderProjectSelects();
         if ($('themeSelect')) $('themeSelect').value = C.theme;
         if ($('fontSelect')) $('fontSelect').value = C.font;
-        $('viewTitle').textContent = ({database:'Database',momentum:'Momentum',project:'Project',notes:'Notes',learning:'Learning',import:'Import',settings:'Settings'})[ui.view];
+        $('viewTitle').textContent = ({overview:'Karte',database:'Database',momentum:'Momentum',project:'Project',notes:'Notes',learning:'Learning',import:'Import',settings:'Settings'})[ui.view];
         wireDynamicView();
       }
 
       function wireDynamicView() {
-        // data-open-project is wired inside renderSidebarProjects()
+        wireProjectOpenButtons($('viewContainer'));
         const statusFilter = $('filterStatus');
         const poolFilter = $('filterPool');
         const catFilter = $('filterCategory');
@@ -2272,6 +2404,25 @@
         `).join('')}</div>`;
       }
 
+      function openProjectWorkspace(projectId) {
+        const pid = projectId || ALL_PROJECTS_KEY;
+        ui.activeProjectId = pid;
+        ui.projectEditMode = false;
+        ui.editingProjectId = pid === ALL_PROJECTS_KEY ? null : pid;
+        if (pid !== ALL_PROJECTS_KEY) ui.importDraft.projectId = pid;
+        if (ui.view !== 'database' && ui.view !== 'project') ui.view = 'project';
+        renderNav();
+        renderSidebarProjects();
+        renderView();
+      }
+
+      function wireProjectOpenButtons(root) {
+        if (!root) return;
+        qq('[data-open-project]', root).forEach(btn => btn.addEventListener('click', () => {
+          openProjectWorkspace(btn.dataset.openProject);
+        }));
+      }
+
       function renderSidebarProjects() {
         const wrap = $('sidebarProjects');
         const isAll = ui.activeProjectId === ALL_PROJECTS_KEY;
@@ -2295,22 +2446,7 @@
           </button>`;
         }).join('');
         // Re-wire after DOM update
-        qq('[data-open-project]', wrap).forEach(btn => btn.addEventListener('click', () => {
-          const pid = btn.dataset.openProject;
-          ui.activeProjectId = pid;
-          ui.projectEditMode = false;
-          ui.editingProjectId = pid === ALL_PROJECTS_KEY ? null : pid;
-          // Sync import draft project
-          if (pid !== ALL_PROJECTS_KEY) ui.importDraft.projectId = pid;
-          if (ui.view === 'database' || ui.view === 'project') {
-            // Stay in current view but re-render with new context
-          } else {
-            ui.view = 'project';
-          }
-          renderNav();
-          renderSidebarProjects();
-          renderView();
-        }));
+        wireProjectOpenButtons(wrap);
       }
 
       function renderContextBanner() {
@@ -4169,6 +4305,154 @@
           f.projectId === projectId &&
           isPlannedFeature(f)
         );
+      }
+
+      function getOverviewProjectHue(index) {
+        const hues = ['var(--hue-sage)', 'var(--hue-slate)', 'var(--hue-plum)', 'var(--hue-ochre)', 'var(--hue-teal)'];
+        return hues[Math.abs(index) % hues.length];
+      }
+
+      function getStableProjectSortValue(project) {
+        const id = String((project && project.id) || '');
+        let hash = 0;
+        for (let i = 0; i < id.length; i++) hash = ((hash << 5) - hash + id.charCodeAt(i)) | 0;
+        return Math.abs(hash);
+      }
+
+      function getOverviewProjects() {
+        return (S.projects || [])
+          .filter(p => p && p.status !== 'archiviert')
+          .slice()
+          .sort((a, b) => getStableProjectSortValue(a) - getStableProjectSortValue(b) || String(a.title || '').localeCompare(String(b.title || '')));
+      }
+
+      function getOverviewNodePosition(index, count) {
+        if (count <= 1) return { x: 50, y: 52 };
+        const angle = (-90 + (360 / count) * index) * Math.PI / 180;
+        const rx = count <= 6 ? 31 : 36;
+        const ry = count <= 6 ? 29 : 32;
+        return {
+          x: Math.round((50 + Math.cos(angle) * rx) * 10) / 10,
+          y: Math.round((52 + Math.sin(angle) * ry) * 10) / 10
+        };
+      }
+
+      function renderOverviewDestination(project, index, options) {
+        const opts = Object.assign({ asCard: false }, options || {});
+        const plannedFeatures = getPlannedProjectFeatures(project.id);
+        const openNotes = getOpenProjectNotes(project.id);
+        const hue = getOverviewProjectHue(index);
+        const isActive = ui.activeProjectId === project.id;
+        if (opts.asCard) {
+          return `<button class="item overview-destination-card ${isActive ? 'is-active' : ''}" data-open-project="${escapeAttr(project.id)}" style="--node-color:${hue};">
+            <div class="row-top">
+              <div>
+                <strong>${escapeHtml(project.title || 'Ohne Titel')}</strong>
+                <div class="mini">${escapeHtml(project.type || 'Sonstiges')} · ${escapeHtml(project.status || 'aktiv')}</div>
+              </div>
+              <span class="pill">${plannedFeatures.length} Features</span>
+            </div>
+            <div class="mini">${openNotes.length} offene Notizen · aktualisiert ${escapeHtml(formatDateTime(getProjectUpdatedAt(project)))}</div>
+          </button>`;
+        }
+        const pos = getOverviewNodePosition(index, opts.count || 1);
+        return `<button class="overview-node ${isActive ? 'is-active' : ''}" data-open-project="${escapeAttr(project.id)}" style="--node-x:${pos.x}%;--node-y:${pos.y}%;--node-color:${hue};" title="${escapeAttr(project.title || 'Projekt öffnen')}">
+          <span class="overview-node-marker" aria-hidden="true"></span>
+          <span>
+            <span class="overview-node-title">${escapeHtml(project.title || 'Ohne Titel')}</span>
+            <span class="overview-node-meta">${escapeHtml(project.status || 'aktiv')} · ${plannedFeatures.length}/${openNotes.length}</span>
+          </span>
+        </button>`;
+      }
+
+      function renderOverviewMomentumCard(project, index) {
+        const plannedFeatures = getPlannedProjectFeatures(project.id);
+        const openNotes = getOpenProjectNotes(project.id);
+        const data = getProjectMomentumData(project.id, plannedFeatures, openNotes);
+        const hue = getOverviewProjectHue(index);
+        const focus = project.currentFocus || (data.activeFeatures && data.activeFeatures[0] && data.activeFeatures[0].title) || 'Noch kein Fokus gesetzt.';
+        const nextStep = project.nextStep || (data.candidateFeatures && data.candidateFeatures[0] && data.candidateFeatures[0].title) || '';
+        return `<div class="item overview-momentum-card" style="--node-color:${hue};">
+          <div class="row-top">
+            <div>
+              <strong>${escapeHtml(project.title || 'Ohne Titel')}</strong>
+              <div class="mini">${escapeHtml(project.status || 'aktiv')} · ${escapeHtml(project.type || 'Sonstiges')} · ${escapeHtml(formatDateTime(getProjectUpdatedAt(project)))}</div>
+            </div>
+            <div class="stack-row" style="gap:6px;">
+              <span class="pill">${plannedFeatures.length} Features</span>
+              <span class="pill">${openNotes.length} Notizen</span>
+            </div>
+          </div>
+          <div class="momentum-main-grid">
+            <div>
+              <div class="momentum-focus"><strong>Fokus:</strong> ${escapeHtml(shorten(focus, 220))}</div>
+              ${nextStep ? `<div class="momentum-next-step"><div class="label">Nächster Schritt</div><div class="value">${escapeHtml(shorten(nextStep, 260))}</div></div>` : '<div class="notice" style="margin-top:8px;">Noch kein nächster Schritt gesetzt.</div>'}
+            </div>
+            <div class="momentum-actions">
+              <button class="btn" data-open-project="${escapeAttr(project.id)}">Projekt-Workspace öffnen</button>
+              <div class="mini">Blockiert: ${data.blockedFeatures.length} · Aufgeschoben: ${data.deferredFeatures.length} · Top-Kandidaten: ${data.candidateFeatures.length}</div>
+            </div>
+          </div>
+        </div>`;
+      }
+
+      function renderOverview() {
+        const projects = getOverviewProjects();
+        if (!projects.length) {
+          return `
+            <div class="panel-title">
+              <div>
+                <h3>Karten-Übersicht</h3>
+                <div class="mini">Ein ruhiger Startpunkt für deine Reiseziele.</div>
+              </div>
+              <button class="btn btn-primary" id="btnStartNewProject">+ Neues Projekt</button>
+            </div>
+            <div class="notice">Noch keine aktiven Projekte vorhanden. Lege ein Reiseziel an, um die Karte zu füllen.</div>
+          `;
+        }
+        const useListFallback = projects.length > 12;
+        return `
+          <div class="overview-hero">
+            <div class="panel-title">
+              <div>
+                <h3>Karten-Übersicht</h3>
+                <div class="mini">Wo bin ich, was bewegt sich — alle aktiven Projekte als ruhige Reiseziele.</div>
+              </div>
+              <button class="btn btn-primary" id="btnStartNewProject">+ Neues Projekt</button>
+            </div>
+            ${useListFallback ? `
+              <div class="notice">Viele Reiseziele: Die Karte wechselt in eine lesbare Listendarstellung, damit nichts gedrängt wirkt.</div>
+              <div class="overview-destination-list">
+                ${projects.map((project, index) => renderOverviewDestination(project, index, { asCard: true })).join('')}
+              </div>
+            ` : `
+              <div class="overview-map" aria-label="Projektkarte">
+                <div class="overview-map-header">
+                  <div>
+                    <div class="eyebrow">Atlas</div>
+                    <strong>Reiseziele</strong>
+                    <div class="mini">Positionen werden deterministisch aus der Projekt-ID abgeleitet und nicht gespeichert.</div>
+                  </div>
+                  <span class="pill">${projects.length} aktive Projekte</span>
+                </div>
+                <div class="overview-map-stage">
+                  ${projects.map((project, index) => renderOverviewDestination(project, index, { count: projects.length })).join('')}
+                </div>
+              </div>
+            `}
+            <div>
+              <div class="panel-title" style="margin-bottom:10px;">
+                <div>
+                  <h3>Momentum</h3>
+                  <div class="mini">Fokus, nächster Schritt und Status je Projekt.</div>
+                </div>
+              </div>
+              <div class="overview-momentum-list">
+                ${projects.map(renderOverviewMomentumCard).join('')}
+              </div>
+            </div>
+          </div>
+        `;
       }
 
       function getMomentumDashboardProjects() {
