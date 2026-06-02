@@ -248,9 +248,9 @@
 
     .hero, .panel {
       background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
+      border: 1px solid var(--rule);
+      border-radius: var(--r-lg);
+      box-shadow: var(--sh-1);
     }
 
     .hero {
@@ -371,12 +371,23 @@
     }
 
     .panel { padding: 14px; }
+    .panel-head,
     .panel-title {
       display: flex;
       justify-content: space-between;
-      align-items: center;
+      align-items: flex-start;
       gap: 10px;
       margin-bottom: 10px;
+    }
+
+    .panel-head > :first-child,
+    .panel-title > :first-child { min-width: 0; }
+
+    .panel-head > :last-child:not(:first-child),
+    .panel-title > :last-child:not(:first-child) {
+      flex: 0 0 auto;
+      max-width: 50%;
+      text-align: right;
     }
 
     .panel-title h2,
@@ -659,14 +670,20 @@
 
     .card {
       background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 16px;
+      border: 1px solid var(--rule);
+      border-radius: var(--r-lg);
       padding: 12px;
-      box-shadow: var(--shadow);
+      box-shadow: var(--sh-1);
       display: flex;
       flex-direction: column;
       gap: 8px;
       min-width: 0;
+    }
+
+    .quiet {
+      background: var(--surface-2);
+      border: 1px solid var(--rule);
+      border-radius: var(--r-md);
     }
 
     .kanban {
@@ -690,28 +707,55 @@
       margin: 0 0 10px;
     }
 
+    .table-scroll {
+      max-width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
     table {
       width: 100%;
+      min-width: 760px;
       border-collapse: collapse;
       font-size: 14px;
       background: var(--surface);
-      border-radius: 16px;
+      border-radius: var(--r-lg);
       overflow: hidden;
     }
 
     th, td {
-      padding: 10px;
-      border-bottom: 1px solid var(--border);
       text-align: left;
       vertical-align: top;
     }
+
     th {
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--rule);
       color: var(--ink-dim);
       font-family: var(--font-mono);
-      font-size: 11px;
+      font-size: 10.5px;
       font-weight: 500;
-      letter-spacing: .18em;
+      letter-spacing: .1em;
+      padding: 10px 14px;
       text-transform: uppercase;
+    }
+
+    td {
+      background: transparent;
+      border-bottom: 1px solid var(--rule-faint);
+      color: var(--ink-mid);
+      padding: 12px 14px;
+    }
+
+    tbody tr,
+    tbody tr:nth-child(even),
+    tbody tr:nth-child(odd) { background: transparent; }
+
+    tbody tr:hover td { background: var(--surface-2); }
+
+    td.title {
+      color: var(--ink);
+      font-weight: 500;
     }
 
     details {
@@ -728,12 +772,24 @@
     .hidden { display: none !important; }
 
     .notice {
-      background: var(--rt-warning-soft);
-      border-left: 2px solid var(--rt-warning);
+      background: var(--warn-soft);
+      border: 0;
+      border-left: 2px solid var(--warn);
       border-radius: 0 var(--r-sm) var(--r-sm) 0;
+      box-shadow: none;
       padding: 10px 12px;
-      color: var(--ink-light);
+      color: var(--ink-mid);
       font-size: 14px;
+    }
+
+    .notice-info {
+      background: var(--info-soft);
+      border-left-color: var(--info);
+    }
+
+    .notice-danger {
+      background: var(--danger-soft);
+      border-left-color: var(--danger);
     }
     .chat-card { border-left-width: 2px !important; }
     .chat-card.type-main { border-left-color: var(--rt-gold) !important; }
@@ -5012,7 +5068,7 @@
         const opts = Object.assign({ title: 'Tabelle' }, options || {});
         return `
           <div class="panel-title"><h3>${escapeHtml(opts.title)}</h3><div class="mini">Filtern, sichten, Prioritäten anpassen</div></div>
-          <div style="overflow:auto">
+          <div class="table-scroll">
             <table>
               <thead>
                 <tr>
@@ -5029,7 +5085,7 @@
               <tbody>
                 ${features.map(f => `
                   <tr>
-                    <td>
+                    <td class="title">
                       <strong>${escapeHtml(f.title)}</strong><br>
                       <span class="mini">${escapeHtml(f.description || '')}</span>
                     </td>
