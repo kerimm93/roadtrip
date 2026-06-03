@@ -751,6 +751,89 @@
       align-items: center;
     }
 
+    .notes-workspace {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .notes-workspace .panel-title {
+      margin-bottom: 0;
+    }
+
+    .notes-workspace .panel-title .mini {
+      max-width: 52ch;
+      padding-top: 3px;
+      line-height: 1.35;
+    }
+
+    .notes-workspace textarea#notesWorkspaceText {
+      min-height: 104px;
+    }
+
+    .notes-workspace-toolbar {
+      align-items: flex-end;
+      gap: 10px;
+      margin-bottom: 0;
+    }
+
+    .notes-workspace-toolbar .field {
+      margin-bottom: 0;
+    }
+
+    .notes-workspace-add .btn-primary {
+      min-height: var(--touch);
+    }
+
+    .notes-workspace-filter {
+      border-top: 1px solid var(--rule);
+      padding-top: 10px;
+    }
+
+    .notes-workspace-filter input,
+    .notes-workspace-filter select,
+    .notes-workspace-add select,
+    .note-edit-toolbar select {
+      min-height: var(--touch);
+    }
+
+    .notes-workspace-project-field,
+    .notes-workspace-search-field {
+      flex: 1 1 240px;
+    }
+
+    .notes-workspace-type-field,
+    .notes-workspace-status-field {
+      flex: 0 1 170px;
+    }
+
+    .notes-workspace-notice {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 0;
+    }
+
+    .notes-workspace-item .item-title {
+      font-size: 19px;
+      line-height: 1.18;
+    }
+
+    .notes-workspace-item .meta {
+      color: var(--ink-dim);
+    }
+
+    .notes-workspace-item .meta .pill {
+      background: transparent;
+      border-color: var(--rule);
+      color: var(--ink-dim);
+    }
+
+    .notes-workspace-item .stack-row {
+      gap: 6px;
+    }
+
     .grid-cards {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -5733,25 +5816,27 @@
           .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
         const activeProjectId = st.projectId && st.projectId !== 'all' && st.projectId !== 'none' ? st.projectId : '';
         return `
-          <div class="panel-title"><h3>Notes Workspace</h3><div class="mini">Zentraler Workspace für rohe Projekt-Notizen aus S.notes.</div></div>
-          <div class="field">
-            <label for="notesWorkspaceText">Neue Notiz</label>
-            <textarea id="notesWorkspaceText" placeholder="Notiz, Idee, Bug, Frage, Entscheidung ..."></textarea>
-          </div>
-          <div class="toolbar" style="margin-bottom:12px;">
-            <div class="field" style="min-width:220px;"><label for="notesWorkspaceProject">Projekt</label><select id="notesWorkspaceProject"><option value="">— Kein Projekt —</option>${(S.projects || []).map(project => `<option value="${escapeAttr(project.id)}" ${activeProjectId === project.id ? 'selected' : ''}>${escapeHtml(project.title || 'Ohne Titel')}</option>`).join('')}</select></div>
-            <div class="field" style="min-width:180px;"><label for="notesWorkspaceType">Typ</label><select id="notesWorkspaceType">${NOTE_TYPES.map(type => `<option value="${escapeAttr(type)}">${escapeHtml(type)}</option>`).join('')}</select></div>
-            <button class="btn btn-primary" id="btnAddNotesWorkspaceNote">Notiz hinzufügen</button>
-          </div>
-          <div class="toolbar" style="margin-bottom:12px;">
-            <div class="field" style="min-width:220px;"><label for="notesWorkspaceProjectFilter">Projektfilter</label><select id="notesWorkspaceProjectFilter">${projectOptions}</select></div>
-            <div class="field"><label for="notesWorkspaceStatusFilter">Status</label><select id="notesWorkspaceStatusFilter">${statusOptions}</select></div>
-            <div class="field"><label for="notesWorkspaceTypeFilter">Typ</label><select id="notesWorkspaceTypeFilter">${typeOptions}</select></div>
-            <div class="field" style="min-width:240px;"><label for="notesWorkspaceSearch">Suche</label><input id="notesWorkspaceSearch" value="${escapeAttr(st.search || '')}" placeholder="Text, Projekt, Quelle ..." /></div>
-          </div>
-          ${activeProjectId ? `<div class="notice" style="margin-bottom:12px;">Batch-Pipeline für dieses Projekt bleibt im Project View: <button class="btn btn-secondary" data-open-notes-project="${escapeAttr(activeProjectId)}">Projekt öffnen</button></div>` : ''}
-          <div class="list">
-            ${notes.map(note => renderNotesWorkspaceItem(note)).join('') || '<div class="notice">Keine passenden Notizen.</div>'}
+          <div class="notes-workspace">
+            <div class="panel-title"><h3>Notes Workspace</h3><div class="mini">Zentraler Workspace für rohe Projekt-Notizen aus S.notes.</div></div>
+            <div class="field">
+              <label for="notesWorkspaceText">Neue Notiz</label>
+              <textarea id="notesWorkspaceText" placeholder="Notiz, Idee, Bug, Frage, Entscheidung ..."></textarea>
+            </div>
+            <div class="toolbar notes-workspace-toolbar notes-workspace-add">
+              <div class="field notes-workspace-project-field"><label for="notesWorkspaceProject">Projekt</label><select id="notesWorkspaceProject"><option value="">— Kein Projekt —</option>${(S.projects || []).map(project => `<option value="${escapeAttr(project.id)}" ${activeProjectId === project.id ? 'selected' : ''}>${escapeHtml(project.title || 'Ohne Titel')}</option>`).join('')}</select></div>
+              <div class="field notes-workspace-type-field"><label for="notesWorkspaceType">Typ</label><select id="notesWorkspaceType">${NOTE_TYPES.map(type => `<option value="${escapeAttr(type)}">${escapeHtml(type)}</option>`).join('')}</select></div>
+              <button class="btn btn-primary" id="btnAddNotesWorkspaceNote">Notiz hinzufügen</button>
+            </div>
+            <div class="toolbar notes-workspace-toolbar notes-workspace-filter">
+              <div class="field notes-workspace-project-field"><label for="notesWorkspaceProjectFilter">Projektfilter</label><select id="notesWorkspaceProjectFilter">${projectOptions}</select></div>
+              <div class="field notes-workspace-status-field"><label for="notesWorkspaceStatusFilter">Status</label><select id="notesWorkspaceStatusFilter">${statusOptions}</select></div>
+              <div class="field notes-workspace-type-field"><label for="notesWorkspaceTypeFilter">Typ</label><select id="notesWorkspaceTypeFilter">${typeOptions}</select></div>
+              <div class="field notes-workspace-search-field"><label for="notesWorkspaceSearch">Suche</label><input id="notesWorkspaceSearch" value="${escapeAttr(st.search || '')}" placeholder="Text, Projekt, Quelle ..." /></div>
+            </div>
+            ${activeProjectId ? `<div class="notice notes-workspace-notice">Batch-Pipeline für dieses Projekt bleibt im Project View: <button class="btn btn-secondary" data-open-notes-project="${escapeAttr(activeProjectId)}">Projekt öffnen</button></div>` : ''}
+            <div class="list">
+              ${notes.map(note => renderNotesWorkspaceItem(note)).join('') || '<div class="notice">Keine passenden Notizen.</div>'}
+            </div>
           </div>
         `;
       }
@@ -5765,13 +5850,14 @@
         const isEditing = ui.notesWorkspace && ui.notesWorkspace.editingNoteId === note.id;
         const featureHint = note.processedIntoFeatureId ? `<span class="pill pill-success">Feature: ${escapeHtml(note.processedIntoFeatureId)}</span>` : '';
         const sourceHint = note.sourceType ? `<span class="pill">Quelle: ${escapeHtml(note.sourceType)}</span>` : '';
+        const statusPillClass = status === 'processed' ? 'pill pill-success' : (status === 'archived' ? 'pill pill-outline' : 'pill');
         if (isEditing) {
           return `
-            <div class="item">
+            <div class="item notes-workspace-item">
               <div class="field"><label>Inhalt</label><textarea data-note-edit-text="${escapeAttr(note.id)}">${escapeHtml(text)}</textarea></div>
-              <div class="toolbar">
-                <div class="field" style="min-width:220px;"><label>Projekt</label><select data-note-edit-project="${escapeAttr(note.id)}"><option value="">— Kein Projekt —</option>${(S.projects || []).map(project => `<option value="${escapeAttr(project.id)}" ${projectId === project.id ? 'selected' : ''}>${escapeHtml(project.title || 'Ohne Titel')}</option>`).join('')}</select></div>
-                <div class="field"><label>Typ</label><select data-note-edit-type="${escapeAttr(note.id)}">${NOTE_TYPES.map(t => `<option value="${escapeAttr(t)}" ${type === t ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}</select></div>
+              <div class="toolbar notes-workspace-toolbar note-edit-toolbar">
+                <div class="field notes-workspace-project-field"><label>Projekt</label><select data-note-edit-project="${escapeAttr(note.id)}"><option value="">— Kein Projekt —</option>${(S.projects || []).map(project => `<option value="${escapeAttr(project.id)}" ${projectId === project.id ? 'selected' : ''}>${escapeHtml(project.title || 'Ohne Titel')}</option>`).join('')}</select></div>
+                <div class="field notes-workspace-type-field"><label>Typ</label><select data-note-edit-type="${escapeAttr(note.id)}">${NOTE_TYPES.map(t => `<option value="${escapeAttr(t)}" ${type === t ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}</select></div>
                 <button class="btn btn-primary" data-save-note-edit="${escapeAttr(note.id)}">Speichern</button>
                 <button class="btn btn-secondary" data-cancel-note-edit="${escapeAttr(note.id)}">Abbrechen</button>
               </div>
@@ -5779,10 +5865,10 @@
           `;
         }
         return `
-          <div class="item">
+          <div class="item notes-workspace-item">
             <div class="row-top">
               <h4 class="item-title">${escapeHtml(projectName)}</h4>
-              <div class="stack-row" style="gap:6px;"><span class="pill">${escapeHtml(status)}</span><span class="pill">${escapeHtml(type)}</span></div>
+              <div class="stack-row"><span class="${statusPillClass}">${escapeHtml(status)}</span><span class="pill">${escapeHtml(type)}</span></div>
             </div>
             <div class="item-desc">${escapeHtml(text || '—')}</div>
             <div class="meta">
