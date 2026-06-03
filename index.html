@@ -579,6 +579,8 @@
     .btn:hover, button:hover { background: var(--surface-2); border-color: var(--rule-strong); }
     .btn:active, button:active { opacity: .95; }
     .btn:focus-visible, button:focus-visible { box-shadow: var(--ring); outline: none; }
+    .btn:disabled, button:disabled { cursor: not-allowed; opacity: .58; }
+    .btn:disabled:hover, button:disabled:hover { background: var(--surface); border-color: var(--rule-strong); }
     .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
     .btn-primary:hover { background: var(--accent-hi); border-color: var(--accent-hi); }
     .btn-secondary { background: transparent; border-color: var(--rule-strong); color: var(--ink); }
@@ -749,6 +751,101 @@
       gap: 6px;
       flex-wrap: wrap;
       align-items: center;
+    }
+
+
+    .cleanup-review-shell {
+      margin-top: 10px;
+    }
+
+    .cleanup-review-summary {
+      align-items: center;
+      color: var(--ink);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-weight: 700;
+    }
+
+    .cleanup-review-stage {
+      border-top: 1px solid var(--rule);
+      margin-top: 12px;
+      padding-top: 12px;
+    }
+
+    .cleanup-review-stage:first-of-type {
+      border-top: 0;
+      margin-top: 10px;
+      padding-top: 0;
+    }
+
+    .cleanup-review-stage-head {
+      align-items: baseline;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .cleanup-review-stage-title {
+      color: var(--ink);
+      font-family: var(--font-display);
+      font-size: 20px;
+      font-weight: 600;
+      line-height: 1.2;
+      margin: 0;
+    }
+
+    .cleanup-review-textarea {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      min-height: 100px;
+    }
+
+    .cleanup-review-prompt {
+      margin-top: 6px;
+    }
+
+    .cleanup-review-summary-text {
+      margin-top: 8px;
+    }
+
+    .cleanup-review-counter {
+      font-family: var(--font-mono);
+    }
+
+    .cleanup-review-list {
+      margin-top: 10px;
+    }
+
+    .cleanup-review-card {
+      background: var(--surface-2);
+      border-color: var(--rule);
+    }
+
+    .cleanup-review-card.is-done {
+      opacity: .5;
+    }
+
+    .cleanup-review-card .row-top {
+      align-items: center;
+    }
+
+    .cleanup-review-note-muted {
+      color: var(--ink-dim);
+    }
+
+    .cleanup-review-note-info {
+      color: var(--info);
+    }
+
+    .cleanup-review-actions {
+      margin-top: 2px;
+    }
+
+    .cleanup-review-actions .btn-ghost {
+      margin-left: auto;
     }
 
     .notes-workspace {
@@ -7821,60 +7918,104 @@
         if (!ui.cleanupReview.visible) return '';
         const proposals = ui.cleanupReview.proposals || [];
         const typeLabel = { 'match-existing': 'Unverändert / bereits vorhanden', 'update-existing': 'Update', 'new-implemented-feature': 'Neu', 'new-feature': 'Neu', 'duplicate-of': 'Dublette / vermutlich bereits vorhanden', 'probably-stale': 'Möglicherweise veraltet' };
-        const typeColor = { 'match-existing': 'var(--blue)', 'update-existing': 'var(--accent-2)', 'new-implemented-feature': 'var(--green)', 'new-feature': 'var(--green)', 'duplicate-of': 'var(--yellow)', 'probably-stale': 'var(--ink-dim)' };
         const modeLabel = ui.cleanupReview.mode === 'project-dedupe' ? 'Feature-Bereinigung' : 'Import-Cleanup';
+        const cleanupStats = proposals.reduce((acc, proposal) => {
+          const normalizedType = normalizeCleanupProposalType(proposal.type, ui.cleanupReview.mode);
+          if (normalizedType === 'new-feature' || normalizedType === 'new-implemented-feature') acc.newCount += 1;
+          if (normalizedType === 'update-existing') acc.updateCount += 1;
+          if (normalizedType === 'duplicate-of') acc.duplicateCount += 1;
+          if (proposal._done && !proposal._ignored && !proposal._reviewedOnly) acc.acceptedCount += 1;
+          return acc;
+        }, { newCount: 0, updateCount: 0, duplicateCount: 0, acceptedCount: 0 });
+        const openCount = proposals.filter(p => !p._done).length;
+        const reviewCounter = `${cleanupStats.newCount} neu · ${cleanupStats.updateCount} Updates · ${cleanupStats.duplicateCount} Dubletten · ${cleanupStats.acceptedCount} übernommen`;
+        const renderCleanupActions = (proposal, normalizedType, hasTarget, hasDuplicate) => {
+          const disabledAttr = proposal._done ? ' disabled' : '';
+          const primaryAction = hasTarget
+            ? `<button class="btn btn-primary" data-cleanup-accept-update="${proposal._idx}"${disabledAttr}>Bestehendes Feature aktualisieren</button>`
+            : `<button class="btn btn-primary" data-cleanup-accept-new="${proposal._idx}"${disabledAttr}>Als neues Feature anlegen</button>`;
+          const secondaryAction = hasTarget
+            ? `<button class="btn btn-secondary" data-cleanup-accept-new="${proposal._idx}"${disabledAttr}>Trotzdem als neues Feature anlegen</button>`
+            : '';
+          const reviewOnlyAction = (normalizedType === 'match-existing' || normalizedType === 'probably-stale')
+            ? `<button class="btn btn-secondary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als geprüft abhaken</button>`
+            : '';
+          const dangerAction = normalizedType === 'duplicate-of' && hasDuplicate
+            ? `<button class="btn btn-danger" data-cleanup-mark-duplicate="${proposal._idx}"${disabledAttr}>Dublette in Papierkorb verschieben</button>`
+            : '';
+          return `
+            <div class="stack-row cleanup-review-actions">
+              ${primaryAction}
+              ${secondaryAction}
+              ${reviewOnlyAction}
+              ${dangerAction}
+              <button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button>
+            </div>
+          `;
+        };
         return `
-          <details open style="margin-top:10px;">
-            <summary style="font-weight:700;">Cleanup-Review (${modeLabel}) · ${proposals.filter(p=>!p._done).length} offen</summary>
-            <div style="margin-top:8px;" class="field">
-              <label for="cleanupReviewJsonInput">Cleanup-JSON einfügen</label>
-              <textarea id="cleanupReviewJsonInput" style="min-height:100px;font-family:var(--font-mono);font-size:12px;" placeholder='{"proposals":[...]}'></textarea>
-              <div class="stack-row" style="margin-top:6px;">
+          <details class="cleanup-review-shell" open>
+            <summary class="cleanup-review-summary">Cleanup-Review (${modeLabel}) · ${openCount} offen</summary>
+            <section class="cleanup-review-stage" aria-label="Quelle">
+              <div class="cleanup-review-stage-head">
+                <h3 class="cleanup-review-stage-title">Quelle</h3>
+                <span class="section-label">Cleanup-JSON</span>
+              </div>
+              <div class="field">
+                <label for="cleanupReviewJsonInput">Cleanup-JSON einfügen</label>
+                <textarea id="cleanupReviewJsonInput" class="cleanup-review-textarea" placeholder='{"proposals":[...]}'></textarea>
+              </div>
+            </section>
+            <section class="cleanup-review-stage" aria-label="Prompt und Import">
+              <div class="cleanup-review-stage-head">
+                <h3 class="cleanup-review-stage-title">Prompt+Import</h3>
+                <span class="section-label">Prüfen & übernehmen</span>
+              </div>
+              <div class="stack-row cleanup-review-prompt">
                 <button class="btn btn-primary" id="btnLoadCleanupReview">Cleanup-Vorschläge laden</button>
                 <button class="btn" id="btnClearCleanupReview">Cleanup schließen</button>
               </div>
-              ${ui.cleanupReview.summary ? `<div class="mini" style="margin-top:8px;">Summary: ${escapeHtml(ui.cleanupReview.summary)}</div>` : ''}
-            </div>
-            ${proposals.length ? `
-              <div class="list" style="margin-top:10px;">
-                ${proposals.map(p => {
-                  const normalizedType = normalizeCleanupProposalType(p.type, ui.cleanupReview.mode);
-                  const targetFeature = resolveCleanupTargetFeature(p);
-                  const duplicateFeature = p.duplicateFeatureId ? S.features.find(f => f.id === p.duplicateFeatureId) : null;
-                  const hasTarget = !!targetFeature;
-                  const hasDuplicate = !!duplicateFeature;
-                  return `
-                  <div class="item" style="${p._done ? 'opacity:0.45;' : ''}border-left:3px solid ${typeColor[p.type] || 'var(--border)'}">
-                    <div class="row-top">
-                      <strong>${escapeHtml(p.resolvedTitle || p.incomingTitle || '—')}</strong>
-                      <span class="pill">${typeLabel[normalizedType] || p.type}</span>
-                    </div>
-                    ${p.incomingTitle ? `<div class="mini">Import: ${escapeHtml(p.incomingTitle)}</div>` : ''}
-                    ${p.targetFeatureId ? `<div class="mini">Ziel-ID: ${escapeHtml(p.targetFeatureId)}</div>` : ''}
-                    ${p.duplicateFeatureId ? `<div class="mini">Duplikat-ID: ${escapeHtml(p.duplicateFeatureId)}</div>` : ''}
-                    ${p.duplicateFeatureId ? `<div class="mini">Duplikat-Titel: ${escapeHtml(((S.features.find(f => f.id === p.duplicateFeatureId) || {}).title) || '—')}</div>` : ''}
-                    ${p.resolvedDescription ? `<div class="item-desc">${escapeHtml(p.resolvedDescription)}</div>` : ''}
-                    <div class="mini">Confidence: ${escapeHtml(p.confidence)}</div>
-                    ${p.changeSummary ? `<div class="mini">Änderung: ${escapeHtml(p.changeSummary)}</div>` : ''}
-                    ${p.rationale ? `<div class="mini" style="color:var(--ink-dim)">Grund: ${escapeHtml(p.rationale)}</div>` : ''}
-                    ${hasTarget ? `<div class="mini">Ziel: ${escapeHtml(targetFeature.title || '—')}</div>` : `<div class="mini" style="color:var(--accent-2)">Kein bestehendes Feature erkannt – kann als neues Feature übernommen werden.</div>`}
-                    ${normalizedType === 'duplicate-of' && !hasDuplicate ? '<div class="mini" style="color:var(--ink-dim)">Keine konkrete Dublette zugeordnet.</div>' : ''}
-                    ${p._done ? `<div class="mini"><span class="pill ${(p._ignored || p._reviewedOnly) ? '' : 'pill-success'}">${p._ignored ? 'ignoriert' : (p._reviewedOnly ? 'geprüft' : 'übernommen')}</span></div>` : `
-                      <div class="stack-row">
-                        ${normalizedType === 'update-existing' && hasTarget ? `<button class="btn btn-primary" data-cleanup-accept-update="${p._idx}">Bestehendes Feature aktualisieren</button>` : ''}
-                        ${normalizedType === 'new-implemented-feature' && !hasTarget ? `<button class="btn btn-primary" data-cleanup-accept-new="${p._idx}">Als neues umgesetztes Feature ergänzen</button>` : ''}
-                        ${normalizedType === 'new-implemented-feature' && hasTarget ? `<button class="btn btn-secondary" data-cleanup-accept-new="${p._idx}">Trotzdem als neues umgesetztes Feature ergänzen</button>` : ''}
-                        ${normalizedType === 'match-existing' ? `<button class="btn btn-secondary" data-cleanup-review-only="${p._idx}">Als geprüft abhaken</button>` : ''}
-                        ${normalizedType === 'probably-stale' ? `<button class="btn btn-secondary" data-cleanup-review-only="${p._idx}">Als geprüft abhaken</button>` : ''}
-                        ${normalizedType === 'duplicate-of' && hasDuplicate ? `<button class="btn btn-danger" data-cleanup-mark-duplicate="${p._idx}">Dublette in Papierkorb verschieben</button>` : ''}
-                        <button class="btn btn-ghost" style="margin-left:auto;" data-cleanup-ignore="${p._idx}">Nicht übernehmen</button>
-                      </div>
-                    `}
-                  </div>
-                `;
-                }).join('')}
+              ${ui.cleanupReview.summary ? `<div class="mini cleanup-review-summary-text">Summary: ${escapeHtml(ui.cleanupReview.summary)}</div>` : ''}
+            </section>
+            <section class="cleanup-review-stage" aria-label="Review">
+              <div class="cleanup-review-stage-head">
+                <h3 class="cleanup-review-stage-title">Review</h3>
+                <span class="pill pill-outline cleanup-review-counter">${reviewCounter}</span>
               </div>
-            ` : ''}
+              ${proposals.length ? `
+                <div class="list cleanup-review-list">
+                  ${proposals.map(p => {
+                    const normalizedType = normalizeCleanupProposalType(p.type, ui.cleanupReview.mode);
+                    const targetFeature = resolveCleanupTargetFeature(p);
+                    const duplicateFeature = p.duplicateFeatureId ? S.features.find(f => f.id === p.duplicateFeatureId) : null;
+                    const hasTarget = !!targetFeature;
+                    const hasDuplicate = !!duplicateFeature;
+                    const statusLabel = p._ignored ? 'ignoriert' : (p._reviewedOnly ? 'geprüft' : 'übernommen');
+                    const statusClass = p._ignored ? 'pill-outline' : (p._reviewedOnly ? 'pill-info' : 'pill-success');
+                    return `
+                    <div class="item cleanup-review-card ${p._done ? 'is-done' : ''}">
+                      <div class="row-top">
+                        <strong>${escapeHtml(p.resolvedTitle || p.incomingTitle || '—')}</strong>
+                        <span class="pill pill-outline">${typeLabel[normalizedType] || p.type}</span>
+                      </div>
+                      ${p.incomingTitle ? `<div class="mini">Import: ${escapeHtml(p.incomingTitle)}</div>` : ''}
+                      ${p.targetFeatureId ? `<div class="mini">Ziel-ID: ${escapeHtml(p.targetFeatureId)}</div>` : ''}
+                      ${p.duplicateFeatureId ? `<div class="mini">Duplikat-ID: ${escapeHtml(p.duplicateFeatureId)}</div>` : ''}
+                      ${p.duplicateFeatureId ? `<div class="mini">Duplikat-Titel: ${escapeHtml(((S.features.find(f => f.id === p.duplicateFeatureId) || {}).title) || '—')}</div>` : ''}
+                      ${p.resolvedDescription ? `<div class="item-desc">${escapeHtml(p.resolvedDescription)}</div>` : ''}
+                      <div class="mini">Confidence: ${escapeHtml(p.confidence)}</div>
+                      ${p.changeSummary ? `<div class="mini">Änderung: ${escapeHtml(p.changeSummary)}</div>` : ''}
+                      ${p.rationale ? `<div class="mini cleanup-review-note-muted">Grund: ${escapeHtml(p.rationale)}</div>` : ''}
+                      ${hasTarget ? `<div class="mini">Ziel: ${escapeHtml(targetFeature.title || '—')}</div>` : `<div class="mini cleanup-review-note-info">Kein bestehendes Feature erkannt – kann als neues Feature übernommen werden.</div>`}
+                      ${normalizedType === 'duplicate-of' && !hasDuplicate ? '<div class="mini cleanup-review-note-muted">Keine konkrete Dublette zugeordnet.</div>' : ''}
+                      ${p._done ? `<div class="mini"><span class="pill ${statusClass}">${statusLabel}</span></div>` : ''}
+                      ${renderCleanupActions(p, normalizedType, hasTarget, hasDuplicate)}
+                    </div>
+                  `;
+                  }).join('')}
+                </div>
+              ` : '<div class="notice">Keine Vorschläge geladen. Erzeuge den Cleanup-Prompt und füge das KI-JSON oben ein.</div>'}
+            </section>
           </details>
         `;
       }
