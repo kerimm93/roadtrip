@@ -1902,7 +1902,7 @@
 
       function defaultConfig() {
         return {
-          theme: 'theme-dark',
+          theme: 'theme-light',
           font: 'ui',
           gistId: '',
           gistToken: '',
@@ -2322,8 +2322,18 @@
         $('lastSavedLabel').textContent = 'Gespeichert: ' + formatDateTime(S._lastLocalSaveAt);
       }
 
+      function normalizeThemeValue(theme) {
+        return theme === 'theme-eink' ? 'theme-eink' : 'theme-light';
+      }
+
+      function normalizeConfigTheme() {
+        const normalized = normalizeThemeValue(C.theme);
+        if (C.theme !== normalized) C.theme = normalized;
+        return normalized;
+      }
+
       function applyTheme() {
-        document.body.className = C.theme + (C.font === 'serif' ? ' font-serif' : '');
+        document.body.className = normalizeConfigTheme() + (C.font === 'serif' ? ' font-serif' : '');
       }
 
       function renderNav() {
@@ -2408,7 +2418,7 @@
         if (ui.view === 'import') c.innerHTML = renderImportWorkspace();
         if (ui.view === 'settings') c.innerHTML = renderSettingsWorkspace();
         renderProjectSelects();
-        if ($('themeSelect')) $('themeSelect').value = C.theme;
+        if ($('themeSelect')) $('themeSelect').value = normalizeConfigTheme();
         if ($('fontSelect')) $('fontSelect').value = C.font;
         $('viewTitle').textContent = ({overview:'Karte',database:'Database',momentum:'Momentum',project:'Project',notes:'Notes',learning:'Learning',import:'Import',settings:'Settings'})[ui.view];
         wireDynamicView();
@@ -2472,7 +2482,7 @@
           });
         }
 
-        if ($('themeSelect')) $('themeSelect').addEventListener('change', e => { C.theme = e.target.value; applyTheme(); save(); });
+        if ($('themeSelect')) $('themeSelect').addEventListener('change', e => { C.theme = normalizeThemeValue(e.target.value); applyTheme(); save(); });
         if ($('fontSelect')) $('fontSelect').addEventListener('change', e => { C.font = e.target.value; applyTheme(); save(); });
         if ($('gistId')) $('gistId').addEventListener('input', e => { C.gistId = e.target.value; save(); });
         if ($('gistToken')) $('gistToken').addEventListener('input', e => { C.gistToken = e.target.value; save(); });
@@ -5920,7 +5930,7 @@
             <section class="settings-group" aria-label="Darstellung">
               <div class="panel-title"><h3>Darstellung</h3><div class="section-label">Theme · Schrift</div></div>
               <div class="settings-field-grid">
-                <div class="field"><label for="themeSelect">Theme</label><select id="themeSelect"><option value="theme-dark">Atlas</option><option value="theme-light">Atlas hell</option><option value="theme-eink">E-Ink</option></select></div>
+                <div class="field"><label for="themeSelect">Theme</label><select id="themeSelect"><option value="theme-light">Atlas</option><option value="theme-eink">E-Ink</option></select></div>
                 <div class="field"><label for="fontSelect">UI-Font / Serif-Modus</label><select id="fontSelect"><option value="ui">UI</option><option value="serif">Serif</option></select></div>
               </div>
             </section>
