@@ -1133,10 +1133,47 @@
     #sidebarProjects { min-height: 0; overflow-y: auto; padding-right: 4px; }
     .workspace-sidebar > .stack-row { flex: 0 0 auto; }
     .flow-steps { display:flex; flex-direction:column; gap:10px; margin-top:10px; }
-    .flow-step { background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:10px 12px; }
+    .flow-step {
+      background: var(--surface-2);
+      border: 1px solid var(--rule);
+      border-left: 2px solid var(--rule-strong);
+      border-radius: var(--r-md);
+      box-shadow: var(--sh-0);
+      padding: 12px 14px;
+    }
     .flow-step-head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
-    .flow-step-kicker { color:var(--ink-dim); font-family:var(--font-mono); font-size:11px; font-weight:500; line-height:1.2; text-transform:uppercase; letter-spacing:.18em; }
-    .flow-step-title { font-weight:600; }
+    .flow-step-kicker {
+      color: var(--ink-dim);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 1.2;
+      text-transform: uppercase;
+      letter-spacing: .18em;
+    }
+    .flow-step-title {
+      color: var(--ink);
+      font-family: var(--font-serif);
+      font-weight: 600;
+    }
+    .sprint-advanced-zone {
+      background: transparent;
+      border: 1px dashed var(--rule);
+      border-radius: var(--r-md);
+      box-shadow: none;
+      margin-bottom: 8px;
+      padding: 10px 12px;
+    }
+    .sprint-advanced-zone[open] { background: var(--surface-2); }
+    .sprint-advanced-zone summary {
+      color: var(--ink-dim);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: .18em;
+      line-height: 1.2;
+      text-transform: uppercase;
+    }
     .workspace-main { display:flex; flex-direction:column; gap:16px; min-width:0; }
     .sidebar-all-projects {
       margin-bottom: 4px;
@@ -5175,8 +5212,8 @@
                   </div>
                 </div>
               </div>
-              <details style="margin-bottom:8px;">
-                <summary style="font-weight:700;">Advanced · Hauptchat-Werkzeuge</summary>
+              <details class="sprint-advanced-zone">
+                <summary>Advanced · Hauptchat-Werkzeuge</summary>
                 <div class="stack-row" style="margin-top:8px;">
                   <button class="btn btn-ghost" id="btnChatWorkflowSetMain" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Als Hauptchat markieren</button>
                   <button class="btn btn-ghost" id="btnChatWorkflowBuildReturn" ${isArchivedProject || !chatWorkflow.sourceChatId || !projectMainChat ? 'disabled' : ''}>Zum Hauptchat-Kontext zurück</button>
@@ -5193,8 +5230,8 @@
                   </div>
                 </div>
               </details>
-              <details style="margin-bottom:8px;">
-                <summary style="font-weight:700;">Legacy · alte Sprint-Werkzeuge</summary>
+              <details class="sprint-advanced-zone">
+                <summary>Legacy · alte Sprint-Werkzeuge</summary>
                 <div class="stack-row" style="margin-top:8px;">
                   <button class="btn btn-ghost" id="btnChatWorkflowBuildLegacyMigration" ${isArchivedProject ? 'disabled' : ''}>Prompt: Alten Sprintchat migrieren</button>
                   <button class="btn btn-ghost" id="btnChatWorkflowBuildSprint" ${isArchivedProject || !projectMainChat ? 'disabled' : ''}>Legacy: Prompt für direkten Sprintchat-Start</button>
