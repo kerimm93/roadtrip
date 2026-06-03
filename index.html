@@ -34,8 +34,12 @@
       --hue-teal: #4E8079;
       --ok: #4F7A52;
       --ok-soft: rgba(79,122,82,0.12);
+      --success: var(--ok);
+      --success-soft: var(--ok-soft);
       --warn: #A9772B;
       --warn-soft: rgba(169,119,43,0.13);
+      --warning: var(--warn);
+      --warning-soft: var(--warn-soft);
       --danger: #A8432B;
       --danger-soft: rgba(168,67,43,0.12);
       --info: #4F6E89;
@@ -132,6 +136,10 @@
       --border-light: var(--rule-strong);
       --ink-light: var(--ink-mid);
       --accent-2: var(--info);
+      --success: var(--ok);
+      --success-soft: var(--ok-soft);
+      --warning: var(--warn);
+      --warning-soft: var(--warn-soft);
       --green: var(--ok);
       --yellow: var(--warn);
       --red: var(--danger);
@@ -176,8 +184,12 @@
       --accent-line: var(--rule-strong);
       --ok: var(--ink);
       --ok-soft: transparent;
+      --success: var(--ok);
+      --success-soft: var(--ok-soft);
       --warn: var(--ink-mid);
       --warn-soft: transparent;
+      --warning: var(--warn);
+      --warning-soft: var(--warn-soft);
       --danger: var(--ink);
       --danger-soft: transparent;
       --info: var(--ink-mid);
@@ -1354,6 +1366,112 @@
       line-height: 1.2;
       text-transform: uppercase;
     }
+
+    .settings-title { align-items: center; }
+    .settings-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .settings-group {
+      background: var(--surface-2);
+      border: 1px solid var(--rule);
+      border-radius: var(--r-lg);
+      box-shadow: var(--sh-0);
+      padding: 14px;
+    }
+    .settings-group > .panel-title { margin-bottom: 12px; }
+    .settings-field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .settings-inline-check {
+      align-items: center;
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .settings-inline-check input {
+      flex: 0 0 auto;
+      width: auto;
+    }
+    .settings-note,
+    .settings-status { font-size: 12px; }
+    .settings-note { margin-bottom: 8px; }
+    .settings-actions { margin: 8px 0; }
+    .settings-danger-zone {
+      background: transparent;
+      border: 1px solid var(--rule);
+      border-left: 2px solid var(--danger);
+      border-radius: var(--r-md);
+      box-shadow: none;
+      margin-top: 12px;
+    }
+    .settings-danger-zone[open] { background: var(--surface); }
+    .settings-danger-zone summary {
+      color: var(--danger);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: .18em;
+      line-height: 1.2;
+      text-transform: uppercase;
+    }
+    .settings-danger-zone .btn {
+      background: transparent;
+      border-color: transparent;
+      color: var(--ink-mid);
+    }
+    .settings-danger-zone .btn:hover {
+      background: var(--surface-2);
+      border-color: transparent;
+    }
+    .settings-danger-zone .settings-danger-action { color: var(--danger); }
+    .settings-danger-block {
+      border-top: 1px solid var(--rule);
+      margin-top: 12px;
+      padding-top: 12px;
+    }
+    .settings-danger-block:first-of-type {
+      border-top: 0;
+      margin-top: 10px;
+      padding-top: 0;
+    }
+    .storage-diag {
+      display: block;
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: "tnum" 1;
+    }
+    .storage-diag-total { margin-bottom: 6px; }
+    .storage-diag-track {
+      background: var(--surface-3);
+      border-radius: var(--r-pill);
+      height: 10px;
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+    .storage-diag-bar {
+      height: 100%;
+      width: 0%;
+    }
+    .storage-diag-bar-ok { background: var(--success, var(--ok)); }
+    .storage-diag-bar-warn { background: var(--warning, var(--warn)); }
+    .storage-diag-bar-danger { background: var(--danger); }
+    .storage-diag-top {
+      display: grid;
+      gap: 4px;
+    }
+    .storage-diag-warn {
+      color: var(--warning, var(--warn));
+      font-weight: 600;
+      margin-top: 8px;
+    }
+
+    @media (max-width: 680px) {
+      .settings-field-grid { grid-template-columns: 1fr; }
+    }
     .workspace-main { display:flex; flex-direction:column; gap:16px; min-width:0; }
     .sidebar-all-projects {
       margin-bottom: 4px;
@@ -2155,7 +2273,8 @@
           const pct = ratio * 100;
           total.textContent = `Gesamtgröße: ${report.totalMb.toFixed(2)} MB`;
           bar.style.width = pct.toFixed(1) + '%';
-          bar.style.background = pct < 50 ? '#22c55e' : (pct <= 80 ? '#f59e0b' : '#ef4444');
+          bar.classList.remove('storage-diag-bar-ok', 'storage-diag-bar-warn', 'storage-diag-bar-danger');
+          bar.classList.add(pct < 50 ? 'storage-diag-bar-ok' : (pct <= 80 ? 'storage-diag-bar-warn' : 'storage-diag-bar-danger'));
           top.innerHTML = report.areas.slice(0, 5).map(a => `<div class="mini">${escapeHtml(a.key)}: ${a.mb.toFixed(2)} MB</div>`).join('') || '<div class="mini">Keine Bereiche gefunden.</div>';
           const explain = 'Hinweis: 5 MB sind eine grobe Anzeigeannahme. Browser-/Origin-Quota kann abweichen; auch bei niedriger angezeigter Größe sind Save-Fehler möglich.';
           const modeLine = `Aktiver Speichermodus: ${storageMeta.storageMode === 'indexedDB' ? 'IndexedDB' : 'localStorage Fallback'}.`;
@@ -5796,65 +5915,99 @@
 
       function renderSettingsWorkspace() {
         return `
-          <div class="panel-title"><h3>Settings</h3></div>
-          <div class="field"><label for="themeSelect">Theme</label><select id="themeSelect"><option value="theme-dark">Dark</option><option value="theme-light">Light</option><option value="theme-eink">E-Ink</option></select></div>
-          <div class="field"><label for="fontSelect">Font</label><select id="fontSelect"><option value="ui">UI</option><option value="serif">Serif</option></select></div>
-          <hr style="border:none;border-top:1px solid var(--border);margin:12px 0;">
-          <div class="panel-title" style="margin-top:8px;"><h3>GitHub Gist Sync</h3><div class="mini">Manueller Cloud-Backup</div></div>
-          <div class="field"><label for="gistId">Gist ID</label><input id="gistId" type="text" value="${escapeAttr(C.gistId || '')}" /></div>
-          <div class="field"><label for="gistToken">GitHub Token</label><input id="gistToken" type="password" value="${escapeAttr(C.gistToken || '')}" /></div>
-          <div class="field"><label for="gistPassphrase">Gist-Passphrase</label><input id="gistPassphrase" type="password" value="" autocomplete="off" /></div>
-          <label class="mini" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;"><input id="gistRememberPassphraseSession" type="checkbox" ${_gistRememberPassphraseForSession ? 'checked' : ''} /> Passphrase für diese Sitzung merken</label>
-          <div class="notice" style="font-size:12px;margin-bottom:8px;">Gist-Sync ist verschlüsselt.<br>Ohne Passphrase kann ein verschlüsselter Gist nicht gelesen werden.<br>Passphrase wird standardmäßig nicht dauerhaft gespeichert.<br>Bei vergessener Passphrase ist der Gist nicht wiederherstellbar. Lokale ZIP-Backups behalten.</div>
-          <div class="stack-row" style="margin-bottom:8px;">
-            <button class="btn btn-primary" id="btnGistPull">↕️ Gist synchronisieren</button>
+          <div class="panel-title settings-title"><h3>Settings</h3><div class="pill pill-outline">Atlas</div></div>
+          <div class="settings-stack">
+            <section class="settings-group" aria-label="Darstellung">
+              <div class="panel-title"><h3>Darstellung</h3><div class="section-label">Theme · Schrift</div></div>
+              <div class="settings-field-grid">
+                <div class="field"><label for="themeSelect">Theme</label><select id="themeSelect"><option value="theme-dark">Atlas</option><option value="theme-light">Atlas hell</option><option value="theme-eink">E-Ink</option></select></div>
+                <div class="field"><label for="fontSelect">UI-Font / Serif-Modus</label><select id="fontSelect"><option value="ui">UI</option><option value="serif">Serif</option></select></div>
+              </div>
+            </section>
+
+            <section class="settings-group" aria-label="GitHub Gist">
+              <div class="panel-title"><h3>GitHub Gist</h3><div class="section-label">Sync · Passphrase</div></div>
+              <div class="field"><label for="gistId">Gist ID</label><input id="gistId" type="text" value="${escapeAttr(C.gistId || '')}" /></div>
+              <div class="field"><label for="gistPassphrase">Gist-Passphrase</label><input id="gistPassphrase" type="password" value="" autocomplete="off" /></div>
+              <label class="mini settings-inline-check"><input id="gistRememberPassphraseSession" type="checkbox" ${_gistRememberPassphraseForSession ? 'checked' : ''} /> Passphrase für diese Sitzung merken</label>
+              <div class="notice notice-info settings-note">Gist-Sync ist verschlüsselt.<br>Ohne Passphrase kann ein verschlüsselter Gist nicht gelesen werden.<br>Passphrase wird standardmäßig nicht dauerhaft gespeichert.<br>Bei vergessener Passphrase ist der Gist nicht wiederherstellbar. Lokale ZIP-Backups behalten.</div>
+              <div class="stack-row settings-actions">
+                <button class="btn btn-primary" id="btnGistPull">↕️ Gist synchronisieren</button>
+              </div>
+              <div class="notice notice-info settings-status" id="gistStatusInfo">Noch kein Sync durchgeführt.</div>
+            </section>
+
+            <section class="settings-group" aria-label="Trello">
+              <div class="panel-title"><h3>Trello</h3><div class="section-label">Board-Verbindung</div></div>
+              <div class="settings-field-grid">
+                <div class="field"><label for="trelloKey">Trello API Key</label><input id="trelloKey" type="text" value="${escapeAttr(C.trelloKey || '')}" /></div>
+                <div class="field"><label for="trelloToken">Trello Token</label><input id="trelloToken" type="password" value="${escapeAttr(C.trelloToken || '')}" /></div>
+              </div>
+              <div class="field"><label for="trelloBoardId">Trello Board ID</label><input id="trelloBoardId" type="text" value="${escapeAttr(C.trelloBoardId || '')}" /></div>
+              <div class="stack-row settings-actions">
+                <button class="btn btn-secondary" id="btnTestTrello">Trello-Verbindung testen</button>
+              </div>
+              <div class="notice notice-info settings-note">Listen werden bei Bedarf anhand deiner Statusnamen erstellt. Labels folgen der Konvention <code>P:</code>, <code>C:</code> und <code>Prio:</code>. Die Kartenbeschreibung bekommt oben einen von Roadtrip verwalteten Sync-Block.</div>
+            </section>
+
+            <section class="settings-group" aria-label="Datenverwaltung">
+              <div class="panel-title"><h3>Datenverwaltung</h3><div class="section-label">Export · Import · Modell</div></div>
+              <div class="settings-field-grid">
+                <div class="field"><label for="openAiModel">OpenAI Model</label><input id="openAiModel" type="text" value="${escapeAttr(C.openAiModel || '')}" /></div>
+              </div>
+              <div class="stack-row settings-actions">
+                <button class="btn btn-secondary" id="btnZipBackupExport">ZIP-Backup exportieren</button>
+                <label class="btn btn-secondary" for="importZipBackupInput">ZIP-Backup prüfen/importieren</label>
+                <input id="importZipBackupInput" class="hidden" type="file" accept=".zip,application/zip,application/x-zip-compressed">
+              </div>
+              <details class="settings-danger-zone">
+                <summary>Advanced · Danger-Zone</summary>
+                <div class="notice notice-danger settings-note">Seltene oder destruktive Werkzeuge: vorher ein ZIP-Backup exportieren. Aktionen bleiben ghost-only und überschreiben keine Daten ohne deine bestehende Handler-Bestätigung.</div>
+
+                <div class="settings-danger-block">
+                  <div class="section-label">Gist-Token · Remote überschreiben</div>
+                  <div class="field"><label for="gistToken">GitHub Token</label><input id="gistToken" type="password" value="${escapeAttr(C.gistToken || '')}" /></div>
+                  <div class="stack-row settings-actions">
+                    <button class="btn btn-ghost settings-danger-action" id="btnGistPush">Remote mit lokalem Stand überschreiben</button>
+                  </div>
+                </div>
+
+                <div class="settings-danger-block">
+                  <div class="section-label">Raw Backup Gist</div>
+                  <div class="settings-field-grid">
+                    <div class="field"><label for="rawGistId">Backup Gist ID</label><input id="rawGistId" type="text" value="${escapeAttr(C.rawGistId || '')}" /></div>
+                    <div class="field"><label for="rawGistToken">Backup Token</label><input id="rawGistToken" type="password" value="${escapeAttr(C.rawGistToken || '')}" /></div>
+                  </div>
+                  <div class="stack-row settings-actions">
+                    <button class="btn btn-ghost" id="btnGistRawBackup">📦 Raw-Backup zum Gist</button>
+                  </div>
+                  <div class="notice notice-danger settings-note">Raw Backup Gist ist nicht Teil der verschlüsselten Haupt-Gist-Sync-Änderung. Für private Daten bis zu einem separaten Patch nicht verwenden.</div>
+                </div>
+
+                <div class="settings-danger-block">
+                  <div class="section-label">Notfall · Kompaktierung</div>
+                  <div class="stack-row settings-actions">
+                    <button class="btn btn-ghost settings-danger-action" id="btnEmergencyExportFull">Notfall-Export vollständig</button>
+                    <button class="btn btn-ghost" id="btnCompactExport">Kompakt-Export</button>
+                    <button class="btn btn-ghost" id="btnCompactRawData">Rohdaten komprimieren</button>
+                    <button class="btn btn-ghost" id="btnBackfillImportMetadata">Fehlende Projekt-Summarys aus Import-Historie ergänzen</button>
+                  </div>
+                </div>
+
+                <div class="settings-danger-block">
+                  <div class="section-label">Speicherdiagnose</div>
+                  <div id="storageDiagWrap" class="notice notice-info storage-diag">
+                    <div id="storageDiagTotal" class="storage-diag-total">Gesamtgröße: 0.00 MB</div>
+                    <div class="storage-diag-track">
+                      <div id="storageDiagBar" class="storage-diag-bar storage-diag-bar-ok"></div>
+                    </div>
+                    <div id="storageDiagTop" class="storage-diag-top"></div>
+                    <div id="storageDiagWarn" class="storage-diag-warn"></div>
+                  </div>
+                </div>
+              </details>
+            </section>
           </div>
-          <details style="margin-bottom:8px;">
-            <summary>Erweiterte / riskante Gist-Aktionen</summary>
-            <div class="notice" style="font-size:12px;margin-top:8px;">Diese Aktionen können Daten auf einem anderen Gerät überschreiben. Vorher ZIP-Backup exportieren.</div>
-            <div class="stack-row" style="margin-top:8px;">
-              <button class="btn btn-danger" id="btnGistPush">Remote mit lokalem Stand überschreiben</button>
-            </div>
-          </details>
-          <div class="notice" id="gistStatusInfo" style="font-size:12px;">Noch kein Sync durchgeführt.</div>
-          <hr style="border:none;border-top:1px solid var(--border);margin:12px 0;">
-          <div class="panel-title" style="margin-top:8px;"><h3>Raw Backup Gist</h3><div class="mini">Nur Notizen &amp; Analysen (optional separates Gist)</div></div>
-          <div class="field"><label for="rawGistId">Backup Gist ID</label><input id="rawGistId" type="text" value="${escapeAttr(C.rawGistId || '')}" /></div>
-          <div class="field"><label for="rawGistToken">Backup Token</label><input id="rawGistToken" type="password" value="${escapeAttr(C.rawGistToken || '')}" /></div>
-          <div class="stack-row" style="margin-bottom:8px;">
-            <button class="btn" id="btnGistRawBackup">📦 Raw-Backup zum Gist</button>
-          </div>
-          <div class="notice" style="font-size:12px;">Hinweis: Raw Backup Gist ist nicht Teil der verschlüsselten Haupt-Gist-Sync-Änderung. Für private Daten bis zu einem separaten Patch nicht verwenden.</div>
-          <hr style="border:none;border-top:1px solid var(--border);margin:12px 0;">
-          <div class="panel-title" style="margin-top:8px;"><h3>Daten & Speicher</h3><div class="mini">Diagnose und Notfall-Werkzeuge</div></div>
-          <div id="storageDiagWrap" class="notice" style="display:block;">
-            <div id="storageDiagTotal" style="margin-bottom:6px;">Gesamtgröße: 0.00 MB</div>
-            <div style="height:10px;border-radius:999px;background:var(--surface-3);overflow:hidden;margin-bottom:8px;">
-              <div id="storageDiagBar" style="height:100%;width:0%;background:#22c55e;"></div>
-            </div>
-            <div id="storageDiagTop" style="display:grid;gap:4px;"></div>
-            <div id="storageDiagWarn" style="margin-top:8px;color:#f59e0b;font-weight:600;"></div>
-          </div>
-          <div class="stack-row" style="margin:8px 0;">
-            <button class="btn btn-danger" id="btnEmergencyExportFull">Notfall-Export vollständig</button>
-            <button class="btn" id="btnCompactExport">Kompakt-Export</button>
-            <button class="btn" id="btnZipBackupExport">ZIP-Backup exportieren</button>
-            <label class="btn" for="importZipBackupInput">ZIP-Backup prüfen/importieren</label>
-            <input id="importZipBackupInput" type="file" accept=".zip,application/zip,application/x-zip-compressed" style="display:none;">
-            <button class="btn" id="btnCompactRawData">Rohdaten komprimieren</button>
-            <button class="btn" id="btnBackfillImportMetadata">Fehlende Projekt-Summarys aus Import-Historie ergänzen</button>
-          </div>
-          <hr style="border:none;border-top:1px solid var(--border);margin:12px 0;">
-          <div class="field"><label for="openAiModel">OpenAI Model</label><input id="openAiModel" type="text" value="${escapeAttr(C.openAiModel || '')}" /></div>
-          <hr style="border:none;border-top:1px solid var(--border);margin:10px 0;">
-          <div class="panel-title" style="margin-top:8px;"><h3>Trello</h3><div class="mini">V1 Push-Sync für Features</div></div>
-          <div class="field"><label for="trelloKey">Trello API Key</label><input id="trelloKey" type="text" value="${escapeAttr(C.trelloKey || '')}" /></div>
-          <div class="field"><label for="trelloToken">Trello Token</label><input id="trelloToken" type="password" value="${escapeAttr(C.trelloToken || '')}" /></div>
-          <div class="field"><label for="trelloBoardId">Trello Board ID</label><input id="trelloBoardId" type="text" value="${escapeAttr(C.trelloBoardId || '')}" /></div>
-          <div class="stack-row">
-            <button class="btn" id="btnTestTrello">Trello-Verbindung testen</button>
-          </div>
-          <div class="notice" style="margin-top:10px;">Listen werden bei Bedarf anhand deiner Statusnamen erstellt. Labels folgen der Konvention <code>P:</code>, <code>C:</code> und <code>Prio:</code>. Die Kartenbeschreibung bekommt oben einen von Roadtrip verwalteten Sync-Block.</div>
         `;
       }
 
@@ -9840,7 +9993,7 @@
                 ${Object.entries(analysis.localCounts || {}).map(([k,v]) => `<span class="pill">${escapeHtml(k)}: ${Number(v || 0)}</span>`).join('')}
               </div>
             </div>
-            ${warnings.length ? `<div class="notice" style="margin-bottom:12px;color:#f59e0b;">${warnings.map(w => escapeHtml(w)).join('<br>')}</div>` : ''}
+            ${warnings.length ? `<div class="notice" style="margin-bottom:12px;color:var(--warning);">${warnings.map(w => escapeHtml(w)).join('<br>')}</div>` : ''}
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
               <button id="btnZipImportConfirm" class="btn btn-danger" style="flex:1;">ZIP-Backup importieren / ersetzen</button>
               <button id="btnZipImportCancel" class="btn" style="flex:1;">Abbrechen</button>
