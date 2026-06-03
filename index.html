@@ -1328,7 +1328,99 @@
       border-color: var(--accent);
     }
     .sidebar-project.active { background: var(--surface-3); border-color: var(--accent); border-left-color: var(--accent); font-weight: 700; }
-    .db-toolbar { display:grid; grid-template-columns:2fr repeat(3, minmax(130px,1fr)) auto; gap:8px; margin-bottom:12px; }
+    .db-toolbar {
+      align-items: end;
+      background: var(--surface-2);
+      border: 1px solid var(--rule);
+      border-radius: var(--r-lg);
+      display: grid;
+      gap: 10px;
+      grid-template-columns: minmax(220px, 1.6fr) minmax(220px, auto) minmax(160px, .8fr) minmax(160px, .8fr) auto;
+      margin-bottom: 12px;
+      padding: 12px;
+    }
+    .db-toolbar .field { margin-bottom: 0; }
+    .db-toolbar .field label { margin-bottom: 5px; }
+    .db-toolbar input,
+    .db-toolbar select { min-height: var(--touch); }
+    .db-toolbar-actions {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .pool-segmented {
+      background: var(--surface);
+      border: 1px solid var(--rule);
+      border-radius: 999px;
+      display: flex;
+      gap: 4px;
+      padding: 4px;
+    }
+    .pool-segmented button {
+      background: transparent;
+      border: 0;
+      border-radius: 999px;
+      color: var(--ink-mid);
+      cursor: pointer;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      min-height: 34px;
+      padding: 6px 12px;
+    }
+    .pool-segmented button.is-active {
+      background: var(--accent-soft);
+      color: var(--accent-deep);
+      font-weight: 700;
+    }
+    .feature-title-stack,
+    .feature-cell-actions,
+    .feature-meta-pills {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .feature-title-stack {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+    .feature-detail-toggle {
+      background: transparent;
+      border: 0;
+      color: var(--ink-dim);
+      cursor: pointer;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: .08em;
+      padding: 0;
+      text-transform: uppercase;
+    }
+    details.feature-row-details {
+      background: transparent;
+      border: 0;
+      border-radius: 0;
+      padding: 0;
+    }
+    details.feature-row-details[open] { margin-top: 8px; }
+    .feature-row-detail-body {
+      background: var(--surface-2);
+      border: 1px solid var(--rule);
+      border-radius: var(--r-md);
+      display: grid;
+      gap: 8px;
+      margin-top: 8px;
+      padding: 10px;
+    }
+    .feature-row-detail-body select { max-width: 220px; }
+    .feature-cell-actions .btn { padding: 6px 9px; }
+    .feature-updated {
+      color: var(--ink-dim);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      white-space: nowrap;
+    }
     @media (max-width: 1080px) {
       .workspace { grid-template-columns: 1fr; }
       .workspace-sidebar { position: static; height: auto; overflow: visible; }
@@ -2115,6 +2207,7 @@
         const kanbanToggle = $('toggleKanban');
         const allProjectsToggle = $('toggleAllProjects');
         if (poolFilter) poolFilter.addEventListener('change', e => { ui.filters.pool = e.target.value; ensureValidStatusFilterForPool(ui.filters.pool); renderView(); });
+        qq('[data-filter-pool]').forEach(btn => btn.addEventListener('click', () => { ui.filters.pool = btn.dataset.filterPool || 'alle'; ensureValidStatusFilterForPool(ui.filters.pool); renderView(); }));
         if (statusFilter) statusFilter.addEventListener('change', e => { ui.filters.status = e.target.value; ensureValidStatusFilterForPool(ui.filters.pool); renderView(); });
         if (catFilter) catFilter.addEventListener('change', e => { ui.filters.category = e.target.value; renderView(); });
         if (search) search.addEventListener('input', e => { ui.filters.search = e.target.value; renderView(); });
@@ -2726,12 +2819,29 @@
               Alle Projekte
             </label>
           </div>
-          <div class="db-toolbar">
-            <input id="filterSearch" type="text" value="${escapeAttr(ui.filters.search)}" placeholder="Search features..." />
-            <select id="filterPool">${['alle'].concat(FEATURE_POOLS).map(s => `<option value="${s}" ${ui.filters.pool===s?'selected':''}>${s === 'alle' ? 'alle' : getFeaturePoolLabel(s)}</option>`).join('')}</select>
-            <select id="filterStatus">${statusOptions.map(s => `<option value="${s}" ${ui.filters.status===s?'selected':''}>${s === 'alle' ? 'alle' : getFeatureStatusLabel(s)}</option>`).join('')}</select>
-            <select id="filterCategory">${['alle'].concat(FEATURE_CATEGORIES).map(s => `<option ${ui.filters.category===s?'selected':''}>${s}</option>`).join('')}</select>
-            <label class="pill"><input id="toggleKanban" type="checkbox" ${ui.showKanban?'checked':''} /> Kanban</label>
+          <div class="db-toolbar" aria-label="Feature-Datenbank Filter">
+            <div class="field">
+              <label for="filterSearch">Suche</label>
+              <input id="filterSearch" type="text" value="${escapeAttr(ui.filters.search)}" placeholder="Titel, Beschreibung, Projekt ..." />
+            </div>
+            <div class="field">
+              <label>Pool</label>
+              <div class="pool-segmented" role="group" aria-label="Pool-Filter">
+                ${['alle'].concat(FEATURE_POOLS).map(pool => `<button type="button" class="${ui.filters.pool===pool?'is-active':''}" data-filter-pool="${escapeAttr(pool)}" aria-pressed="${ui.filters.pool===pool?'true':'false'}">${pool === 'alle' ? 'Alle' : escapeHtml(getFeaturePoolLabel(pool))}</button>`).join('')}
+              </div>
+              <select id="filterPool" class="hidden" aria-hidden="true" tabindex="-1">${['alle'].concat(FEATURE_POOLS).map(s => `<option value="${s}" ${ui.filters.pool===s?'selected':''}>${s === 'alle' ? 'alle' : getFeaturePoolLabel(s)}</option>`).join('')}</select>
+            </div>
+            <div class="field">
+              <label for="filterStatus">Status</label>
+              <select id="filterStatus">${statusOptions.map(s => `<option value="${s}" ${ui.filters.status===s?'selected':''}>${s === 'alle' ? 'alle' : getFeatureStatusLabel(s)}</option>`).join('')}</select>
+            </div>
+            <div class="field">
+              <label for="filterCategory">Kategorie</label>
+              <select id="filterCategory">${['alle'].concat(FEATURE_CATEGORIES).map(s => `<option ${ui.filters.category===s?'selected':''}>${s}</option>`).join('')}</select>
+            </div>
+            <div class="db-toolbar-actions">
+              <label class="pill pill-outline"><input id="toggleKanban" type="checkbox" ${ui.showKanban?'checked':''} /> Kanban</label>
+            </div>
           </div>
           ${ui.showKanban
             ? (renderKanban(plannedFeatures, { title: getFeaturePoolLabel('planned'), pool: 'planned' }) + renderKanban(implementedFeatures, { title: getFeaturePoolLabel('implemented'), pool: 'implemented' }))
@@ -5713,47 +5823,85 @@
         `;
       }
 
+      function featurePillClass(kind, value) {
+        if (kind === 'pool') return normalizeFeaturePool(value) === 'implemented' ? 'pill pill-info' : 'pill pill-gold';
+        if (kind === 'status') {
+          if (['blocked', 'obsolete'].includes(value)) return 'pill pill-warning';
+          if (['in-progress', 'selected-for-sprint', 'confirmed'].includes(value)) return 'pill pill-success';
+          if (['needs-review', 'detected'].includes(value)) return 'pill pill-info';
+        }
+        if (kind === 'review') return value === 'reviewed' ? 'pill pill-success' : 'pill pill-warning';
+        return 'pill';
+      }
+
+      function getFeatureReviewLabel(reviewStatus) {
+        return reviewStatus === 'reviewed' ? 'Review erledigt' : 'Review nötig';
+      }
+
+      function renderFeatureRowDetails(f) {
+        const sourceLabel = f.sourceType || 'manuell';
+        const trelloBadge = getTrelloSyncBadge(f);
+        return `
+          <details class="feature-row-details">
+            <summary class="feature-detail-toggle">Details & Aktionen</summary>
+            <div class="feature-row-detail-body">
+              <div class="feature-meta-pills">
+                <span class="pill">Projekt: ${escapeHtml(getProjectTitle(f.projectId))}</span>
+                <span class="${featurePillClass('review', f.reviewStatus)}">${escapeHtml(getFeatureReviewLabel(f.reviewStatus))}</span>
+                <span class="pill pill-outline" title="Quelle">Quelle: ${escapeHtml(sourceLabel)}</span>
+                <span class="pill pill-outline" title="Trello-Sync">Trello: ${escapeHtml(trelloBadge)}</span>
+              </div>
+              <div class="feature-meta-pills">
+                <label class="mini">Pool ändern <select data-pool-feature="${escapeAttr(f.id)}">${FEATURE_POOLS.map(pool => `<option value="${pool}" ${pool===f.pool?'selected':''}>${getFeaturePoolLabel(pool)}</option>`).join('')}</select></label>
+                <label class="mini">Status ändern <select data-status-feature="${escapeAttr(f.id)}">${getFeatureStatusesForPool(f.pool).map(s => `<option value="${s}" ${s===f.status?'selected':''}>${getFeatureStatusLabel(s)}</option>`).join('')}</select></label>
+              </div>
+              <div class="feature-cell-actions">
+                <button class="btn" data-sync-feature="${escapeAttr(f.id)}">${f.trello && f.trello.cardId ? 'Trello updaten' : 'Nach Trello'}</button>
+                ${f.trello && f.trello.cardId ? `<button class="btn" data-pull-feature="${escapeAttr(f.id)}">Von Trello</button>` : ''}
+                ${f.trello && f.trello.cardId ? `<button class="btn" data-open-trello-card="${escapeAttr(f.id)}">Öffnen</button>` : ''}
+              </div>
+            </div>
+          </details>
+        `;
+      }
+
       function renderTable(features, options) {
         const opts = Object.assign({ title: 'Tabelle' }, options || {});
         return `
-          <div class="panel-title"><h3>${escapeHtml(opts.title)}</h3><div class="mini">Filtern, sichten, Prioritäten anpassen</div></div>
+          <div class="panel-title"><h3>${escapeHtml(opts.title)}</h3><div class="mini">Primärdaten in 6 Spalten, Details pro Zeile ausklappbar</div></div>
           <div class="table-scroll">
             <table>
               <thead>
                 <tr>
                   <th>Feature</th>
-                  <th>Projekt</th>
                   <th>Pool</th>
                   <th>Status</th>
                   <th>Priorität</th>
                   <th>Kategorie</th>
-                  <th>Quelle</th>
-                  <th>Trello</th>
+                  <th>Aktualisiert</th>
                 </tr>
               </thead>
               <tbody>
                 ${features.map(f => `
                   <tr>
                     <td class="title">
-                      <strong>${escapeHtml(f.title)}</strong><br>
-                      <span class="mini">${escapeHtml(f.description || '')}</span>
-                    </td>
-                    <td>${escapeHtml(getProjectTitle(f.projectId))}</td>
-                    <td><select data-pool-feature="${f.id}">${FEATURE_POOLS.map(pool => `<option value="${pool}" ${pool===f.pool?'selected':''}>${getFeaturePoolLabel(pool)}</option>`).join('')}</select></td>
-                    <td><select data-status-feature="${f.id}">${getFeatureStatusesForPool(f.pool).map(s => `<option value="${s}" ${s===f.status?'selected':''}>${getFeatureStatusLabel(s)}</option>`).join('')}</select></td>
-                    <td><select data-prio-feature="${f.id}">${PRIORITIES.map(p => `<option value="${p}" ${p===f.priority?'selected':''}>${p}</option>`).join('')}</select></td>
-                    <td>${escapeHtml(f.category)}</td>
-                    <td>${escapeHtml(f.sourceType || 'manuell')}</td>
-                    <td>
-                      <div class="mini">${escapeHtml(getTrelloSyncBadge(f))}</div>
-                      <div class="stack-row" style="margin-top:6px;">
-                        <button class="btn" data-sync-feature="${f.id}">${f.trello && f.trello.cardId ? 'Trello updaten' : 'Nach Trello'}</button>
-                        ${f.trello && f.trello.cardId ? `<button class="btn" data-pull-feature="${f.id}">Von Trello</button>` : ''}
-                        ${f.trello && f.trello.cardId ? `<button class="btn" data-open-trello-card="${f.id}">Öffnen</button>` : ''}
+                      <div class="feature-title-stack">
+                        <strong>${escapeHtml(f.title)}</strong>
+                        ${f.description ? `<span class="mini">${escapeHtml(shorten(f.description, 150))}</span>` : ''}
+                        <div class="feature-meta-pills">
+                          <span class="pill pill-outline">${escapeHtml(getProjectTitle(f.projectId))}</span>
+                          <span class="${featurePillClass('review', f.reviewStatus)}">${escapeHtml(getFeatureReviewLabel(f.reviewStatus))}</span>
+                        </div>
+                        ${renderFeatureRowDetails(f)}
                       </div>
                     </td>
+                    <td><span class="${featurePillClass('pool', f.pool)}">${escapeHtml(getFeaturePoolLabel(f.pool))}</span></td>
+                    <td><span class="${featurePillClass('status', f.status)}">${escapeHtml(getFeatureStatusLabel(f.status))}</span></td>
+                    <td><select data-prio-feature="${escapeAttr(f.id)}">${PRIORITIES.map(p => `<option value="${p}" ${p===f.priority?'selected':''}>${p}</option>`).join('')}</select></td>
+                    <td><span class="pill pill-outline">${escapeHtml(f.category)}</span></td>
+                    <td><span class="feature-updated">${escapeHtml(formatDateTime(f.updatedAt || f.createdAt || ''))}</span></td>
                   </tr>
-                `).join('') || '<tr><td colspan="8">Keine Features passend zu deinen Filtern.</td></tr>'}
+                `).join('') || '<tr><td colspan="6">Keine Features passend zu deinen Filtern.</td></tr>'}
               </tbody>
             </table>
           </div>
