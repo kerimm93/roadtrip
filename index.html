@@ -1970,7 +1970,8 @@
         momentumQuickNoteByProject: {},
         learningTracker: { projectId: 'all', scope: 'completed', filter: 'open', search: '' },
         notesWorkspace: { projectId: 'all', status: 'open', type: 'all', search: '', editingNoteId: '' },
-        learningPromptByChatId: {}
+        learningPromptByChatId: {},
+        plannedFeatureBulkByProject: {}
       };
 
       const $ = (id) => document.getElementById(id);
@@ -2897,6 +2898,28 @@
         qq('[data-build-planned-feature-prompt]').forEach(btn => btn.addEventListener('click', () => buildPlannedFeatureRefinePrompt(btn.dataset.buildPlannedFeaturePrompt || '')));
         qq('[data-copy-planned-feature-prompt]').forEach(btn => btn.addEventListener('click', () => copyPlannedFeaturePrompt(btn.dataset.copyPlannedFeaturePrompt || '')));
         qq('[data-import-planned-feature-handoff]').forEach(btn => btn.addEventListener('click', () => importPlannedFeatureDetailHandoff(btn.dataset.importPlannedFeatureHandoff || '')));
+        if ($('plannedFeatureBulkPromptOutput')) $('plannedFeatureBulkPromptOutput').addEventListener('input', e => {
+          const projectId = ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '';
+          if (projectId) getPlannedFeatureBulkBackfillState(projectId).prompt = e.target.value || '';
+        });
+        if ($('plannedFeatureBulkJsonInput')) $('plannedFeatureBulkJsonInput').addEventListener('input', e => {
+          const projectId = ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '';
+          if (projectId) getPlannedFeatureBulkBackfillState(projectId).rawJson = e.target.value || '';
+        });
+        if ($('btnBuildPlannedFeatureBulkPrompt')) $('btnBuildPlannedFeatureBulkPrompt').addEventListener('click', () => {
+          const projectId = ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '';
+          buildPlannedFeatureBulkBackfillPrompt(projectId);
+        });
+        if ($('btnCopyPlannedFeatureBulkPrompt')) $('btnCopyPlannedFeatureBulkPrompt').addEventListener('click', () => {
+          const projectId = ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '';
+          copyPlannedFeatureBulkBackfillPrompt(projectId);
+        });
+        if ($('btnImportPlannedFeatureBulkHandoff')) $('btnImportPlannedFeatureBulkHandoff').addEventListener('click', () => {
+          const projectId = ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '';
+          const raw = $('plannedFeatureBulkJsonInput') ? $('plannedFeatureBulkJsonInput').value : '';
+          if (projectId) getPlannedFeatureBulkBackfillState(projectId).rawJson = raw || '';
+          importPlannedFeatureBulkDetailHandoff(projectId, raw);
+        });
         qq('[data-sync-feature]').forEach(btn => btn.addEventListener('click', () => syncFeatureToTrello(btn.dataset.syncFeature)));
         qq('[data-pull-feature]').forEach(btn => btn.addEventListener('click', () => pullFeatureFromTrello(btn.dataset.pullFeature)));
         qq('[data-open-trello-card]').forEach(btn => btn.addEventListener('click', () => openTrelloCard(btn.dataset.openTrelloCard)));
@@ -3281,6 +3304,44 @@
         </div>`;
       }
 
+      function renderPlannedFeatureBulkBackfillSection() {
+        const projectId = (!ui.showAllProjects && ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY) ? ui.activeProjectId : '';
+        if (!projectId) {
+          return '<div class="notice notice-info" style="margin:12px 0;">Planned Feature Backfill / Hauptchat-Abgleich: Bitte ein konkretes Projekt wählen.</div>';
+        }
+        const state = getPlannedFeatureBulkBackfillState(projectId);
+        const totalSparse = getSparsePlannedFeaturesForProject(projectId).length;
+        const promptLimit = 8;
+        const selectedCount = Math.min(totalSparse, promptLimit);
+        const project = S.projects.find(p => p.id === projectId) || {};
+        return `
+          <details class="panel" style="padding:12px;margin:12px 0;" open>
+            <summary><strong>Planned Feature Backfill / Hauptchat-Abgleich</strong></summary>
+            <div class="mini" style="margin:8px 0;">
+              Erzeugt einen Hauptchat-Abgleich-Prompt für dünn befüllte planned Features im Projekt „${escapeHtml(project.title || projectId)}“.
+              Sparse Features: ${totalSparse}; im Prompt: ${selectedCount}.
+              ${totalSparse > promptLimit ? `Hinweis: ${totalSparse - promptLimit} weitere sparse Features sind wegen des Prompt-Limits nicht enthalten.` : ''}
+            </div>
+            <div class="field">
+              <label for="plannedFeatureBulkPromptOutput">Backfill-Prompt</label>
+              <textarea id="plannedFeatureBulkPromptOutput" style="min-height:180px;font-family:var(--font-mono);font-size:12px;" placeholder="Prompt wird hier erzeugt ...">${escapeHtml(state.prompt || '')}</textarea>
+              <div class="stack-row" style="margin-top:6px;">
+                <button class="btn btn-secondary" type="button" id="btnBuildPlannedFeatureBulkPrompt">Backfill-Prompt erzeugen</button>
+                <button class="btn" type="button" id="btnCopyPlannedFeatureBulkPrompt">Prompt kopieren</button>
+              </div>
+            </div>
+            <div class="field">
+              <label for="plannedFeatureBulkJsonInput">Bulk-Handoff JSON importieren</label>
+              <textarea id="plannedFeatureBulkJsonInput" style="min-height:140px;font-family:var(--font-mono);font-size:12px;" placeholder='{"type":"roadtrip-planned-feature-bulk-detail-v1","updates":[...]}' spellcheck="false">${escapeHtml(state.rawJson || '')}</textarea>
+              <div class="stack-row" style="margin-top:6px;">
+                <button class="btn btn-primary" type="button" id="btnImportPlannedFeatureBulkHandoff">Bulk-Handoff importieren</button>
+              </div>
+            </div>
+            ${state.summary ? `<div class="notice notice-info" style="margin-top:8px;white-space:pre-wrap;">${escapeHtml(state.summary)}</div>` : ''}
+          </details>
+        `;
+      }
+
       function renderDatabaseView() {
         const features = getFilteredFeatures();
         const plannedFeatures = features.filter(isPlannedFeature);
@@ -3320,6 +3381,7 @@
               <label class="pill pill-outline"><input id="toggleKanban" type="checkbox" ${ui.showKanban?'checked':''} /> Kanban</label>
             </div>
           </div>
+          ${renderPlannedFeatureBulkBackfillSection()}
           ${ui.showKanban
             ? (renderKanban(plannedFeatures, { title: getFeaturePoolLabel('planned'), pool: 'planned' }) + renderKanban(implementedFeatures, { title: getFeaturePoolLabel('implemented'), pool: 'implemented' }))
             : (renderTable(plannedFeatures, { title: getFeaturePoolLabel('planned') }) + renderTable(implementedFeatures, { title: getFeaturePoolLabel('implemented') }))}
@@ -3730,6 +3792,52 @@
           .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
           .slice(0, Math.max(0, maxItems || 5))
           .map(n => '- ' + shorten(String(n.text || '').trim(), 160));
+      }
+
+      function isFeatureDetailShort(value) {
+        return normalizeFeatureDetailText(value).length < 24;
+      }
+
+      function isFeatureDetailSparse(feature) {
+        const f = applyFeatureDefaults(Object.assign({}, feature || {}));
+        if (!isPlannedFeature(f)) return false;
+        return isFeatureDetailShort(f.purpose)
+          || isFeatureDetailShort(f.workflowContext)
+          || !normalizeAcceptanceCriteria(f.acceptanceCriteria).length
+          || isFeatureDetailShort(f.sourceContext);
+      }
+
+      function getSparsePlannedFeaturesForProject(projectId, limit) {
+        if (!projectId || projectId === ALL_PROJECTS_KEY) return [];
+        const maxItems = Number.isFinite(Number(limit)) ? Math.max(0, Number(limit)) : null;
+        const statusRank = { 'selected-for-sprint': 0, 'in-progress': 1, planned: 2, idea: 3, blocked: 8, deferred: 9 };
+        const sorted = getVisibleFeatures(S.features)
+          .filter(f => f && f.projectId === projectId)
+          .map(f => applyFeatureDefaults(f))
+          .filter(f => isPlannedFeature(f) && isFeatureDetailSparse(f))
+          .sort((a, b) => {
+            const status = (statusRank[a.status] ?? 10) - (statusRank[b.status] ?? 10);
+            if (status !== 0) return status;
+            const prio = getFeaturePriorityRank(a.priority) - getFeaturePriorityRank(b.priority);
+            if (prio !== 0) return prio;
+            const updated = String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
+            if (updated !== 0) return updated;
+            return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+          });
+        return maxItems === null ? sorted : sorted.slice(0, maxItems);
+      }
+
+      function getPlannedFeatureBulkBackfillState(projectId) {
+        if (!ui.plannedFeatureBulkByProject || typeof ui.plannedFeatureBulkByProject !== 'object') ui.plannedFeatureBulkByProject = {};
+        if (!projectId || projectId === ALL_PROJECTS_KEY) return { projectId: projectId || '', prompt: '', rawJson: '', summary: '' };
+        const existing = ui.plannedFeatureBulkByProject[projectId];
+        const state = existing && typeof existing === 'object' ? existing : { projectId, prompt: '', rawJson: '', summary: '' };
+        state.projectId = projectId;
+        state.prompt = String(state.prompt || '');
+        state.rawJson = String(state.rawJson || '');
+        state.summary = String(state.summary || '');
+        ui.plannedFeatureBulkByProject[projectId] = state;
+        return state;
       }
 
       function mapHandoffFeatureCategory(category) {
@@ -7121,6 +7229,242 @@
           .slice(0, 5)
           .map(note => `- ${note.id || 'note'} | ${note.type || 'note'} | ${shorten(getNoteText(note), 500)}`)
           .join('\n');
+      }
+
+      function buildPlannedFeatureBulkBackfillPrompt(projectId) {
+        if (!projectId || projectId === ALL_PROJECTS_KEY) return alert('Bitte ein konkretes Projekt wählen.');
+        const project = (S.projects || []).find(p => p.id === projectId);
+        if (!project) return alert('Projekt nicht gefunden.');
+        const promptLimit = 8;
+        const features = getSparsePlannedFeaturesForProject(projectId, promptLimit).map(f => applyFeatureDefaults(Object.assign({}, f)));
+        const totalSparse = getSparsePlannedFeaturesForProject(projectId).length;
+        const mainChat = getProjectMainChat(projectId) || {};
+        const relevantNotes = getRelevantUnprocessedNotes(projectId, 6);
+        const featureJson = features.map(f => ({
+          featureId: f.id,
+          title: f.title || '',
+          description: f.description || '',
+          category: f.category || '',
+          priority: f.priority || '',
+          status: f.status || '',
+          purpose: normalizeFeatureDetailText(f.purpose),
+          workflowContext: normalizeFeatureDetailText(f.workflowContext),
+          acceptanceCriteria: normalizeAcceptanceCriteria(f.acceptanceCriteria),
+          sourceContext: normalizeFeatureDetailText(f.sourceContext)
+        }));
+        const prompt = `# Roadtrip Planned Feature Backfill / Hauptchat-Abgleich
+
+Du ergänzt Detailfelder für MEHRERE bestehende planned Features dieses Projekts. Nutze den Projekt- und Hauptchat-Kontext, um fehlende oder sehr dünne Details konservativ zu ergänzen.
+
+## Projektkontext
+- Projekt-ID: ${project.id || projectId}
+- Titel: ${project.title || '—'}
+- Summary: ${project.summary || '—'}
+- Aktueller Fokus: ${project.currentFocus || '—'}
+- Nächster Projektschritt: ${project.nextStep || '—'}
+
+## Hauptchat-Kontext
+- Hauptchat-Titel: ${mainChat.title || '—'}
+- Hauptchat-URL: ${mainChat.url || project.mainChatUrl || '—'}
+- Hauptchat-Summary: ${mainChat.summary || '—'}
+- Hauptchat-Next-Step: ${mainChat.nextStep || '—'}
+- Hauptchat-Status: ${mainChat.status || '—'}
+- Hauptchat-knownContext: ${Array.isArray(mainChat.knownContext) && mainChat.knownContext.length ? mainChat.knownContext.join(' | ') : '—'}
+- Hauptchat-openQuestions: ${Array.isArray(mainChat.openQuestions) && mainChat.openQuestions.length ? mainChat.openQuestions.join(' | ') : '—'}
+
+## Relevante offene Notizen (max. 6, gekürzt)
+${relevantNotes.length ? relevantNotes.join('\n') : '- —'}
+
+## Sparse planned Features im Prompt
+${features.length ? JSON.stringify(featureJson, null, 2) : '[]'}
+
+Hinweis: Es gibt insgesamt ${totalSparse} sparse planned Features in diesem Projekt; dieser Prompt enthält maximal ${promptLimit} davon.
+
+## Regeln
+- Aktualisiere ausschließlich bestehende planned Features aus der Liste oben.
+- Verwende ausschließlich featureId-Werte aus der Liste oben.
+- Erzeuge keine neuen Features.
+- Fasse keine implemented Features an.
+- Überschreibe vorhandene gute Daten nicht, verschlechtere sie nicht und leere sie niemals.
+- Ergänze fehlende oder sehr dünne Details nur, wenn der Kontext dafür ausreicht.
+- Erfinde nichts frei. Markiere Unsicherheit entweder in openQuestions oder als Unsicherheit in sourceContext.
+- title ist optional und darf nur gefüllt werden, wenn ein klar besserer Titel naheliegt.
+- openQuestions ist optional.
+- acceptanceCriteria sollen kurze, testbare Strings sein.
+
+Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, kein Erklärtext. Das JSON muss exakt dieses Format verwenden:
+{
+  "type": "roadtrip-planned-feature-bulk-detail-v1",
+  "updates": [
+    {
+      "featureId": "...",
+      "title": "...",
+      "purpose": "...",
+      "workflowContext": "...",
+      "acceptanceCriteria": ["...", "..."],
+      "sourceContext": "...",
+      "openQuestions": ["...", "..."]
+    }
+  ]
+}`;
+        const state = getPlannedFeatureBulkBackfillState(projectId);
+        state.prompt = prompt;
+        const output = $('plannedFeatureBulkPromptOutput');
+        if (output) output.value = prompt;
+        return prompt;
+      }
+
+      function copyPlannedFeatureBulkBackfillPrompt(projectId) {
+        const state = getPlannedFeatureBulkBackfillState(projectId);
+        const field = $('plannedFeatureBulkPromptOutput');
+        if (field) state.prompt = String(field.value || '');
+        if (!String(state.prompt || '').trim()) buildPlannedFeatureBulkBackfillPrompt(projectId);
+        copyPrompt('plannedFeatureBulkPromptOutput');
+      }
+
+      function appendUniqueSection(existing, heading, items) {
+        const cleanExisting = normalizeFeatureDetailText(existing);
+        const cleanItems = normalizeAcceptanceCriteria(items).filter(item => !normalizeText(cleanExisting).includes(normalizeText(item)));
+        if (!cleanItems.length) return cleanExisting;
+        const section = `${heading}\n${cleanItems.map(item => `- ${item}`).join('\n')}`;
+        return [cleanExisting, section].filter(Boolean).join('\n\n');
+      }
+
+      function appendUniqueText(existing, text) {
+        const current = normalizeFeatureDetailText(existing);
+        const next = normalizeFeatureDetailText(text);
+        if (!next) return current;
+        if (normalizeText(current).includes(normalizeText(next))) return current;
+        return [current, next].filter(Boolean).join('\n\n');
+      }
+
+      function mergePlannedFeatureBulkDetail(feature, update) {
+        let changed = false;
+        const setField = (field, value) => {
+          if (feature[field] !== value) {
+            feature[field] = value;
+            changed = true;
+          }
+        };
+        const title = Object.prototype.hasOwnProperty.call(update, 'title') ? normalizeFeatureDetailText(update.title) : '';
+        if (title && title !== normalizeFeatureDetailText(feature.title)) setField('title', title);
+
+        ['purpose', 'workflowContext'].forEach(field => {
+          if (!Object.prototype.hasOwnProperty.call(update, field)) return;
+          const incoming = normalizeFeatureDetailText(update[field]);
+          if (incoming && isFeatureDetailShort(feature[field])) setField(field, incoming);
+        });
+
+        if (Object.prototype.hasOwnProperty.call(update, 'acceptanceCriteria')) {
+          const incomingCriteria = normalizeAcceptanceCriteria(update.acceptanceCriteria);
+          if (incomingCriteria.length && !normalizeAcceptanceCriteria(feature.acceptanceCriteria).length) setField('acceptanceCriteria', incomingCriteria);
+        }
+
+        let sourceContext = normalizeFeatureDetailText(feature.sourceContext);
+        if (Object.prototype.hasOwnProperty.call(update, 'sourceContext')) {
+          const incomingSource = normalizeFeatureDetailText(update.sourceContext);
+          if (incomingSource) {
+            sourceContext = isFeatureDetailShort(sourceContext) ? incomingSource : appendUniqueText(sourceContext, incomingSource);
+          }
+        }
+        const openQuestions = normalizeAcceptanceCriteria(update.openQuestions);
+        if (openQuestions.length) sourceContext = appendUniqueSection(sourceContext, 'Offene Fragen aus Backfill:', openQuestions);
+        if (sourceContext !== normalizeFeatureDetailText(feature.sourceContext)) setField('sourceContext', sourceContext);
+
+        if (changed) {
+          feature.updatedAt = new Date().toISOString();
+          markFeatureDirtyRoadtrip(feature);
+        }
+        return changed;
+      }
+
+      function importPlannedFeatureBulkDetailHandoff(projectId, rawJson) {
+        const state = getPlannedFeatureBulkBackfillState(projectId);
+        const report = { updated: 0, skipped: 0, errors: 0, reasons: [] };
+        if (!projectId || projectId === ALL_PROJECTS_KEY) {
+          report.errors += 1;
+          report.reasons.push('kein konkretes Projekt gewählt');
+          state.summary = formatPlannedFeatureBulkImportSummary(report);
+          alert(state.summary);
+          renderView();
+          return report;
+        }
+        let payload;
+        try { payload = parsePlannedFeatureDetailHandoff(rawJson); }
+        catch (err) {
+          report.errors += 1;
+          report.reasons.push('ungültiges JSON: ' + (err && err.message ? err.message : err));
+          state.summary = formatPlannedFeatureBulkImportSummary(report);
+          alert(state.summary);
+          renderView();
+          return report;
+        }
+        if (!payload || payload.type !== 'roadtrip-planned-feature-bulk-detail-v1') {
+          report.errors += 1;
+          report.reasons.push('falscher type; erwartet roadtrip-planned-feature-bulk-detail-v1');
+        } else if (!Array.isArray(payload.updates)) {
+          report.errors += 1;
+          report.reasons.push('updates fehlt oder ist kein Array');
+        } else if (!payload.updates.length) {
+          report.skipped += 1;
+          report.reasons.push('updates ist leer');
+        } else {
+          const seen = new Set();
+          payload.updates.forEach((update, index) => {
+            if (!update || typeof update !== 'object') {
+              report.errors += 1;
+              report.reasons.push(`Update ${index + 1}: kein Objekt`);
+              return;
+            }
+            const featureId = normalizeFeatureDetailText(update.featureId);
+            if (!featureId) {
+              report.errors += 1;
+              report.reasons.push(`Update ${index + 1}: featureId fehlt`);
+              return;
+            }
+            if (seen.has(featureId)) {
+              report.skipped += 1;
+              report.reasons.push(`${featureId}: doppelte ID im Handoff`);
+              return;
+            }
+            seen.add(featureId);
+            const feature = (S.features || []).find(f => f && f.id === featureId);
+            if (!feature) {
+              report.errors += 1;
+              report.reasons.push(`${featureId}: unbekannte featureId`);
+              return;
+            }
+            applyFeatureDefaults(feature);
+            if (feature.projectId !== projectId) {
+              report.skipped += 1;
+              report.reasons.push(`${featureId}: anderes Projekt`);
+              return;
+            }
+            if (!isPlannedFeature(feature)) {
+              report.skipped += 1;
+              report.reasons.push(`${featureId}: nicht planned`);
+              return;
+            }
+            if (mergePlannedFeatureBulkDetail(feature, update)) report.updated += 1;
+            else {
+              report.skipped += 1;
+              report.reasons.push(`${featureId}: keine verwertbare Änderung`);
+            }
+          });
+        }
+        if (report.updated) save();
+        state.summary = formatPlannedFeatureBulkImportSummary(report);
+        alert(state.summary);
+        renderView();
+        return report;
+      }
+
+      function formatPlannedFeatureBulkImportSummary(report) {
+        const reasons = (report.reasons || []).slice(0, 8);
+        return [
+          `Bulk-Handoff Import: aktualisiert: ${report.updated || 0}, übersprungen: ${report.skipped || 0}, Fehler: ${report.errors || 0}`,
+          reasons.length ? 'Gründe: ' + reasons.join('; ') : ''
+        ].filter(Boolean).join('\n');
       }
 
       function buildPlannedFeatureRefinePrompt(id) {
