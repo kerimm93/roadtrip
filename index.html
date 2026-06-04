@@ -1713,7 +1713,26 @@
       padding: 10px;
     }
     .feature-row-detail-body select { max-width: 220px; }
+    .feature-edit-form {
+      background: var(--surface);
+      border: 1px solid var(--rule);
+      border-radius: var(--r-md);
+      display: grid;
+      gap: 8px;
+      padding: 10px;
+    }
+    .feature-edit-grid {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(3, minmax(140px, 1fr));
+    }
+    .feature-edit-grid .field-wide { grid-column: 1 / -1; }
+    .feature-edit-form textarea { min-height: 84px; }
     .feature-cell-actions .btn { padding: 6px 9px; }
+    @media (max-width: 760px) {
+      .feature-edit-grid { grid-template-columns: 1fr; }
+      .feature-edit-grid .field-wide { grid-column: auto; }
+    }
     .feature-updated {
       color: var(--ink-dim);
       font-family: var(--font-mono);
@@ -1919,6 +1938,7 @@
         editingProjectId: null,
         analysisDraftFeatures: [],
         activeProjectId: ALL_PROJECTS_KEY,
+        editingFeatureId: '',
         filters: { pool: 'alle', status: 'alle', category: 'alle', search: '' },
         showKanban: false,
         showAllProjects: false,
@@ -2849,6 +2869,9 @@
         qq('[data-status-feature]').forEach(sel => sel.addEventListener('change', e => updateFeatureStatus(sel.dataset.statusFeature, e.target.value)));
         qq('[data-pool-feature]').forEach(sel => sel.addEventListener('change', e => updateFeaturePool(sel.dataset.poolFeature, e.target.value)));
         qq('[data-prio-feature]').forEach(sel => sel.addEventListener('change', e => updateFeaturePriority(sel.dataset.prioFeature, e.target.value)));
+        qq('[data-edit-planned-feature]').forEach(btn => btn.addEventListener('click', () => { ui.editingFeatureId = btn.dataset.editPlannedFeature || ''; renderView(); }));
+        qq('[data-save-planned-feature-edit]').forEach(btn => btn.addEventListener('click', () => updatePlannedFeatureEdit(btn.dataset.savePlannedFeatureEdit || '')));
+        qq('[data-cancel-planned-feature-edit]').forEach(btn => btn.addEventListener('click', () => { ui.editingFeatureId = ''; renderView(); }));
         qq('[data-sync-feature]').forEach(btn => btn.addEventListener('click', () => syncFeatureToTrello(btn.dataset.syncFeature)));
         qq('[data-pull-feature]').forEach(btn => btn.addEventListener('click', () => pullFeatureFromTrello(btn.dataset.pullFeature)));
         qq('[data-open-trello-card]').forEach(btn => btn.addEventListener('click', () => openTrelloCard(btn.dataset.openTrelloCard)));
@@ -6299,11 +6322,34 @@
         return reviewStatus === 'reviewed' ? 'Review erledigt' : 'Review nötig';
       }
 
+      function renderPlannedFeatureEditForm(f) {
+        const plannedStatuses = getFeatureStatusesForPool('planned');
+        const categoryValue = FEATURE_CATEGORIES.includes(f.category) ? f.category : 'Sonstiges';
+        const priorityValue = PRIORITIES.includes(f.priority) ? f.priority : 'mittel';
+        const statusValue = normalizeFeatureStatus(f.status, 'planned');
+        return `
+          <div class="feature-edit-form" data-planned-feature-edit-form="${escapeAttr(f.id)}">
+            <div class="feature-edit-grid">
+              <div class="field field-wide"><label>Titel</label><input data-edit-feature-title="${escapeAttr(f.id)}" value="${escapeAttr(f.title || '')}" placeholder="Feature-Titel"></div>
+              <div class="field field-wide"><label>Beschreibung</label><textarea data-edit-feature-description="${escapeAttr(f.id)}" placeholder="Kurzbeschreibung">${escapeHtml(f.description || '')}</textarea></div>
+              <div class="field"><label>Kategorie</label><select data-edit-feature-category="${escapeAttr(f.id)}">${FEATURE_CATEGORIES.map(category => `<option value="${escapeAttr(category)}" ${category===categoryValue?'selected':''}>${escapeHtml(category)}</option>`).join('')}</select></div>
+              <div class="field"><label>Priorität</label><select data-edit-feature-priority="${escapeAttr(f.id)}">${PRIORITIES.map(priority => `<option value="${escapeAttr(priority)}" ${priority===priorityValue?'selected':''}>${escapeHtml(priority)}</option>`).join('')}</select></div>
+              <div class="field"><label>Status</label><select data-edit-feature-status="${escapeAttr(f.id)}">${plannedStatuses.map(status => `<option value="${escapeAttr(status)}" ${status===statusValue?'selected':''}>${escapeHtml(getFeatureStatusLabel(status))}</option>`).join('')}</select></div>
+            </div>
+            <div class="feature-cell-actions">
+              <button class="btn btn-primary" type="button" data-save-planned-feature-edit="${escapeAttr(f.id)}">Speichern</button>
+              <button class="btn btn-secondary" type="button" data-cancel-planned-feature-edit="${escapeAttr(f.id)}">Abbrechen</button>
+            </div>
+          </div>
+        `;
+      }
+
       function renderFeatureRowDetails(f) {
         const sourceLabel = f.sourceType || 'manuell';
         const trelloBadge = getTrelloSyncBadge(f);
+        const isEditingPlannedFeature = isPlannedFeature(f) && ui.editingFeatureId === f.id;
         return `
-          <details class="feature-row-details">
+          <details class="feature-row-details" ${isEditingPlannedFeature ? 'open' : ''}>
             <summary class="feature-detail-toggle">Details & Aktionen</summary>
             <div class="feature-row-detail-body">
               <div class="feature-meta-pills">
@@ -6317,10 +6363,12 @@
                 <label class="mini">Status ändern <select data-status-feature="${escapeAttr(f.id)}">${getFeatureStatusesForPool(f.pool).map(s => `<option value="${s}" ${s===f.status?'selected':''}>${getFeatureStatusLabel(s)}</option>`).join('')}</select></label>
               </div>
               <div class="feature-cell-actions">
+                ${isPlannedFeature(f) ? `<button class="btn btn-secondary" data-edit-planned-feature="${escapeAttr(f.id)}">Feature bearbeiten</button>` : ''}
                 <button class="btn" data-sync-feature="${escapeAttr(f.id)}">${f.trello && f.trello.cardId ? 'Trello updaten' : 'Nach Trello'}</button>
                 ${f.trello && f.trello.cardId ? `<button class="btn" data-pull-feature="${escapeAttr(f.id)}">Von Trello</button>` : ''}
                 ${f.trello && f.trello.cardId ? `<button class="btn" data-open-trello-card="${escapeAttr(f.id)}">Öffnen</button>` : ''}
               </div>
+              ${isEditingPlannedFeature ? renderPlannedFeatureEditForm(f) : ''}
             </div>
           </details>
         `;
@@ -6929,6 +6977,41 @@
         f.updatedAt = new Date().toISOString();
         markFeatureDirtyRoadtrip(f);
         save();
+      }
+
+      function getPlannedFeatureEditField(id, field) {
+        return qq(`[data-edit-feature-${field}]`).find(el => el.dataset[`editFeature${field.charAt(0).toUpperCase() + field.slice(1)}`] === id) || null;
+      }
+
+      function updatePlannedFeatureEdit(id) {
+        const f = S.features.find(x => x.id === id);
+        if (!f) return;
+        applyFeatureDefaults(f);
+        if (!isPlannedFeature(f)) return;
+
+        const title = String((getPlannedFeatureEditField(id, 'title') || {}).value || '').trim();
+        if (!title) {
+          alert('Bitte gib einen Feature-Titel ein. Leere Titel werden nicht gespeichert.');
+          return;
+        }
+
+        const description = String((getPlannedFeatureEditField(id, 'description') || {}).value || '').trim();
+        const rawCategory = String((getPlannedFeatureEditField(id, 'category') || {}).value || '');
+        const rawPriority = String((getPlannedFeatureEditField(id, 'priority') || {}).value || '');
+        const rawStatus = String((getPlannedFeatureEditField(id, 'status') || {}).value || '');
+        const existingCategory = FEATURE_CATEGORIES.includes(f.category) ? f.category : 'Sonstiges';
+        const existingPriority = PRIORITIES.includes(f.priority) ? f.priority : 'mittel';
+
+        f.title = title;
+        f.description = description;
+        f.category = FEATURE_CATEGORIES.includes(rawCategory) ? rawCategory : existingCategory;
+        f.priority = PRIORITIES.includes(rawPriority) ? rawPriority : existingPriority;
+        f.status = normalizeFeatureStatus(rawStatus, 'planned');
+        f.updatedAt = new Date().toISOString();
+        markFeatureDirtyRoadtrip(f);
+        ui.editingFeatureId = '';
+        save();
+        renderView();
       }
 
       function quickCreateFeature(projectId) {
