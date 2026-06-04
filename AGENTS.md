@@ -1,69 +1,117 @@
-Codex · Etappe 1 — Token-Block (:root) + Atlas-Fonts
+# AGENTS.md — Roadtrip Coding-Agent-Vertrag
 
-BRANCH: Arbeite auf `redesign`. Base und Ziel = `redesign`, nicht main.
-Beachte AGENTS.md (harte Grenzen, Token-Strategie, Smoke-Test).
+> Stand: Sprint 29. Dieser Vertrag gilt für **jeden** Coding-Agent-Auftrag
+> (Codex, Claude Code) an `index.html`. Er ist sprint-unabhängig.
+> Er ersetzt den früheren eingefrorenen Etappe-1-Einzelauftrag.
 
-In dieser Etappe NUR CSS im <style>-Block + ein <link> im <head>.
-Kein JS, kein Render-Code.
+---
 
-AUFGABEN
+## Projekt
 
-1) Fonts laden. Direkt nach den <meta>-Tags im <head> (vor <style>) einfügen:
+Roadtrip ist eine **Single-File-HTML-App** (`index.html`, ~11.000 Zeilen):
+Vanilla JS, CSS Custom Properties, **keine Frameworks, kein Build-Step**.
+Persistenz: IndexedDB-first mit localStorage-Fallback. Optional GitHub-Gist-Sync,
+ZIP-Backup, Trello-Anbindung.
 
-   <link rel="preconnect" href="https://fonts.googleapis.com">
-   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+Alle Änderungen sind **minimal-invasiv**: kleiner Diff, eine Etappe pro Commit,
+Render-Logik nur anfassen, wenn eine CSS-Klasse nicht genügt.
 
-2) :root-Block ersetzen (aktuell Zeilen 8–61). Helle Atlas-Tokens aus
-   DESIGN.md §2 als neue kanonische Variablen. Behalte ALLE bestehenden
-   --rt-*- und Alias-Namen, zeige sie auf die hellen Werte um:
+---
 
-   --rt-bg            #F4ECDC
-   --rt-bg-elevated   #EADFC9
-   --rt-surface       #FCF8EF
-   --rt-surface-2     #F6EFE0
-   --rt-surface-3     #EFE6D2
-   --rt-surface-quiet #F6EFE0
-   --rt-border-line   #E3D8C1
-   --rt-border-strong #CFC0A3
-   --rt-ink           #2C2419
-   --rt-ink-mid       #6C6051
-   --rt-ink-dim       #9A8B73
-   --rt-on-accent     #FBF4E8
-   --rt-gold          #C24A2B            (Gold-Slot wird der eine Zinnober-Akzent)
-   --rt-gold-soft     rgba(194,74,43,0.10)
-   --rt-indigo        #4F6E89            (Indigo wird ruhiger Info-Ton, KEIN zweiter Primary)
-   --rt-indigo-soft   rgba(79,110,137,0.12)
-   --rt-success       #4F7A52
-   --rt-warning       #A9772B
-   --rt-danger        #A8432B
-   --rt-info          #4F6E89
-   (zugehörige -soft-Werte aus DESIGN.md §2 übernehmen)
-   --ring             0 0 0 3px rgba(194,74,43,0.28)
+## Verbindliche Dokumente
 
-   Ergänze zusätzlich im selben :root die neuen kanonischen Tokens aus
-   DESIGN.md §2: --paper, --surface, --rule, --accent, --accent-hi,
-   --accent-deep, --hue-* , --sh-1/-2/-3, Radius-Skala.
+| Dokument | Rolle |
+|---|---|
+| `DECISIONS.md` | Finale Umsetzungsentscheidungen — **hat Vorrang** vor DESIGN/ARCHITECTURE |
+| `docs/DESIGN.md` | Designsystem (Tokens, Komponenten, Screen-Regeln) |
+| `docs/ARCHITECTURE.md` | Informationsarchitektur / Navigation (Mermaid) |
+| `docs/CODEX-HANDOFF.md` | Ursprünglicher 15-Etappen-Plan (Sprint 25, abgeschlossen) — Referenz, kein laufender Auftrag |
 
-   Fonts:
-   --font-ui     "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif
-   --font-serif  "Cormorant Garamond", "Iowan Old Style", Georgia, serif
-   --font-mono   bleibt (IBM Plex Mono ist schon vorhanden)
+Der visuelle Prototyp (`Roadtrip Atlas Redesign (standalone).html`) ist
+**Inspirationsquelle, kein Soll-Stand**.
 
-3) Theme-Klassen angleichen. body.theme-light (Z. 63 ff.) und der Default
-   theme-dark mit den neuen hellen Tokens konsistent machen. Atlas ist hell:
-   theme-light als Atlas-Default mappen; sicherstellen, dass body.theme-dark
-   KEINE dunklen Hex-Werte mehr erzwingt, die :root überschreiben (neutralisieren
-   oder auf die hellen Tokens zeigen). body.theme-eink bleibt funktional (alles
-   --ink/--rule, kein gefüllter Akzent), nur Farbwerte an die warme Palette
-   angleichen. Theme-Werte (theme-dark/-light/-eink) und id="themeSelect" NICHT
-   umbenennen.
+### Gültigkeit / Präzedenz (bei Widerspruch)
 
-SMOKE-TEST (ausführen + berichten)
-- node -e Syntaxcheck nach Muster aus readme.md
-- App lädt ohne Konsolenfehler; Projekt mit Features/Sprints rendert
-- App durchgehend hell — kein weiß-auf-weiß, kein dunkler :root-Override-Rest
-- Theme-Wechsel Light↔E-Ink ohne Token-Lücke, E-Ink ohne gefüllten Akzent
+1. aktueller `main`-Code
+2. `DECISIONS.md`
+3. Sprint-Delta-Analyse (sofern beigelegt)
+4. `docs/DESIGN.md`
+5. `docs/ARCHITECTURE.md`
+6. Atlas-Prototyp
 
-COMMIT
-feat(atlas): light token block + Atlas fonts, legacy vars aliased
+---
+
+## ⛔ Harte Grenzen — Schutzliste (NICHT ändern)
+
+Wenn ein Auftrag eine dieser Grenzen zu verletzen scheint: **anhalten und melden,
+nicht umgehen.**
+
+- **State-Schema (`S`):** `S.projects`, `S.features`, `S.notes`, `S.analyses`,
+  `S.chats`, `S.importVersions` — Struktur und Feldnamen.
+- **Config-Key-Namen (`C`).**
+- **Persistenz:** IndexedDB-/localStorage-Logik. Nur **neue** UI-Keys unter
+  `roadtrip.ui.*` sind erlaubt.
+- **Migrations-/Normalisierungslogik** beim Laden (alte deutsche Statuswerte).
+- **Sprintstart-JSON-Validierung** (`type === "roadtrip-sprint-start"`, Pflichtfelder).
+- **Gist-Sync-Algorithmus & Verschlüsselungslogik.**
+- **ZIP-Backup, JSON-Export/-Import, Tombstone-Logik, Trello-Sync.**
+- **Notes-Workspace-Datenmodell.**
+- **Sprintstart-/Handoff-Verträge.**
+- **Element-IDs, Event-Handler-Bindings, Funktionsnamen.** Buttons behalten ihre `id`.
+- **Funktions-Vokabular:** Projekt, Feature, Sprint, Hauptchat, Handoff —
+  keine narrative Umbenennung. Die Landkarten-Metapher ist rein
+  visuell/atmosphärisch, **nicht** im Datenmodell.
+
+**Token-Strategie:** Neue kanonische Tokens definieren, alte Variablennamen als
+umgefärbte **Aliase** behalten, damit Bestandscode automatisch erbt.
+
+---
+
+## Bewusst akzeptierte Abweichungen (nicht „korrigieren")
+
+Diese Punkte sind entschieden und werden ohne neue DECISIONS.md-Entscheidung
+nicht angefasst:
+
+- Kein App-Shell-Umbau auf CSS-Variable-Grid (Roadtrip bleibt `workspace-sidebar`,
+  nicht das React/`.app-shell`-Grid des Prototyps).
+- Mobile Sidebar bleibt Off-Canvas mit `body.sidebar-open`.
+- Kein semantisches Nav-System als Großrefactor.
+- Eigenes Modal-System bleibt bestehen.
+- `.kindgrid` wird nicht nachgezogen, solange die aktuelle Lösung funktioniert.
+- Paper-Grain wird nicht automatisch umgesetzt.
+- Relationship Map ist ein eigener späterer Sprint (Schema-Änderung).
+- Keine Datenmodelländerung für rein visuellen Polish.
+
+---
+
+## Pflicht-Smoke-Test (nach JEDER Etappe ausführen + berichten)
+
+```bash
+node -e "const fs=require('fs');const vm=require('vm');const c=fs.readFileSync('index.html','utf8');const scripts=[];let m;const re=/<script(?![^>]*src)[^>]*>([\s\S]*?)<\/script>/gi;while((m=re.exec(c))!==null)scripts.push(m[1]);new vm.Script(scripts.join('\n'));console.log('JS OK');"
+```
+
+- `git diff` prüfen — keine unerwarteten Dateien.
+- App lädt ohne Konsolenfehler; ein bestehendes Projekt mit Features/Sprints rendert.
+- `JSON-Export → Re-Import` ergibt identische Daten (mindestens 1× pro 3 Etappen).
+- **Sichtprüfung** beschreiben: Sidebar · Projektliste · Settings · Projektansicht ·
+  Feature-Datenbank · mobile Breite (falls betroffen).
+
+---
+
+## Git-/Workflow
+
+- Git läuft über SSH-Key im Terminal.
+- Branch, Commit, Push per Kommandozeile.
+- PR wird **manuell** auf github.com erstellt.
+- **Keine** Vorschläge für gh-CLI-Setup, gh-Auth oder WebStorm-GitHub-Login,
+  außer ausdrücklich gefragt.
+
+---
+
+## Arbeitsweise
+
+- Pro Etappe: kleiner Diff, ein Commit, Smoke-Test, kurze Ergebnisnotiz.
+- Erst nach sauberem Review die nächste Etappe.
+- Bei Konflikt mit den harten Grenzen: anhalten und melden.
+
+*Roadtrip · Coding-Agent-Vertrag · Sprint 29*
