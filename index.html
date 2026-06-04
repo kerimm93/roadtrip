@@ -1728,6 +1728,16 @@
     }
     .feature-edit-grid .field-wide { grid-column: 1 / -1; }
     .feature-edit-form textarea { min-height: 84px; }
+    .feature-detail-readonly {
+      background: var(--surface);
+      border: 1px dashed var(--rule);
+      border-radius: var(--r-sm);
+      color: var(--ink-dim);
+      display: grid;
+      gap: 4px;
+      padding: 8px;
+      white-space: pre-wrap;
+    }
     .feature-cell-actions .btn { padding: 6px 9px; }
     @media (max-width: 760px) {
       .feature-edit-grid { grid-template-columns: 1fr; }
@@ -2020,6 +2030,18 @@
         if (legacyImplementedStatus) nextPool = 'implemented';
         const nextStatus = legacyImplementedStatus || normalizeFeatureStatus(status, nextPool);
         return { pool: nextPool, status: nextStatus };
+      }
+
+      function normalizeFeatureDetailText(value) {
+        if (value == null) return '';
+        return String(value).trim();
+      }
+
+      function normalizeAcceptanceCriteria(value) {
+        const items = Array.isArray(value) ? value : String(value || '').split(/\r?\n/);
+        return items
+          .map(item => String(item || '').trim().replace(/^[-•*]\s+/, '').trim())
+          .filter(Boolean);
       }
 
       function getFeatureStatusLabel(status) {
@@ -2872,6 +2894,9 @@
         qq('[data-edit-planned-feature]').forEach(btn => btn.addEventListener('click', () => { ui.editingFeatureId = btn.dataset.editPlannedFeature || ''; renderView(); }));
         qq('[data-save-planned-feature-edit]').forEach(btn => btn.addEventListener('click', () => updatePlannedFeatureEdit(btn.dataset.savePlannedFeatureEdit || '')));
         qq('[data-cancel-planned-feature-edit]').forEach(btn => btn.addEventListener('click', () => { ui.editingFeatureId = ''; renderView(); }));
+        qq('[data-build-planned-feature-prompt]').forEach(btn => btn.addEventListener('click', () => buildPlannedFeatureRefinePrompt(btn.dataset.buildPlannedFeaturePrompt || '')));
+        qq('[data-copy-planned-feature-prompt]').forEach(btn => btn.addEventListener('click', () => copyPlannedFeaturePrompt(btn.dataset.copyPlannedFeaturePrompt || '')));
+        qq('[data-import-planned-feature-handoff]').forEach(btn => btn.addEventListener('click', () => importPlannedFeatureDetailHandoff(btn.dataset.importPlannedFeatureHandoff || '')));
         qq('[data-sync-feature]').forEach(btn => btn.addEventListener('click', () => syncFeatureToTrello(btn.dataset.syncFeature)));
         qq('[data-pull-feature]').forEach(btn => btn.addEventListener('click', () => pullFeatureFromTrello(btn.dataset.pullFeature)));
         qq('[data-open-trello-card]').forEach(btn => btn.addEventListener('click', () => openTrelloCard(btn.dataset.openTrelloCard)));
@@ -6322,11 +6347,24 @@
         return reviewStatus === 'reviewed' ? 'Review erledigt' : 'Review nötig';
       }
 
+      function renderPlannedFeatureDetailSummary(f) {
+        const criteria = normalizeAcceptanceCriteria(f.acceptanceCriteria);
+        const parts = [
+          ['Zweck', f.purpose],
+          ['Workflow-Kontext', f.workflowContext],
+          ['Akzeptanzkriterien', criteria.map(item => `• ${item}`).join('\n')],
+          ['Quellen / Notizen / Handoff', f.sourceContext]
+        ].filter(([, value]) => String(value || '').trim());
+        if (!parts.length) return '<div class="feature-detail-readonly mini">Noch keine Planned-Feature-Details gepflegt.</div>';
+        return `<div class="feature-detail-readonly">${parts.map(([label, value]) => `<div><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</div>`).join('')}</div>`;
+      }
+
       function renderPlannedFeatureEditForm(f) {
         const plannedStatuses = getFeatureStatusesForPool('planned');
         const categoryValue = FEATURE_CATEGORIES.includes(f.category) ? f.category : 'Sonstiges';
         const priorityValue = PRIORITIES.includes(f.priority) ? f.priority : 'mittel';
         const statusValue = normalizeFeatureStatus(f.status, 'planned');
+        const criteriaText = normalizeAcceptanceCriteria(f.acceptanceCriteria).join('\n');
         return `
           <div class="feature-edit-form" data-planned-feature-edit-form="${escapeAttr(f.id)}">
             <div class="feature-edit-grid">
@@ -6335,10 +6373,27 @@
               <div class="field"><label>Kategorie</label><select data-edit-feature-category="${escapeAttr(f.id)}">${FEATURE_CATEGORIES.map(category => `<option value="${escapeAttr(category)}" ${category===categoryValue?'selected':''}>${escapeHtml(category)}</option>`).join('')}</select></div>
               <div class="field"><label>Priorität</label><select data-edit-feature-priority="${escapeAttr(f.id)}">${PRIORITIES.map(priority => `<option value="${escapeAttr(priority)}" ${priority===priorityValue?'selected':''}>${escapeHtml(priority)}</option>`).join('')}</select></div>
               <div class="field"><label>Status</label><select data-edit-feature-status="${escapeAttr(f.id)}">${plannedStatuses.map(status => `<option value="${escapeAttr(status)}" ${status===statusValue?'selected':''}>${escapeHtml(getFeatureStatusLabel(status))}</option>`).join('')}</select></div>
+              <div class="field field-wide"><label>Zweck / Warum?</label><textarea data-edit-feature-purpose="${escapeAttr(f.id)}" placeholder="Warum gibt es dieses Feature?">${escapeHtml(f.purpose || '')}</textarea></div>
+              <div class="field field-wide"><label>Workflow-Kontext / Problem</label><textarea data-edit-feature-workflow-context="${escapeAttr(f.id)}" placeholder="Welchen alten Workflow oder welches Problem verbessert es?">${escapeHtml(f.workflowContext || '')}</textarea></div>
+              <div class="field field-wide"><label>Akzeptanzkriterien (eine Zeile pro Kriterium)</label><textarea data-edit-feature-acceptance-criteria="${escapeAttr(f.id)}" placeholder="Kriterium 1\nKriterium 2">${escapeHtml(criteriaText)}</textarea></div>
+              <div class="field field-wide"><label>Quellen / Notizen / Handoff-Bezug</label><textarea data-edit-feature-source-context="${escapeAttr(f.id)}" placeholder="Notizen, Handoff-Link, Chat-Bezug ...">${escapeHtml(f.sourceContext || '')}</textarea></div>
             </div>
             <div class="feature-cell-actions">
               <button class="btn btn-primary" type="button" data-save-planned-feature-edit="${escapeAttr(f.id)}">Speichern</button>
               <button class="btn btn-secondary" type="button" data-cancel-planned-feature-edit="${escapeAttr(f.id)}">Abbrechen</button>
+            </div>
+            <div class="field">
+              <label>Refine-/Brainstorm-Prompt</label>
+              <textarea data-planned-feature-prompt="${escapeAttr(f.id)}" style="min-height:160px;font-family:var(--font-mono);font-size:12px;" placeholder="Prompt wird hier erzeugt ..."></textarea>
+              <div class="feature-cell-actions" style="margin-top:6px;">
+                <button class="btn btn-secondary" type="button" data-build-planned-feature-prompt="${escapeAttr(f.id)}">Refine-Prompt erzeugen</button>
+                <button class="btn" type="button" data-copy-planned-feature-prompt="${escapeAttr(f.id)}">Prompt kopieren</button>
+              </div>
+            </div>
+            <div class="field">
+              <label>JSON-Handoff importieren</label>
+              <textarea data-planned-feature-handoff="${escapeAttr(f.id)}" style="min-height:120px;font-family:var(--font-mono);font-size:12px;" placeholder='{"type":"roadtrip-planned-feature-detail-v1","featureId":"${escapeAttr(f.id)}",...}'></textarea>
+              <div class="feature-cell-actions" style="margin-top:6px;"><button class="btn btn-primary" type="button" data-import-planned-feature-handoff="${escapeAttr(f.id)}">Detail-Handoff importieren</button></div>
             </div>
           </div>
         `;
@@ -6362,6 +6417,7 @@
                 <label class="mini">Pool ändern <select data-pool-feature="${escapeAttr(f.id)}">${FEATURE_POOLS.map(pool => `<option value="${pool}" ${pool===f.pool?'selected':''}>${getFeaturePoolLabel(pool)}</option>`).join('')}</select></label>
                 <label class="mini">Status ändern <select data-status-feature="${escapeAttr(f.id)}">${getFeatureStatusesForPool(f.pool).map(s => `<option value="${s}" ${s===f.status?'selected':''}>${getFeatureStatusLabel(s)}</option>`).join('')}</select></label>
               </div>
+              ${isPlannedFeature(f) ? renderPlannedFeatureDetailSummary(f) : ''}
               <div class="feature-cell-actions">
                 ${isPlannedFeature(f) ? `<button class="btn btn-secondary" data-edit-planned-feature="${escapeAttr(f.id)}">Feature bearbeiten</button>` : ''}
                 <button class="btn" data-sync-feature="${escapeAttr(f.id)}">${f.trello && f.trello.cardId ? 'Trello updaten' : 'Nach Trello'}</button>
@@ -6980,7 +7036,8 @@
       }
 
       function getPlannedFeatureEditField(id, field) {
-        return qq(`[data-edit-feature-${field}]`).find(el => el.dataset[`editFeature${field.charAt(0).toUpperCase() + field.slice(1)}`] === id) || null;
+        const datasetKey = 'editFeature' + String(field || '').split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('');
+        return qq(`[data-edit-feature-${field}]`).find(el => el.dataset[datasetKey] === id) || null;
       }
 
       function updatePlannedFeatureEdit(id) {
@@ -6999,6 +7056,10 @@
         const rawCategory = String((getPlannedFeatureEditField(id, 'category') || {}).value || '');
         const rawPriority = String((getPlannedFeatureEditField(id, 'priority') || {}).value || '');
         const rawStatus = String((getPlannedFeatureEditField(id, 'status') || {}).value || '');
+        const purpose = (getPlannedFeatureEditField(id, 'purpose') || {}).value || '';
+        const workflowContext = (getPlannedFeatureEditField(id, 'workflow-context') || {}).value || '';
+        const acceptanceCriteria = (getPlannedFeatureEditField(id, 'acceptance-criteria') || {}).value || '';
+        const sourceContext = (getPlannedFeatureEditField(id, 'source-context') || {}).value || '';
         const existingCategory = FEATURE_CATEGORIES.includes(f.category) ? f.category : 'Sonstiges';
         const existingPriority = PRIORITIES.includes(f.priority) ? f.priority : 'mittel';
 
@@ -7007,10 +7068,185 @@
         f.category = FEATURE_CATEGORIES.includes(rawCategory) ? rawCategory : existingCategory;
         f.priority = PRIORITIES.includes(rawPriority) ? rawPriority : existingPriority;
         f.status = normalizeFeatureStatus(rawStatus, 'planned');
+        f.purpose = normalizeFeatureDetailText(purpose);
+        f.workflowContext = normalizeFeatureDetailText(workflowContext);
+        f.acceptanceCriteria = normalizeAcceptanceCriteria(acceptanceCriteria);
+        f.sourceContext = normalizeFeatureDetailText(sourceContext);
         f.updatedAt = new Date().toISOString();
         markFeatureDirtyRoadtrip(f);
         ui.editingFeatureId = '';
         save();
+        renderView();
+      }
+
+      function getPlannedFeatureTextarea(id, name) {
+        return qq(`[data-planned-feature-${name}]`).find(el => el.dataset[`plannedFeature${name.charAt(0).toUpperCase() + name.slice(1)}`] === id) || null;
+      }
+
+      function getEditablePlannedFeatureSnapshot(feature) {
+        const f = applyFeatureDefaults(Object.assign({}, feature || {}));
+        const readField = field => getPlannedFeatureEditField(f.id, field);
+        const titleField = readField('title');
+        const descriptionField = readField('description');
+        const categoryField = readField('category');
+        const priorityField = readField('priority');
+        const statusField = readField('status');
+        const purposeField = readField('purpose');
+        const workflowContextField = readField('workflow-context');
+        const acceptanceCriteriaField = readField('acceptance-criteria');
+        const sourceContextField = readField('source-context');
+        return Object.assign(f, {
+          title: titleField ? normalizeFeatureDetailText(titleField.value) : f.title,
+          description: descriptionField ? normalizeFeatureDetailText(descriptionField.value) : f.description,
+          category: categoryField && FEATURE_CATEGORIES.includes(categoryField.value) ? categoryField.value : f.category,
+          priority: priorityField && PRIORITIES.includes(priorityField.value) ? priorityField.value : f.priority,
+          status: statusField ? normalizeFeatureStatus(statusField.value, 'planned') : f.status,
+          purpose: purposeField ? normalizeFeatureDetailText(purposeField.value) : f.purpose,
+          workflowContext: workflowContextField ? normalizeFeatureDetailText(workflowContextField.value) : f.workflowContext,
+          acceptanceCriteria: acceptanceCriteriaField ? normalizeAcceptanceCriteria(acceptanceCriteriaField.value) : normalizeAcceptanceCriteria(f.acceptanceCriteria),
+          sourceContext: sourceContextField ? normalizeFeatureDetailText(sourceContextField.value) : f.sourceContext
+        });
+      }
+
+      function getProjectNotesContext(projectId, sourceNoteIds) {
+        const sourceIds = Array.isArray(sourceNoteIds) ? sourceNoteIds.map(String) : [];
+        return (S.notes || [])
+          .filter(note => note && note.projectId === projectId && getNoteText(note))
+          .sort((a, b) => {
+            const aSource = sourceIds.includes(String(a.id));
+            const bSource = sourceIds.includes(String(b.id));
+            if (aSource !== bSource) return aSource ? -1 : 1;
+            return String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''));
+          })
+          .slice(0, 5)
+          .map(note => `- ${note.id || 'note'} | ${note.type || 'note'} | ${shorten(getNoteText(note), 500)}`)
+          .join('\n');
+      }
+
+      function buildPlannedFeatureRefinePrompt(id) {
+        const feature = S.features.find(x => x.id === id);
+        if (!feature) return alert('Feature nicht gefunden.');
+        applyFeatureDefaults(feature);
+        if (!isPlannedFeature(feature)) return alert('Dieser Workflow ist nur für planned Features verfügbar.');
+        const f = getEditablePlannedFeatureSnapshot(feature);
+        const project = (S.projects || []).find(p => p.id === f.projectId) || {};
+        const notesContext = getProjectNotesContext(f.projectId, f.sourceNoteIds);
+        const prompt = `# Roadtrip Planned Feature Refine / Brainstorm
+
+Du schärfst genau EIN geplantes Feature. Erzeuge keine neuen Features und ändere keine Feature-ID.
+
+## Projektkontext
+- Projekt-ID: ${project.id || f.projectId || '—'}
+- Titel: ${project.title || '—'}
+- Status: ${project.status || '—'}
+- Summary: ${project.summary || '—'}
+- Current Focus: ${project.currentFocus || '—'}
+- Next Step: ${project.nextStep || '—'}
+
+## Planned Feature
+- Feature-ID: ${f.id}
+- Titel: ${f.title || '—'}
+- Beschreibung: ${f.description || '—'}
+- Kategorie: ${f.category || '—'}
+- Priorität: ${f.priority || '—'}
+- Status: ${getFeatureStatusLabel(f.status)} (${f.status || '—'})
+- Zweck: ${f.purpose || '—'}
+- Workflow-Kontext / altes Problem: ${f.workflowContext || '—'}
+- Akzeptanzkriterien:\n${f.acceptanceCriteria.length ? f.acceptanceCriteria.map(item => `  - ${item}`).join('\n') : '  - —'}
+- Quellen / Notizen / Handoff-Bezug: ${f.sourceContext || '—'}
+- SourceType: ${f.sourceType || '—'}
+- SourceNoteIds: ${Array.isArray(f.sourceNoteIds) && f.sourceNoteIds.length ? f.sourceNoteIds.join(', ') : '—'}
+
+## Relevante Projekt-Notes (max. 5, gekürzt)
+${notesContext || '- —'}
+
+## Aufgabe
+- Formuliere das Feature präziser, ohne daraus mehrere Features zu machen.
+- Beschreibe klar Zweck / Warum.
+- Benenne den alten Workflow, das Problem oder den Schmerzpunkt.
+- Formuliere konkrete, testbare Akzeptanzkriterien.
+- Markiere offene Fragen, falls Informationen fehlen.
+- Aktualisiere optional den Titel, aber setze ihn niemals leer.
+
+Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zurück. Kein Markdown, kein Fließtext außerhalb des JSON:
+{
+  "type": "roadtrip-planned-feature-detail-v1",
+  "featureId": "${f.id}",
+  "title": "...",
+  "purpose": "...",
+  "workflowContext": "...",
+  "acceptanceCriteria": ["...", "..."],
+  "sourceContext": "...",
+  "openQuestions": ["...", "..."]
+}`;
+        const output = getPlannedFeatureTextarea(id, 'prompt');
+        if (output) output.value = prompt;
+      }
+
+      function copyPlannedFeaturePrompt(id) {
+        const field = getPlannedFeatureTextarea(id, 'prompt');
+        if (!field) return;
+        if (!String(field.value || '').trim()) buildPlannedFeatureRefinePrompt(id);
+        const text = String(field.value || '');
+        if (!text.trim()) return alert('Kein Prompt vorhanden.');
+        const fallbackCopy = () => {
+          try {
+            field.focus();
+            field.select();
+            const ok = document.execCommand && document.execCommand('copy');
+            alert(ok ? 'Prompt kopiert.' : 'Kopieren fehlgeschlagen. Bitte manuell kopieren.');
+          } catch (_) {
+            alert('Kopieren fehlgeschlagen. Bitte manuell kopieren.');
+          }
+        };
+        if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text)
+            .then(() => alert('Prompt kopiert.'))
+            .catch(fallbackCopy);
+          return;
+        }
+        fallbackCopy();
+      }
+
+      function parsePlannedFeatureDetailHandoff(raw) {
+        const text = String(raw || '').trim();
+        if (!text) throw new Error('Bitte füge ein JSON-Handoff ein.');
+        try { return JSON.parse(text); }
+        catch (_) { return JSON.parse(extractJsonObjectFromText(text)); }
+      }
+
+      function importPlannedFeatureDetailHandoff(id) {
+        const field = getPlannedFeatureTextarea(id, 'handoff');
+        const raw = field ? field.value : '';
+        let payload;
+        try { payload = parsePlannedFeatureDetailHandoff(raw); }
+        catch (err) { return alert('Ungültiges JSON: ' + (err && err.message ? err.message : err)); }
+        if (!payload || payload.type !== 'roadtrip-planned-feature-detail-v1') return alert('Falscher type. Erwartet: roadtrip-planned-feature-detail-v1');
+        const payloadFeatureId = normalizeFeatureDetailText(payload.featureId);
+        if (!payloadFeatureId || payloadFeatureId !== id) return alert('Falsche oder fehlende featureId im Handoff.');
+        const feature = S.features.find(x => x.id === payloadFeatureId);
+        if (!feature) return alert('featureId existiert nicht.');
+        applyFeatureDefaults(feature);
+        if (!isPlannedFeature(feature)) return alert('Dieses Feature ist nicht planned und wird nicht über diesen Workflow aktualisiert.');
+        if (Object.prototype.hasOwnProperty.call(payload, 'title')) {
+          if (typeof payload.title !== 'string') return alert('Ungültiges title-Feld im Handoff.');
+          const title = normalizeFeatureDetailText(payload.title);
+          if (!title) return alert('Leerer title wird nicht importiert.');
+          feature.title = title;
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, 'purpose')) feature.purpose = normalizeFeatureDetailText(payload.purpose);
+        if (Object.prototype.hasOwnProperty.call(payload, 'workflowContext')) feature.workflowContext = normalizeFeatureDetailText(payload.workflowContext);
+        if (Object.prototype.hasOwnProperty.call(payload, 'acceptanceCriteria')) feature.acceptanceCriteria = normalizeAcceptanceCriteria(payload.acceptanceCriteria);
+        let sourceContext = Object.prototype.hasOwnProperty.call(payload, 'sourceContext') ? normalizeFeatureDetailText(payload.sourceContext) : normalizeFeatureDetailText(feature.sourceContext);
+        const openQuestions = normalizeAcceptanceCriteria(payload.openQuestions);
+        if (openQuestions.length) {
+          sourceContext = [sourceContext, 'Offene Fragen:', openQuestions.map(item => `- ${item}`).join('\n')].filter(Boolean).join('\n\n');
+        }
+        feature.sourceContext = sourceContext;
+        feature.updatedAt = new Date().toISOString();
+        markFeatureDirtyRoadtrip(feature);
+        save();
+        alert('Planned-Feature-Details importiert.');
         renderView();
       }
 
@@ -10471,6 +10707,10 @@
           category: 'Sonstiges',
           sourceType: 'manual',
           sourceNoteIds: [],
+          purpose: '',
+          workflowContext: '',
+          acceptanceCriteria: [],
+          sourceContext: '',
           trashedAt: '',
           trashReason: '',
           trashedByWorkflow: '',
@@ -10483,6 +10723,10 @@
         if (!hadPool && clone.pool !== 'implemented') clone.pool = 'planned';
         clone.reviewStatus = FEATURE_REVIEW_STATUS.includes(clone.reviewStatus) ? clone.reviewStatus : 'needs-review';
         clone.status = normalizeFeatureStatus(normalizedPoolAndStatus.status, clone.pool);
+        clone.purpose = normalizeFeatureDetailText(clone.purpose);
+        clone.workflowContext = normalizeFeatureDetailText(clone.workflowContext);
+        clone.acceptanceCriteria = normalizeAcceptanceCriteria(clone.acceptanceCriteria);
+        clone.sourceContext = normalizeFeatureDetailText(clone.sourceContext);
         clone.trello = Object.assign({
           enabled: false,
           boardId: '',
