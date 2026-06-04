@@ -4722,6 +4722,10 @@
         const mainChat = getProjectMainChat(projectId);
         if (!mainChat) return 'Kein interner project-main-Chat vorhanden. Importiere zuerst ein Sprint-Handoff oder lege einen Hauptchat an.';
         const featureLines = getRelevantFeatureTitles(projectId, 8);
+        const selectedFeatureDetails = getVisibleFeatures(S.features)
+          .filter(f => f.projectId === projectId && f.status === 'selected-for-sprint' && isPlannedFeature(f))
+          .slice(0, 6)
+          .map(f => formatPlannedFeatureDetailsForPrompt(f, { maxTextChars: 260, maxCriteria: 5 }));
         const cleanGoal = String(sprintGoal || '').trim();
         const executionMode = getSprintExecutionMode(projectId);
         const prompt = [
@@ -4742,6 +4746,7 @@
           cleanGoal ? `## Sprint-Ziel / Anliegen\n${cleanGoal}\n` : '## Sprint-Ziel / Anliegen\n- Kein separates Sprint-Ziel eingetragen.\n',
           '## Relevante offene Features',
           ...(featureLines.length ? featureLines : ['- Keine offenen Features hinterlegt.']),
+          ...(selectedFeatureDetails.length ? ['', '## Details zu ausgewählten planned Features', ...selectedFeatureDetails] : []),
           '',
           '## Auftrag',
           '- Formuliere einen klaren Sprint-Startplan.',
@@ -4789,7 +4794,9 @@
           `- Hauptchat-URL: ${(mainChat && mainChat.url) || project.mainChatUrl || 'OFFEN – in Roadtrip nachtragen'}`,
           '',
           '## Ausgewählte Features für den nächsten Sprint',
-          ...(selectedFeatures.length ? selectedFeatures.map(f => `- [${f.id}] ${f.title || 'Ohne Titel'} (${getFeatureStatusLabel(f.status)} · ${f.priority || 'prio-offen'})`) : ['- Keine Features explizit als "Für Sprint ausgewählt" markiert.']),
+          ...(selectedFeatures.length ? selectedFeatures.map(f => isPlannedFeature(f)
+            ? formatPlannedFeatureDetailsForPrompt(f, { maxTextChars: 280, maxCriteria: 6 })
+            : `- [${f.id}] ${f.title || 'Ohne Titel'} (${getFeatureStatusLabel(f.status)} · ${f.priority || 'prio-offen'})`) : ['- Keine Features explizit als "Für Sprint ausgewählt" markiert.']),
           '',
           '## Relevante offene Features',
           ...(relevantOpenFeatures.length ? relevantOpenFeatures.map(f => `- [${f.id}] ${f.title || 'Ohne Titel'} (${getFeatureStatusLabel(f.status)} · ${f.priority || 'prio-offen'})`) : ['- Keine weiteren relevanten offenen Features gefunden.']),
@@ -4833,6 +4840,41 @@
         const text = String(value || '').replace(/\s+/g, ' ').trim();
         const limit = Number(maxChars) || 400;
         return text.length > limit ? text.slice(0, limit - 1).trimEnd() + '…' : text;
+      }
+
+      function formatPlannedFeatureDetailsForPrompt(feature, options = {}) {
+        if (!feature || !isPlannedFeature(feature)) return '';
+        const maxTextChars = Number(options.maxTextChars) || 320;
+        const maxCriteria = Number(options.maxCriteria) || 6;
+        const lines = [];
+        const addLine = (label, value, limit) => {
+          const clean = normalizeFeatureDetailText(value);
+          if (!clean) return;
+          lines.push(`- ${label}: ${compactPromptText(clean, limit || maxTextChars)}`);
+        };
+        const includeHeading = options.includeHeading !== false;
+        const includeBasics = options.includeBasics !== false;
+
+        if (includeHeading) lines.push('Feature:');
+        if (includeBasics) {
+          lines.push(`- ID: ${feature.id || '—'}`);
+          lines.push(`- Titel: ${feature.title || 'Ohne Titel'}`);
+          lines.push(`- Kategorie: ${feature.category || '—'}`);
+          lines.push(`- Priorität: ${feature.priority || 'prio-offen'}`);
+          lines.push(`- Status: ${getFeatureStatusLabel(feature.status)}`);
+          addLine('Beschreibung', feature.description, Math.min(maxTextChars, 260));
+        }
+        addLine('Zweck', feature.purpose);
+        addLine('Workflow-Kontext', feature.workflowContext);
+
+        const criteria = normalizeAcceptanceCriteria(feature.acceptanceCriteria).slice(0, Math.max(0, maxCriteria));
+        if (criteria.length) {
+          lines.push('- Akzeptanzkriterien:');
+          criteria.forEach(item => lines.push(`  - ${compactPromptText(item, Math.min(maxTextChars, 220))}`));
+        }
+
+        addLine('Quellen / Notizen / Handoff-Bezug', feature.sourceContext);
+        return lines.join('\n');
       }
 
       function getRecentDesignBriefingHandoffs(projectId, limit) {
@@ -8461,7 +8503,11 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       function buildFeatureListForCleanupPrompt(projectId) {
         return getVisibleFeatures(S.features)
           .filter(f => f.projectId === projectId)
-          .map(f => `- [${f.id}] ${f.title} | ${f.status} | ${f.category} | ${shorten(f.description || '', 180)}`)
+          .map(f => {
+            const baseLine = `- [${f.id}] ${f.title} | ${f.status} | ${f.category} | ${shorten(f.description || '', 180)}`;
+            const detailBlock = formatPlannedFeatureDetailsForPrompt(f, { includeHeading: false, includeBasics: false, maxTextChars: 220, maxCriteria: 4 });
+            return detailBlock ? [baseLine, detailBlock.split('\n').map(line => `  ${line}`).join('\n')].join('\n') : baseLine;
+          })
           .join('\n') || '- keine';
       }
 
@@ -8488,7 +8534,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
             '- projectId: ' + projectId,
             '- projectTitle: ' + projectTitle,
             '',
-            'BESTEHENDE FEATURES (ID | Titel | Status | Kategorie | Beschreibung)',
+            'BESTEHENDE FEATURES (ID | Titel | Status | Kategorie | Beschreibung; planned Details eingerückt, falls vorhanden)',
             existingFeatures,
             '',
             'ANWEISUNGEN',
@@ -8534,7 +8580,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           '- projectId: ' + projectId,
           '- projectTitle: ' + projectTitle,
           '',
-          'BESTEHENDE FEATURES (ID | Titel | Status | Kategorie | Beschreibung)',
+          'BESTEHENDE FEATURES (ID | Titel | Status | Kategorie | Beschreibung; planned Details eingerückt, falls vorhanden)',
           existingFeatures,
           '',
           'NEU ERKANNTE FEATURES AUS IMPORT',
