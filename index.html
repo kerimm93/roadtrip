@@ -6079,9 +6079,12 @@
               </div>
             </section>
 
-            <section class="settings-group" aria-label="GitHub Gist">
-              <div class="panel-title"><h3>GitHub Gist</h3><div class="section-label">Sync · Passphrase</div></div>
-              <div class="field"><label for="gistId">Gist ID</label><input id="gistId" type="text" value="${escapeAttr(C.gistId || '')}" /></div>
+            <section class="settings-group" aria-label="Verbindung & Sync">
+              <div class="panel-title"><h3>Verbindung & Sync</h3><div class="section-label">GitHub Gist · Backup</div></div>
+              <div class="settings-field-grid">
+                <div class="field"><label for="gistId">Gist ID</label><input id="gistId" type="text" value="${escapeAttr(C.gistId || '')}" /></div>
+                <div class="field"><label for="gistToken">GitHub Token</label><input id="gistToken" type="password" value="${escapeAttr(C.gistToken || '')}" /></div>
+              </div>
               <div class="field"><label for="gistPassphrase">Gist-Passphrase</label><input id="gistPassphrase" type="password" value="" autocomplete="off" /></div>
               <label class="mini settings-inline-check"><input id="gistRememberPassphraseSession" type="checkbox" ${_gistRememberPassphraseForSession ? 'checked' : ''} /> Passphrase für diese Sitzung merken</label>
               <div class="notice notice-info settings-note">Gist-Sync ist verschlüsselt.<br>Ohne Passphrase kann ein verschlüsselter Gist nicht gelesen werden.<br>Passphrase wird standardmäßig nicht dauerhaft gespeichert.<br>Bei vergessener Passphrase ist der Gist nicht wiederherstellbar. Lokale ZIP-Backups behalten.</div>
@@ -6089,6 +6092,14 @@
                 <button class="btn btn-primary" id="btnGistPull">↕️ Gist synchronisieren</button>
               </div>
               <div class="notice notice-info settings-status" id="gistStatusInfo">Noch kein Sync durchgeführt.</div>
+              <div class="settings-field-grid">
+                <div class="field"><label for="rawGistId">Backup Gist ID</label><input id="rawGistId" type="text" value="${escapeAttr(C.rawGistId || '')}" /></div>
+                <div class="field"><label for="rawGistToken">Backup Token</label><input id="rawGistToken" type="password" value="${escapeAttr(C.rawGistToken || '')}" /></div>
+              </div>
+              <div class="stack-row settings-actions">
+                <button class="btn btn-secondary" id="btnGistRawBackup">📦 Raw-Backup zum Gist</button>
+              </div>
+              <div class="notice notice-info settings-note">Raw Backup Gist ist nicht Teil der verschlüsselten Haupt-Gist-Sync-Änderung. Für private Daten bis zu einem separaten Patch nicht verwenden.</div>
             </section>
 
             <section class="settings-group" aria-label="Trello">
@@ -6119,23 +6130,10 @@
                 <div class="notice notice-danger settings-note">Seltene oder destruktive Werkzeuge: vorher ein ZIP-Backup exportieren. Aktionen bleiben ghost-only und überschreiben keine Daten ohne deine bestehende Handler-Bestätigung.</div>
 
                 <div class="settings-danger-block">
-                  <div class="section-label">Gist-Token · Remote überschreiben</div>
-                  <div class="field"><label for="gistToken">GitHub Token</label><input id="gistToken" type="password" value="${escapeAttr(C.gistToken || '')}" /></div>
+                  <div class="section-label">Remote überschreiben</div>
                   <div class="stack-row settings-actions">
                     <button class="btn btn-ghost settings-danger-action" id="btnGistPush">Remote mit lokalem Stand überschreiben</button>
                   </div>
-                </div>
-
-                <div class="settings-danger-block">
-                  <div class="section-label">Raw Backup Gist</div>
-                  <div class="settings-field-grid">
-                    <div class="field"><label for="rawGistId">Backup Gist ID</label><input id="rawGistId" type="text" value="${escapeAttr(C.rawGistId || '')}" /></div>
-                    <div class="field"><label for="rawGistToken">Backup Token</label><input id="rawGistToken" type="password" value="${escapeAttr(C.rawGistToken || '')}" /></div>
-                  </div>
-                  <div class="stack-row settings-actions">
-                    <button class="btn btn-ghost" id="btnGistRawBackup">📦 Raw-Backup zum Gist</button>
-                  </div>
-                  <div class="notice notice-danger settings-note">Raw Backup Gist ist nicht Teil der verschlüsselten Haupt-Gist-Sync-Änderung. Für private Daten bis zu einem separaten Patch nicht verwenden.</div>
                 </div>
 
                 <div class="settings-danger-block">
