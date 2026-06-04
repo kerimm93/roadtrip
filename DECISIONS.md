@@ -29,23 +29,29 @@ Der Prototyp ist Inspirationsquelle, kein Soll-Stand.
   Karten-Sprint. NICHT entfernen, aber auch nicht reaktivieren.
 
 ## Sidebar
-- Projekt-Items zeigen Titel + 4 Cycle-Dots (Sprint-Zyklus-Fortschritt:
-  Start / Sprint läuft / Abgeschlossen / Zyklus rund), abgeleitet aus
-  getProjectChatStructure + S.chats. KEIN neues Datenfeld.
+- Projekt-Items zeigen Hue-Pip (Identität, links) + Titel + 4 Cycle-Dots
+  (Sprint-Zyklus-Fortschritt: Start / Sprint läuft / Abgeschlossen / Zyklus rund,
+  rechts), abgeleitet aus getProjectChatStructure + S.chats. KEIN neues Datenfeld
+  (siehe Entscheidung unten zum Hue-Pip).
 - „Alle Projekte" ist eine eigene abgesetzte Variante oben, ohne Zweitfarbe.
 - Genau ein Akzent (Zinnober) in der Navigation; kein accent-2 als Nav-/Aktionsfarbe.
 
-### OFFEN — zu entscheiden in Sprint 29: Hue-Pip vs. Cycle-Dots
-Der Atlas-Prototyp zeigt pro Projektzeile zusätzlich einen dekorativen
-Hue-`.pip` (Farbe aus `--hue-*`). `docs/DESIGN.md §5` erlaubt nur **genau ein
-Sekundärsignal** pro Projekt-Item; die Cycle-Dots sind dieses eine Signal.
-Damit kollidieren Prototyp (Pip + Dots = zwei Signale) und DESIGN.md/DECISIONS.md
-(ein Signal). Optionen:
-- **A** — Nur Cycle-Dots bleiben; Hue-Pip wird NICHT nachgezogen (regeltreu).
-- **B** — Hue-Pip ERSETZT die Cycle-Dots (ein Signal, prototypnäher, dekorativ).
-- **C** — Beide nebeneinander; überstimmt DESIGN.md §5 (prototypgetreu, regelwidrig).
-Bis zur Entscheidung bleibt der main-Stand (nur Cycle-Dots) maßgeblich.
-Hue-Pips dürfen vorher nicht von Codex umgesetzt werden.
+### Entschieden (Sprint 29): Hue-Pip UND Cycle-Dots nebeneinander
+Pro Projektzeile gilt:
+- **Hue-`.pip`** (links): dekoratives **Identitätssignal**, Farbe aus `--hue-*`,
+  abgeleitet per **CSS-Hashing aus der Projekt-ID**. KEIN Schema-Touch, keine
+  persistente Projektfarbe. Rolle laut `docs/DESIGN.md §2` („für Projekt-Pips").
+- **4 Cycle-Dots** (rechts): informationstragendes **Zustandssignal**
+  (Sprint-Zyklus-Fortschritt), unverändert.
+
+Dies steht NICHT im Widerspruch zu `docs/DESIGN.md §5`. §5 verbietet ein zweites
+*Zustands*-Sekundärsignal (Feature-Count, Timestamp, Sprint-Count neben den
+Cycle-Dots). Der Pip trägt keine Zustandsinformation, sondern Identität/Kategorie,
+und zählt daher nicht als zweites Zustandssignal. Identität (Pip) und Zustand
+(Dots) sind zwei verschiedene Bedeutungsachsen.
+
+Deckt sich mit der Sprint-27-Delta-Analyse (Etappe 19, Abschnitt 6.5 + 11):
+Pip als Kategorie-Signal, Farbe via ID-Hashing, kein Schema-Eingriff.
 
 ## Navigation
 - Nav ist in drei Gruppen gegliedert: Reise (Karte, Project, Momentum) ·
