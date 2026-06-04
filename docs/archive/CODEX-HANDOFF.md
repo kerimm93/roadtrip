@@ -1,5 +1,14 @@
 # Roadtrip · Atlas-Redesign — Codex / Coding-Agent Handoff-Prompt
 
+> ⚠️ **STATUS: ABGESCHLOSSEN (Sprint 25–28). Historisches Referenzdokument, KEIN aktiver Auftrag.**
+> Die hier beschriebenen 15 Etappen sind umgesetzt und in `main` gemerged.
+> Aktueller Projektstand: siehe `DECISIONS.md`. Verbindlicher Agentenvertrag: `AGENTS.md`.
+> Dieses Dokument NICHT als laufende Aufgabenliste abarbeiten — es dient nur noch als
+> Referenz für die ursprüngliche Atlas-Redesign-Planung und die dort festgehaltenen
+> harten Grenzen / Token-Strategie.
+
+---
+
 > **In Codex / Claude Code einfügen.** Mitgeben: dieses Dokument, `docs/DESIGN.md` (Atlas), `docs/ARCHITECTURE.md`, der visuelle Prototyp `Roadtrip Atlas Redesign.html` als Stilreferenz, und die aktuelle `index.html`.
 > Ziel: das Atlas-Redesign in **kleinen, einzeln committbaren und testbaren Etappen** umsetzen.
 
