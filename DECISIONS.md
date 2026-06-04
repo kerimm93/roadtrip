@@ -79,3 +79,30 @@ Pip als Kategorie-Signal, Farbe via ID-Hashing, kein Schema-Eingriff.
 - Danger-Zone auf riskante/destruktive Aktionen beschränkt.
 - `.eyebrow` und `.section-label` existieren im CSS und werden im Template genutzt
   (Etappe 17 verifiziert/erledigt, kein eigener Codex-Patch nötig).
+
+## Stand Sprint 29 (Atlas-Polish)
+- Branch `sprint-29-atlas-polish` (Basis main @ 5141fc3).
+- Etappe 29.1 — Sidebar-Brand-Block gemerged (`f24a9f1`): `.sb-brand` mit
+  Inline-SVG-Mark, Serif-Wortmarke, Mono-Kicker „Dev OS". `.sidebar-title` entfernt.
+- Etappe 29.2 — Projekt-Identitäts-Pips gemerged (`60ac2e9`): 8px-Pip pro Projekt,
+  Farbe stabil via `getOverviewProjectHue(getStableProjectSortValue(p))`
+  (bestehende Helfer, kein neues Feld). Cycle-Dots unverändert.
+- E-Ink-Pips: bewusst farbig gelassen. Das E-Ink-Theme überschreibt `--hue-*`
+  nicht; Pips sind dekorativ/winzig, kein Verstoß gegen §E-Ink (gefüllte
+  Aktions-Akzente). Optionaler Einzeiler später: `--hue-*`/`--pip` im E-Ink-Block
+  auf Graustufe mappen.
+
+## Geparkt: Statischer Inline-Style-Cleanup (Sprint 30)
+- In Sprint 29 analysiert, bewusst NICHT umgesetzt.
+- Befund: ~130 statische Inline-`style`-Vorkommen, reduzierbar auf wenige Muster
+  (`margin-bottom:8px/12px/10px/6px`, `font-weight:700`, `gap:4px/6px`,
+  `cursor:pointer`, `width:16px;height:16px`, `flex:1`).
+- WARUM verschoben: P2-Hygiene ohne sichtbaren/funktionalen Mangel UND erhöhtes
+  Risiko — viele statische `style`-Attribute sitzen INNERHALB dynamischer
+  `${…}`-Template-Literale (z. B. renderImportWorkspace ~Z. 4782). Globaler
+  Find-Replace ist daher unsicher (Template-Strings könnten beschädigt werden).
+- Empfehlung Sprint 30: zwei Klassen — (A) Vorkommen in reinem statischem Markup
+  zuerst (sicher), (B) Vorkommen in Template-Literalen einzeln und vorsichtig.
+- TABU (dynamisch, niemals anfassen): `--node-x/y`, `--node-color`, `--pip`,
+  `--hue-*`, `opacity`-States, Positions-/`transform`-Werte. Fragile Modal-Container
+  mit `var(--shadow)` auslassen.
