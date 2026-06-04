@@ -240,7 +240,7 @@ Current Roadtrip 1.x:
 * no framework
 * no backend
 * no build step
-* localStorage persistence
+* IndexedDB-first persistence with localStorage fallback
 * optional GitHub Gist sync
 * optional Trello integration
 
