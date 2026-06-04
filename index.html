@@ -1540,7 +1540,7 @@
     .sidebar-project .title {
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: flex-start;
       gap: 8px;
       width: 100%;
       margin: 0;
@@ -1550,9 +1550,17 @@
       line-height: 1.3;
       color: var(--ink);
     }
-    .sidebar-project .title > span:first-child {
+    .project-pip {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--pip, var(--rule-strong));
+      flex: 0 0 auto;
+    }
+    .sidebar-project .title > span:not(.project-pip):not(.archive-pill) {
       min-width: 0;
       overflow-wrap: anywhere;
+      flex: 1 1 auto;
     }
 
     .sidebar-project .archive-pill {
@@ -3158,7 +3166,7 @@
           const chatStatusLabel = `${mainChatLabel} · ${sprintLabel}`;
           const archivePill = p.status === 'archiviert' ? '<span class="pill pill-outline archive-pill">arch.</span>' : '';
           return `<button class="sidebar-project ${isActive ? 'active' : ''}" data-open-project="${escapeAttr(p.id)}" title="${escapeAttr(chatStatusLabel)}">
-            <p class="title"><span>${escapeHtml(p.title)}</span>${archivePill}</p>
+            <p class="title"><span class="project-pip" style="--pip:${getOverviewProjectHue(getStableProjectSortValue(p))}" aria-hidden="true"></span><span>${escapeHtml(p.title)}</span>${archivePill}</p>
             ${renderProjectCycleDots(p.id)}
           </button>`;
         }).join('');
