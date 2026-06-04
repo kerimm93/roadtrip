@@ -1362,6 +1362,43 @@
     }
     #sidebarProjects { min-height: 0; overflow-y: auto; padding-right: 4px; }
     .sidebar-actions { margin-top: auto; }
+    .sidebar-actions-panel {
+      border-top: 1px solid var(--rule);
+      display: flex;
+      flex: 0 0 auto;
+      flex-direction: column;
+      gap: 8px;
+      padding-top: 12px;
+    }
+    .sidebar-actions-label {
+      color: var(--ink-dim);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: .16em;
+      line-height: 1.2;
+      text-transform: uppercase;
+    }
+    .sidebar-actions-grid {
+      display: grid;
+      gap: 7px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .sidebar-actions-grid .btn {
+      min-width: 0;
+      padding: 0 10px;
+      width: 100%;
+    }
+    .sidebar-action-secondary {
+      background: transparent;
+      border-color: var(--rule);
+      color: var(--ink-mid);
+    }
+    .sidebar-action-secondary:hover {
+      background: var(--surface-2);
+      border-color: var(--rule-strong);
+      color: var(--ink);
+    }
     .workspace-sidebar > .stack-row { flex: 0 0 auto; }
     .flow-steps { display:flex; flex-direction:column; gap:10px; margin-top:10px; }
     .flow-step {
@@ -1780,11 +1817,14 @@
         <div class="panel-title"><h3>Projects</h3></div>
         <div class="list" id="sidebarProjects"></div>
       </div>
-      <div class="stack-row sidebar-actions">
-        <button class="btn" id="btnSeed">Demo</button>
-        <button class="btn" id="btnExport">Export</button>
-        <button class="btn" id="btnBackupRaw">Raw Backup</button>
-        <label class="btn" for="importJsonInput">Import</label>
+      <div class="sidebar-actions sidebar-actions-panel" aria-label="Datenaktionen">
+        <div class="sidebar-actions-label">Daten</div>
+        <div class="sidebar-actions-grid">
+          <button class="btn btn-soft" id="btnExport">Export</button>
+          <label class="btn btn-soft" for="importJsonInput">Import</label>
+          <button class="btn sidebar-action-secondary" id="btnSeed">Demo</button>
+          <button class="btn sidebar-action-secondary" id="btnBackupRaw">Raw Backup</button>
+        </div>
       </div>
       <input id="importJsonInput" type="file" accept="application/json" class="hidden" />
     </aside>
