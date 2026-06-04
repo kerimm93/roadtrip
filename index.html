@@ -3,97 +3,234 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
   <title>Roadtrip</title>
   <style>
     :root {
-      --rt-bg: #0E1117;
-      --rt-bg-elevated: #141923;
-      --rt-surface: #1A2030;
-      --rt-surface-2: #232A3C;
-      --rt-surface-3: #2C3447;
-      --rt-surface-quiet: #161B26;
-      --rt-border-line: #2A3346;
-      --rt-border-strong: #3A4760;
-      --rt-ink: #E8ECF3;
-      --rt-ink-mid: #A3AEC1;
-      --rt-ink-dim: #6B7689;
-      --rt-on-accent: #15161A;
-      --rt-gold: #C9A86A;
-      --rt-gold-soft: rgba(201,168,106,0.14);
-      --rt-indigo: #7B8FE0;
-      --rt-indigo-soft: rgba(123,143,224,0.14);
-      --rt-success: #6BB590;
-      --rt-warning: #D4A856;
-      --rt-danger: #D27575;
-      --rt-info: #7AA4D6;
-      --rt-success-soft: rgba(107,181,144,0.13);
-      --rt-warning-soft: rgba(212,168,86,0.13);
-      --rt-danger-soft: rgba(210,117,117,0.13);
-      --rt-info-soft: rgba(122,164,214,0.13);
-      --rt-neutral-soft: rgba(163,174,193,0.10);
-      --r-sm: 6px;
-      --r-lg: 14px;
-      --r-pill: 9999px;
+      --paper: #F4ECDC;
+      --paper-edge: #EADFC9;
+      --surface: #FCF8EF;
+      --surface-2: #F6EFE0;
+      --surface-3: #EFE6D2;
+      --ink: #2C2419;
+      --ink-mid: #6C6051;
+      --ink-dim: #9A8B73;
+      --ink-quiet: #BCAC90;
+      --on-accent: #FBF4E8;
+      --rule: #E3D8C1;
+      --rule-strong: #CFC0A3;
+      --rule-faint: #ECE3D1;
+      --accent: #C24A2B;
+      --accent-hi: #D45B3A;
+      --accent-deep: #9F3A1E;
+      --accent-soft: rgba(194,74,43,0.10);
+      --accent-line: rgba(194,74,43,0.30);
+      --hue-sage: #6F7E63;
+      --hue-slate: #5C748A;
+      --hue-plum: #7E6A88;
+      --hue-ochre: #A9823F;
+      --hue-teal: #4E8079;
+      --ok: #4F7A52;
+      --ok-soft: rgba(79,122,82,0.12);
+      --success: var(--ok);
+      --success-soft: var(--ok-soft);
+      --warn: #A9772B;
+      --warn-soft: rgba(169,119,43,0.13);
+      --warning: var(--warn);
+      --warning-soft: var(--warn-soft);
+      --danger: #A8432B;
+      --danger-soft: rgba(168,67,43,0.12);
+      --info: #4F6E89;
+      --info-soft: rgba(79,110,137,0.12);
+      --neutral-soft: rgba(120,108,88,0.10);
+      --r-xs: 4px;
+      --r-sm: 7px;
+      --r-md: 11px;
+      --r-lg: 16px;
+      --r-xl: 22px;
+      --r-pill: 999px;
+      --s-1: 4px;
+      --s-2: 8px;
+      --s-3: 12px;
+      --s-4: 16px;
+      --s-5: 24px;
+      --s-6: 32px;
+      --s-7: 48px;
+      --s-8: 64px;
       --sh-0: none;
-      --ring: 0 0 0 2px rgba(201,168,106,0.40);
-      --bg: var(--rt-bg);
-      --bg-mid: var(--rt-bg-elevated);
-      --surface: var(--rt-surface);
-      --surface-2: var(--rt-surface-quiet);
-      --surface-3: var(--rt-surface-2);
-      --border: var(--rt-border-line);
-      --border-light: var(--rt-border-strong);
-      --ink: var(--rt-ink);
-      --ink-light: var(--rt-ink-mid);
-      --ink-dim: var(--rt-ink-dim);
-      --accent: var(--rt-gold);
-      --accent-2: var(--rt-indigo);
-      --green: var(--rt-success);
-      --yellow: var(--rt-warning);
-      --red: var(--rt-danger);
-      --blue: var(--rt-info);
+      --sh-1: 0 1px 2px rgba(70,52,24,0.05);
+      --sh-2: 0 10px 30px -16px rgba(70,52,24,0.28);
+      --sh-3: 0 24px 60px -22px rgba(70,52,24,0.40);
+      --ring: 0 0 0 3px rgba(194,74,43,0.28);
+      --rt-bg: #F4ECDC;
+      --rt-bg-elevated: #EADFC9;
+      --rt-surface: #FCF8EF;
+      --rt-surface-2: #F6EFE0;
+      --rt-surface-3: #EFE6D2;
+      --rt-surface-quiet: #F6EFE0;
+      --rt-border-line: #E3D8C1;
+      --rt-border-strong: #CFC0A3;
+      --rt-ink: #2C2419;
+      --rt-ink-mid: #6C6051;
+      --rt-ink-dim: #9A8B73;
+      --rt-on-accent: #FBF4E8;
+      --rt-gold: #C24A2B;
+      --rt-gold-soft: rgba(194,74,43,0.10);
+      --rt-indigo: #4F6E89;
+      --rt-indigo-soft: rgba(79,110,137,0.12);
+      --rt-success: #4F7A52;
+      --rt-warning: #A9772B;
+      --rt-danger: #A8432B;
+      --rt-info: #4F6E89;
+      --rt-success-soft: rgba(79,122,82,0.12);
+      --rt-warning-soft: rgba(169,119,43,0.13);
+      --rt-danger-soft: rgba(168,67,43,0.12);
+      --rt-info-soft: rgba(79,110,137,0.12);
+      --rt-neutral-soft: rgba(120,108,88,0.10);
+      --bg: var(--paper);
+      --bg-mid: var(--paper-edge);
+      --border: var(--rule);
+      --border-light: var(--rule-strong);
+      --ink-light: var(--ink-mid);
+      --accent-2: var(--info);
+      --green: var(--ok);
+      --yellow: var(--warn);
+      --red: var(--danger);
+      --blue: var(--info);
       --radius: var(--r-lg);
-      --shadow: var(--sh-0);
-      --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      --font-serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
-      --font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+      --shadow: var(--sh-1);
+      --font-display: "Cormorant Garamond", "Iowan Old Style", Georgia, serif;
+      --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+      --font-serif: "Cormorant Garamond", "Iowan Old Style", Georgia, serif;
+      --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
       --touch: 42px;
     }
 
-    body.theme-light {
-      --bg: #f4f5f7;
-      --bg-mid: #eceef1;
-      --surface: #ffffff;
-      --surface-2: #f8f9fb;
-      --surface-3: #eef1f5;
-      --border: #d5dbe5;
-      --border-light: #bcc7d6;
-      --ink: #18202b;
-      --ink-light: #4d5c70;
-      --ink-dim: #788699;
-      --accent: #8b6c2f;
-      --accent-2: #46679f;
-      --shadow: 0 8px 22px rgba(10,15,20,.08);
+    body.theme-light,
+    body.theme-dark {
+      --paper: #F4ECDC;
+      --paper-edge: #EADFC9;
+      --surface: #FCF8EF;
+      --surface-2: #F6EFE0;
+      --surface-3: #EFE6D2;
+      --ink: #2C2419;
+      --ink-mid: #6C6051;
+      --ink-dim: #9A8B73;
+      --ink-quiet: #BCAC90;
+      --on-accent: #FBF4E8;
+      --rule: #E3D8C1;
+      --rule-strong: #CFC0A3;
+      --rule-faint: #ECE3D1;
+      --accent: #C24A2B;
+      --accent-hi: #D45B3A;
+      --accent-deep: #9F3A1E;
+      --accent-soft: rgba(194,74,43,0.10);
+      --accent-line: rgba(194,74,43,0.30);
+      --info: #4F6E89;
+      --info-soft: rgba(79,110,137,0.12);
+      --bg: var(--paper);
+      --bg-mid: var(--paper-edge);
+      --border: var(--rule);
+      --border-light: var(--rule-strong);
+      --ink-light: var(--ink-mid);
+      --accent-2: var(--info);
+      --success: var(--ok);
+      --success-soft: var(--ok-soft);
+      --warning: var(--warn);
+      --warning-soft: var(--warn-soft);
+      --green: var(--ok);
+      --yellow: var(--warn);
+      --red: var(--danger);
+      --blue: var(--info);
+      --shadow: var(--sh-1);
+      --rt-bg: var(--paper);
+      --rt-bg-elevated: var(--paper-edge);
+      --rt-surface: var(--surface);
+      --rt-surface-2: var(--surface-2);
+      --rt-surface-3: var(--surface-3);
+      --rt-surface-quiet: var(--surface-2);
+      --rt-border-line: var(--rule);
+      --rt-border-strong: var(--rule-strong);
+      --rt-ink: var(--ink);
+      --rt-ink-mid: var(--ink-mid);
+      --rt-ink-dim: var(--ink-dim);
+      --rt-on-accent: var(--on-accent);
+      --rt-gold: var(--accent);
+      --rt-gold-soft: var(--accent-soft);
+      --rt-indigo: var(--info);
+      --rt-indigo-soft: var(--info-soft);
     }
 
     body.theme-eink {
-      --bg: #f7f7f2;
-      --bg-mid: #efefe9;
-      --surface: #ffffff;
-      --surface-2: #f8f8f4;
-      --surface-3: #f1f1eb;
-      --border: #979797;
-      --border-light: #666666;
-      --ink: #111111;
-      --ink-light: #333333;
-      --ink-dim: #666666;
-      --accent: #111111;
-      --accent-2: #111111;
-      --green: #111111;
-      --yellow: #333333;
-      --red: #111111;
-      --blue: #111111;
+      --paper: #F4ECDC;
+      --paper-edge: #EADFC9;
+      --surface: #FCF8EF;
+      --surface-2: #F6EFE0;
+      --surface-3: #EFE6D2;
+      --ink: #1F1A13;
+      --ink-mid: #4C4337;
+      --ink-dim: #766B5A;
+      --ink-quiet: #9A8B73;
+      --on-accent: #F4ECDC;
+      --rule: #CFC0A3;
+      --rule-strong: #8F806A;
+      --rule-faint: #E3D8C1;
+      --accent: var(--ink);
+      --accent-hi: var(--ink-mid);
+      --accent-deep: var(--ink);
+      --accent-soft: transparent;
+      --accent-line: var(--rule-strong);
+      --ok: var(--ink);
+      --ok-soft: transparent;
+      --success: var(--ok);
+      --success-soft: var(--ok-soft);
+      --warn: var(--ink-mid);
+      --warn-soft: transparent;
+      --warning: var(--warn);
+      --warning-soft: var(--warn-soft);
+      --danger: var(--ink);
+      --danger-soft: transparent;
+      --info: var(--ink-mid);
+      --info-soft: transparent;
+      --neutral-soft: transparent;
+      --bg: var(--paper);
+      --bg-mid: var(--paper-edge);
+      --border: var(--rule);
+      --border-light: var(--rule-strong);
+      --ink-light: var(--ink-mid);
+      --accent-2: var(--ink-mid);
+      --green: var(--ink);
+      --yellow: var(--ink-mid);
+      --red: var(--ink);
+      --blue: var(--ink-mid);
       --shadow: none;
+      --rt-bg: var(--paper);
+      --rt-bg-elevated: var(--paper-edge);
+      --rt-surface: var(--surface);
+      --rt-surface-2: var(--surface-2);
+      --rt-surface-3: var(--surface-3);
+      --rt-surface-quiet: var(--surface-2);
+      --rt-border-line: var(--rule);
+      --rt-border-strong: var(--rule-strong);
+      --rt-ink: var(--ink);
+      --rt-ink-mid: var(--ink-mid);
+      --rt-ink-dim: var(--ink-dim);
+      --rt-on-accent: var(--on-accent);
+      --rt-gold: var(--accent);
+      --rt-gold-soft: var(--accent-soft);
+      --rt-indigo: var(--info);
+      --rt-indigo-soft: var(--info-soft);
+      --rt-success: var(--ok);
+      --rt-warning: var(--warn);
+      --rt-danger: var(--danger);
+      --rt-info: var(--info);
+      --rt-success-soft: var(--ok-soft);
+      --rt-warning-soft: var(--warn-soft);
+      --rt-danger-soft: var(--danger-soft);
+      --rt-info-soft: var(--info-soft);
+      --rt-neutral-soft: var(--neutral-soft);
     }
 
     * { box-sizing: border-box; }
@@ -102,8 +239,11 @@
       background: var(--bg);
       color: var(--ink);
       font-family: var(--font-ui);
-      line-height: 1.4;
+      font-size: 15px;
+      font-weight: 400;
+      line-height: 1.55;
     }
+    body.sidebar-open { overflow: hidden; }
     body.font-serif { font-family: var(--font-serif); }
 
     .app {
@@ -121,9 +261,9 @@
 
     .hero, .panel {
       background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
+      border: 1px solid var(--rule);
+      border-radius: var(--r-lg);
+      box-shadow: var(--sh-1);
     }
 
     .hero {
@@ -133,19 +273,102 @@
       gap: 8px;
     }
 
-    .eyebrow {
-      color: var(--ink-dim);
-      text-transform: uppercase;
-      font-size: 11px;
-      letter-spacing: .14em;
-      font-weight: 700;
+    .display,
+    h1,
+    h2,
+    h3,
+    .panel-title h2,
+    .panel-title h3,
+    .section h2,
+    .section h3,
+    .panel-title strong,
+    .item-title,
+    .flow-step-title,
+    .row-top > strong,
+    summary {
+      font-family: var(--font-display);
+      font-weight: 600;
+      color: var(--ink);
     }
 
+    .display,
     h1 {
       margin: 0;
-      font-size: 30px;
-      line-height: 1.1;
-      letter-spacing: -.02em;
+      font-size: 34px;
+      line-height: 1.08;
+      letter-spacing: -.01em;
+    }
+
+    h2,
+    .panel-title h2,
+    .section h2 {
+      font-size: 25px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    h3,
+    .panel-title h3,
+    .section h3,
+    .item-title,
+    .flow-step-title,
+    .row-top > strong,
+    summary {
+      font-size: 20px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .eyebrow,
+    .section-label {
+      color: var(--ink-dim);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 1.2;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+
+    .mono,
+    .num,
+    code,
+    pre,
+    kbd,
+    samp,
+    .pill,
+    .meta,
+    .meta *,
+    .mini time,
+    #lastSavedLabel,
+    .stat .value {
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: "tnum" 1;
+    }
+
+    body.font-serif .mono,
+    body.font-serif .num,
+    body.font-serif code,
+    body.font-serif pre,
+    body.font-serif kbd,
+    body.font-serif samp,
+    body.font-serif .pill,
+    body.font-serif .meta,
+    body.font-serif .meta *,
+    body.font-serif .mini time,
+    body.font-serif #lastSavedLabel,
+    body.font-serif .stat .value,
+    body.font-serif .eyebrow,
+    body.font-serif .section-label,
+    body.font-serif .stat .label,
+    body.font-serif label,
+    body.font-serif th,
+    body.font-serif .flow-step-kicker,
+    body.font-serif .momentum-next-step .label,
+    body.font-serif .sidebar-project .mini,
+    body.font-serif .notice .mini {
+      font-family: var(--font-mono);
     }
 
     .subline {
@@ -161,18 +384,142 @@
     }
 
     .panel { padding: 14px; }
+    .panel-head,
     .panel-title {
       display: flex;
       justify-content: space-between;
-      align-items: center;
+      align-items: flex-start;
       gap: 10px;
       margin-bottom: 10px;
+    }
+
+    .panel-head > :first-child,
+    .panel-title > :first-child { min-width: 0; }
+
+    .panel-head > :last-child:not(:first-child),
+    .panel-title > :last-child:not(:first-child) {
+      flex: 0 0 auto;
+      max-width: 50%;
+      text-align: right;
     }
 
     .panel-title h2,
     .panel-title h3,
     .section h2,
-    .section h3 { margin: 0; font-size: 15px; }
+    .section h3 { margin: 0; }
+
+
+    .context-banner {
+      align-items: center;
+      background: var(--surface-2);
+      border: 1px solid var(--rule);
+      border-radius: 10px;
+      color: var(--ink-mid);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+      padding: 7px 10px;
+    }
+
+    .context-banner strong { color: var(--ink); }
+
+    .context-banner .eyebrow { color: var(--ink-dim); }
+
+    .context-banner.active-project {
+      background: var(--surface-2);
+      border-color: var(--rule);
+      border-left: 3px solid var(--accent);
+    }
+
+    .workspace-header {
+      background: var(--surface);
+      border: 1px solid var(--rule);
+      border-radius: var(--r-lg);
+      box-shadow: var(--sh-1);
+      margin-bottom: 10px;
+      padding: 14px 16px;
+    }
+
+    .workspace-crumb {
+      align-items: center;
+      color: var(--ink-dim);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+
+    .workspace-crumb strong { color: var(--ink-mid); }
+
+    .workspace-title {
+      color: var(--ink);
+      font-family: var(--font-serif);
+      font-size: clamp(30px, 4vw, 44px);
+      font-weight: 600;
+      letter-spacing: -.02em;
+      line-height: .98;
+      margin: 0;
+    }
+
+    .workspace-header-row {
+      align-items: center;
+      display: flex;
+      gap: 10px;
+      justify-content: space-between;
+      margin-top: 12px;
+    }
+
+    .workspace-header-actions {
+      display: flex;
+      flex: 0 0 auto;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .workspace-status-strip {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-bottom: 12px;
+    }
+
+    .status-card {
+      background: var(--surface-2);
+      border: 1px solid var(--rule);
+      border-radius: var(--r-md);
+      color: var(--ink);
+      min-width: 0;
+      padding: 10px 12px;
+      text-decoration: none;
+    }
+
+    .status-card.link:hover {
+      border-color: var(--border-strong);
+      box-shadow: var(--sh-1);
+      transform: translateY(-1px);
+    }
+
+    .status-card-value {
+      margin-top: 5px;
+      overflow-wrap: anywhere;
+    }
+
+    .status-card .meta {
+      color: var(--ink-dim);
+      margin-top: 6px;
+    }
+
+    @media (max-width: 940px) {
+      .workspace-status-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 560px) {
+      .workspace-header-row { align-items: flex-start; flex-direction: column; }
+      .workspace-header-actions { justify-content: flex-start; }
+      .workspace-status-strip { grid-template-columns: 1fr; }
+    }
 
     .stats {
       display: grid;
@@ -188,18 +535,21 @@
     }
 
     .stat .label {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: .08em;
       color: var(--ink-dim);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: .18em;
+      line-height: 1.2;
       margin-bottom: 6px;
-      font-weight: 700;
+      text-transform: uppercase;
     }
 
     .stat .value {
       font-size: 26px;
-      font-weight: 800;
-      letter-spacing: -.03em;
+      font-weight: 500;
+      letter-spacing: -.01em;
+      line-height: 1.12;
     }
 
     .layout {
@@ -222,27 +572,41 @@
     }
 
     .btn, button {
+      align-items: center;
       appearance: none;
-      border: 1px solid var(--border);
-      background: var(--surface-2);
+      background: var(--surface);
+      border: 1px solid var(--rule-strong);
+      border-radius: var(--r-sm);
       color: var(--ink);
-      border-radius: 12px;
-      min-height: var(--touch);
-      padding: 10px 14px;
-      font: inherit;
       cursor: pointer;
-      transition: .14s ease;
+      display: inline-flex;
+      font: inherit;
+      font-weight: 500;
+      justify-content: center;
+      min-height: var(--touch);
+      padding: 0 16px;
+      text-decoration: none;
+      transition: background-color .14s ease, border-color .14s ease;
     }
 
-    .btn:hover, button:hover { border-color: var(--border-light); background: var(--surface-3); }
+    .btn:hover, button:hover { background: var(--surface-2); border-color: var(--rule-strong); }
     .btn:active, button:active { opacity: .95; }
-    .btn-primary { background: var(--accent); color: var(--rt-on-accent); border-color: var(--accent); font-weight: 700; }
-    .btn-primary:hover { background: #DDBE85; border-color: #DDBE85; }
-    .btn-secondary { background: transparent; border-color: var(--border-light); color: var(--ink); }
-    .btn-ghost { background: transparent; border-color: transparent; color: var(--ink-light); }
-    body.theme-eink .btn-primary { color: #fff; }
-    .btn-soft { background: var(--surface-2); }
-    .btn-danger { background: transparent; color: var(--red); border-color: rgba(210,117,117,0.4); }
+    .btn:focus-visible, button:focus-visible { box-shadow: var(--ring); outline: none; }
+    .btn:disabled, button:disabled { cursor: not-allowed; opacity: .58; }
+    .btn:disabled:hover, button:disabled:hover { background: var(--surface); border-color: var(--rule-strong); }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+    .btn-primary:hover { background: var(--accent-hi); border-color: var(--accent-hi); }
+    .btn-secondary { background: transparent; border-color: var(--rule-strong); color: var(--ink); }
+    .btn-secondary:hover { background: var(--surface-2); border-color: var(--rule-strong); }
+    .btn-ghost { background: transparent; border-color: transparent; color: var(--ink-mid); }
+    .btn-ghost:hover { background: var(--surface-2); border-color: transparent; }
+    .btn-soft { background: var(--surface-2); border-color: var(--rule); }
+    .btn-soft:hover { background: var(--surface-3); border-color: var(--rule-strong); }
+    .btn-danger { background: transparent; border-color: rgba(168,67,43,0.40); color: var(--danger); }
+    .btn-danger:hover { background: transparent; border-color: rgba(168,67,43,0.55); }
+    body.theme-eink .btn-primary { background: var(--ink); border-color: var(--ink); color: var(--on-accent); }
+    body.theme-eink .btn-primary:hover { background: var(--ink-mid); border-color: var(--ink-mid); }
+    body.theme-eink .btn-danger { border-color: var(--rule-strong); color: var(--danger); }
 
     .pill {
       display: inline-flex;
@@ -252,17 +616,56 @@
       padding: 4px 10px;
       border-radius: var(--r-pill);
       border: 1px solid transparent;
-      background: var(--rt-neutral-soft);
-      color: var(--ink-light);
-      font-size: 12px;
+      background: var(--neutral-soft);
+      color: var(--ink-mid);
+      font-size: 11.5px;
+      font-weight: 500;
+      line-height: 1.2;
       white-space: nowrap;
     }
     .pill-success { background: var(--rt-success-soft); color: var(--rt-success); }
     .pill-warning { background: var(--rt-warning-soft); color: var(--rt-warning); }
     .pill-danger { background: var(--rt-danger-soft); color: var(--rt-danger); }
     .pill-info { background: var(--rt-info-soft); color: var(--rt-info); }
-    .pill-gold { background: var(--rt-gold-soft); color: var(--rt-gold); }
-    .pill-outline { background: transparent; border-color: var(--border); }
+    .pill-gold { background: var(--accent-soft); color: var(--accent-deep); }
+    .pill-outline { background: transparent; border-color: var(--rule-strong); }
+    .pill.dot::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      flex: 0 0 auto;
+    }
+
+    #navTabs {
+      align-items: stretch;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .nav-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .nav-group-label {
+      color: var(--ink-dim);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: .16em;
+      line-height: 1.2;
+      padding: 0 2px;
+      text-transform: uppercase;
+    }
+
+    .nav-group-items {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
 
     .segmented .seg {
       padding: 8px 12px;
@@ -272,7 +675,7 @@
       min-height: 36px;
       color: var(--ink-light);
     }
-    .segmented .seg.active { background: var(--surface-3); color: var(--ink); border-color: var(--border-light); font-weight: 700; }
+    .segmented .seg.active { background: var(--surface-3); color: var(--ink); border-color: var(--accent); font-weight: 700; }
 
     input, select, textarea {
       width: 100%;
@@ -287,19 +690,40 @@
     textarea { min-height: 100px; resize: vertical; }
     label {
       display: block;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: .06em;
       color: var(--ink-dim);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: .18em;
+      line-height: 1.2;
       margin-bottom: 6px;
-      font-weight: 700;
+      text-transform: uppercase;
     }
+
+    label.btn,
+    label.pill {
+      color: inherit;
+      font-size: inherit;
+      letter-spacing: normal;
+      margin-bottom: 0;
+      text-transform: none;
+    }
+
+    label.btn { font-family: inherit; line-height: inherit; }
+    label.pill { font-family: var(--font-mono); line-height: 1.2; }
 
     .field { margin-bottom: 10px; }
 
     .mini {
       color: var(--ink-dim);
       font-size: 12px;
+    }
+
+    .sidebar-project .mini,
+    .notice .mini {
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: "tnum" 1;
     }
 
     .list {
@@ -327,8 +751,6 @@
 
     .item-title {
       margin: 0;
-      font-size: 16px;
-      line-height: 1.2;
     }
 
     .item-desc {
@@ -344,11 +766,330 @@
       align-items: center;
     }
 
+
+    .cleanup-review-shell {
+      margin-top: 10px;
+    }
+
+    .cleanup-review-summary {
+      align-items: center;
+      color: var(--ink);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-weight: 700;
+    }
+
+    .cleanup-review-stage {
+      border-top: 1px solid var(--rule);
+      margin-top: 12px;
+      padding-top: 12px;
+    }
+
+    .cleanup-review-stage:first-of-type {
+      border-top: 0;
+      margin-top: 10px;
+      padding-top: 0;
+    }
+
+    .cleanup-review-stage-head {
+      align-items: baseline;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .cleanup-review-stage-title {
+      color: var(--ink);
+      font-family: var(--font-display);
+      font-size: 20px;
+      font-weight: 600;
+      line-height: 1.2;
+      margin: 0;
+    }
+
+    .cleanup-review-textarea {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      min-height: 100px;
+    }
+
+    .cleanup-review-prompt {
+      margin-top: 6px;
+    }
+
+    .cleanup-review-summary-text {
+      margin-top: 8px;
+    }
+
+    .cleanup-review-counter {
+      font-family: var(--font-mono);
+    }
+
+    .cleanup-review-list {
+      margin-top: 10px;
+    }
+
+    .cleanup-review-card {
+      background: var(--surface-2);
+      border-color: var(--rule);
+    }
+
+    .cleanup-review-card.is-done {
+      opacity: .5;
+    }
+
+    .cleanup-review-card .row-top {
+      align-items: center;
+    }
+
+    .cleanup-review-note-muted {
+      color: var(--ink-dim);
+    }
+
+    .cleanup-review-note-info {
+      color: var(--info);
+    }
+
+    .cleanup-review-actions {
+      margin-top: 2px;
+    }
+
+    .cleanup-review-actions .btn-ghost {
+      margin-left: auto;
+    }
+
+    .notes-workspace {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .notes-workspace .panel-title {
+      margin-bottom: 0;
+    }
+
+    .notes-workspace .panel-title .mini {
+      max-width: 52ch;
+      padding-top: 3px;
+      line-height: 1.35;
+    }
+
+    .notes-workspace textarea#notesWorkspaceText {
+      min-height: 104px;
+    }
+
+    .notes-workspace-toolbar {
+      align-items: flex-end;
+      gap: 10px;
+      margin-bottom: 0;
+    }
+
+    .notes-workspace-toolbar .field {
+      margin-bottom: 0;
+    }
+
+    .notes-workspace-add .btn-primary {
+      min-height: var(--touch);
+    }
+
+    .notes-workspace-filter {
+      border-top: 1px solid var(--rule);
+      padding-top: 10px;
+    }
+
+    .notes-workspace-filter input,
+    .notes-workspace-filter select,
+    .notes-workspace-add select,
+    .note-edit-toolbar select {
+      min-height: var(--touch);
+    }
+
+    .notes-workspace-project-field,
+    .notes-workspace-search-field {
+      flex: 1 1 240px;
+    }
+
+    .notes-workspace-type-field,
+    .notes-workspace-status-field {
+      flex: 0 1 170px;
+    }
+
+    .notes-workspace-notice {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 0;
+    }
+
+    .notes-workspace-item .item-title {
+      font-size: 19px;
+      line-height: 1.18;
+    }
+
+    .notes-workspace-item .meta {
+      color: var(--ink-dim);
+    }
+
+    .notes-workspace-item .meta .pill {
+      background: transparent;
+      border-color: var(--rule);
+      color: var(--ink-dim);
+    }
+
+    .notes-workspace-item .stack-row {
+      gap: 6px;
+    }
+
     .grid-cards {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
       gap: 10px;
     }
+    .overview-hero {
+      display: grid;
+      gap: 14px;
+    }
+    .overview-map {
+      position: relative;
+      min-height: 420px;
+      overflow: hidden;
+      background:
+        linear-gradient(90deg, rgba(227,216,193,.42) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(227,216,193,.34) 1px, transparent 1px),
+        radial-gradient(circle at 20% 26%, rgba(79,110,137,.10), transparent 30%),
+        radial-gradient(circle at 74% 68%, rgba(111,126,99,.11), transparent 34%),
+        var(--surface);
+      background-size: 46px 46px, 46px 46px, auto, auto, auto;
+      border: 1px solid var(--rule);
+      border-radius: var(--r-xl);
+      padding: 18px;
+      box-shadow: var(--sh-1);
+    }
+    .overview-map::before,
+    .overview-map::after {
+      content: '';
+      position: absolute;
+      inset: 34px 30px auto 24px;
+      height: 120px;
+      border-top: 1px solid rgba(207,192,163,.75);
+      border-radius: 50%;
+      transform: rotate(-7deg);
+      pointer-events: none;
+    }
+    .overview-map::after {
+      inset: auto 26px 48px 36px;
+      height: 150px;
+      transform: rotate(9deg);
+    }
+    .overview-map-header {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .overview-map-stage {
+      position: absolute;
+      inset: 96px 22px 24px;
+    }
+    .overview-node {
+      --node-color: var(--hue-sage);
+      position: absolute;
+      left: var(--node-x);
+      top: var(--node-y);
+      transform: translate(-50%, -50%);
+      display: grid;
+      grid-template-columns: auto minmax(118px, 172px);
+      gap: 8px;
+      align-items: center;
+      max-width: 220px;
+      padding: 7px 9px;
+      color: var(--ink);
+      text-align: left;
+      background: rgba(252,248,239,.86);
+      border: 1px solid var(--rule);
+      border-radius: var(--r-pill);
+      box-shadow: var(--sh-1);
+      cursor: pointer;
+    }
+    .overview-node:hover,
+    .overview-node:focus-visible {
+      border-color: var(--rule-strong);
+      box-shadow: var(--ring);
+      outline: none;
+    }
+    .overview-node.is-active {
+      border-color: var(--accent);
+      box-shadow: var(--ring);
+    }
+    .overview-node-marker {
+      width: 20px;
+      height: 20px;
+      border: 2px solid color-mix(in srgb, var(--node-color) 78%, var(--ink) 22%);
+      border-radius: 50%;
+      background: color-mix(in srgb, var(--node-color) 24%, var(--surface) 76%);
+      box-shadow: inset 0 0 0 4px var(--surface);
+    }
+    .overview-node-title {
+      display: block;
+      overflow: hidden;
+      font-weight: 700;
+      line-height: 1.15;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .overview-node-meta {
+      display: block;
+      color: var(--ink-dim);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      line-height: 1.2;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .overview-destination-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 10px;
+      min-width: 0;
+    }
+    .overview-destination-card {
+      --node-color: var(--hue-sage);
+      min-width: 0;
+      border-left: 4px solid var(--node-color);
+      cursor: pointer;
+      text-align: left;
+    }
+    .overview-destination-card .row-top,
+    .overview-destination-card .row-top > div {
+      min-width: 0;
+    }
+    .overview-destination-card strong {
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .overview-momentum-list {
+      display: grid;
+      gap: 10px;
+    }
+    .overview-momentum-card {
+      border-left: 4px solid var(--node-color, var(--hue-sage));
+    }
+    .overview-momentum-card .momentum-next-step {
+      margin-top: 0;
+      border-left-color: var(--node-color, var(--hue-sage));
+    }
+    @media (max-width: 760px) {
+      .overview-map { min-height: 0; }
+      .overview-map-stage { position: static; display: grid; gap: 10px; margin-top: 16px; }
+      .overview-node { position: static; transform: none; width: 100%; max-width: none; }
+    }
+
     .momentum-dashboard-list {
       display: flex;
       flex-direction: column;
@@ -380,12 +1121,14 @@
       margin-top: 8px;
     }
     .momentum-next-step .label {
-      color: var(--accent);
-      text-transform: uppercase;
-      letter-spacing: .12em;
-      font-size: 10px;
-      font-weight: 700;
+      color: var(--ink-dim);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: .18em;
+      line-height: 1.2;
       margin-bottom: 4px;
+      text-transform: uppercase;
     }
     .momentum-next-step .value {
       color: var(--ink);
@@ -397,20 +1140,26 @@
       flex-direction: column;
       gap: 8px;
     }
-    @media (max-width: 860px) {
+    @media (max-width: 940px) {
       .momentum-main-grid { grid-template-columns: 1fr; }
     }
 
     .card {
       background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 16px;
+      border: 1px solid var(--rule);
+      border-radius: var(--r-lg);
       padding: 12px;
-      box-shadow: var(--shadow);
+      box-shadow: var(--sh-1);
       display: flex;
       flex-direction: column;
       gap: 8px;
       min-width: 0;
+    }
+
+    .quiet {
+      background: var(--surface-2);
+      border: 1px solid var(--rule);
+      border-radius: var(--r-md);
     }
 
     .kanban {
@@ -430,29 +1179,60 @@
     }
 
     .column h3 {
-      font-size: 13px;
-      text-transform: uppercase;
-      letter-spacing: .06em;
-      color: var(--ink-light);
+      color: var(--ink);
       margin: 0 0 10px;
+    }
+
+    .table-scroll {
+      max-width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
     }
 
     table {
       width: 100%;
+      min-width: 760px;
       border-collapse: collapse;
       font-size: 14px;
       background: var(--surface);
-      border-radius: 16px;
+      border-radius: var(--r-lg);
       overflow: hidden;
     }
 
     th, td {
-      padding: 10px;
-      border-bottom: 1px solid var(--border);
       text-align: left;
       vertical-align: top;
     }
-    th { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-dim); }
+
+    th {
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--rule);
+      color: var(--ink-dim);
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      font-weight: 500;
+      letter-spacing: .1em;
+      padding: 10px 14px;
+      text-transform: uppercase;
+    }
+
+    td {
+      background: transparent;
+      border-bottom: 1px solid var(--rule-faint);
+      color: var(--ink-mid);
+      padding: 12px 14px;
+    }
+
+    tbody tr,
+    tbody tr:nth-child(even),
+    tbody tr:nth-child(odd) { background: transparent; }
+
+    tbody tr:hover td { background: var(--surface-2); }
+
+    td.title {
+      color: var(--ink);
+      font-weight: 500;
+    }
 
     details {
       background: var(--surface-2);
@@ -463,18 +1243,29 @@
 
     summary {
       cursor: pointer;
-      font-weight: 700;
     }
 
     .hidden { display: none !important; }
 
     .notice {
-      background: var(--rt-warning-soft);
-      border-left: 2px solid var(--rt-warning);
+      background: var(--warn-soft);
+      border: 0;
+      border-left: 2px solid var(--warn);
       border-radius: 0 var(--r-sm) var(--r-sm) 0;
+      box-shadow: none;
       padding: 10px 12px;
-      color: var(--ink-light);
+      color: var(--ink-mid);
       font-size: 14px;
+    }
+
+    .notice-info {
+      background: var(--info-soft);
+      border-left-color: var(--info);
+    }
+
+    .notice-danger {
+      background: var(--danger-soft);
+      border-left-color: var(--danger);
     }
     .chat-card { border-left-width: 2px !important; }
     .chat-card.type-main { border-left-color: var(--rt-gold) !important; }
@@ -491,7 +1282,7 @@
 
     .footer-note { color: var(--ink-dim); font-size: 12px; }
 
-    @media (max-width: 1080px) {
+    @media (max-width: 940px) {
       .topbar, .layout { grid-template-columns: 1fr; }
       .stats { grid-template-columns: repeat(2, 1fr); }
     }
@@ -523,6 +1314,38 @@
       min-height: 0;
       overflow: hidden;
     }
+    #sidebarToggle,
+    #sidebarScrim {
+      display: none;
+    }
+    #sidebarToggle {
+      align-items: center;
+      background: var(--surface);
+      border: 1px solid var(--rule);
+      border-radius: var(--r-pill);
+      box-shadow: var(--sh-2);
+      color: var(--accent);
+      cursor: pointer;
+      font-family: var(--font-mono);
+      font-size: 21px;
+      font-weight: 500;
+      height: 44px;
+      justify-content: center;
+      line-height: 1;
+      padding: 0;
+      width: 44px;
+    }
+    #sidebarToggle:hover,
+    #sidebarToggle:focus-visible {
+      background: var(--accent-soft);
+      border-color: var(--accent-line);
+      box-shadow: var(--ring);
+      outline: none;
+    }
+    .sidebar-title {
+      font-size: 20px;
+      margin: 0 0 12px;
+    }
     .sidebar-projects-panel {
       margin-top: 16px;
       box-shadow: none;
@@ -533,42 +1356,412 @@
       overflow: hidden;
     }
     #sidebarProjects { min-height: 0; overflow-y: auto; padding-right: 4px; }
+    .sidebar-actions { margin-top: auto; }
     .workspace-sidebar > .stack-row { flex: 0 0 auto; }
     .flow-steps { display:flex; flex-direction:column; gap:10px; margin-top:10px; }
-    .flow-step { background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:10px 12px; }
+    .flow-step {
+      background: var(--surface-2);
+      border: 1px solid var(--rule);
+      border-left: 2px solid var(--rule-strong);
+      border-radius: var(--r-md);
+      box-shadow: var(--sh-0);
+      padding: 12px 14px;
+    }
     .flow-step-head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
-    .flow-step-kicker { color:var(--ink-dim); font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; }
-    .flow-step-title { font-weight:800; }
+    .flow-step-kicker {
+      color: var(--ink-dim);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 1.2;
+      text-transform: uppercase;
+      letter-spacing: .18em;
+    }
+    .flow-step-title {
+      color: var(--ink);
+      font-family: var(--font-serif);
+      font-weight: 600;
+    }
+    .sprint-advanced-zone {
+      background: transparent;
+      border: 1px dashed var(--rule);
+      border-radius: var(--r-md);
+      box-shadow: none;
+      margin-bottom: 8px;
+      padding: 10px 12px;
+    }
+    .sprint-advanced-zone[open] { background: var(--surface-2); }
+    .sprint-advanced-zone summary {
+      color: var(--ink-dim);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: .18em;
+      line-height: 1.2;
+      text-transform: uppercase;
+    }
+
+    .settings-title { align-items: center; }
+    .settings-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .settings-group {
+      background: var(--surface-2);
+      border: 1px solid var(--rule);
+      border-radius: var(--r-lg);
+      box-shadow: var(--sh-0);
+      padding: 14px;
+    }
+    .settings-group > .panel-title { margin-bottom: 12px; }
+    .settings-field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .settings-inline-check {
+      align-items: center;
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .settings-inline-check input {
+      flex: 0 0 auto;
+      width: auto;
+    }
+    .settings-note,
+    .settings-status { font-size: 12px; }
+    .settings-note { margin-bottom: 8px; }
+    .settings-actions { margin: 8px 0; }
+    .settings-danger-zone {
+      background: transparent;
+      border: 1px solid var(--rule);
+      border-left: 2px solid var(--danger);
+      border-radius: var(--r-md);
+      box-shadow: none;
+      margin-top: 12px;
+    }
+    .settings-danger-zone[open] { background: var(--surface); }
+    .settings-danger-zone summary {
+      color: var(--danger);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: .18em;
+      line-height: 1.2;
+      text-transform: uppercase;
+    }
+    .settings-danger-zone .btn {
+      background: transparent;
+      border-color: transparent;
+      color: var(--ink-mid);
+    }
+    .settings-danger-zone .btn:hover {
+      background: var(--surface-2);
+      border-color: transparent;
+    }
+    .settings-danger-zone .settings-danger-action { color: var(--danger); }
+    .settings-danger-block {
+      border-top: 1px solid var(--rule);
+      margin-top: 12px;
+      padding-top: 12px;
+    }
+    .settings-danger-block:first-of-type {
+      border-top: 0;
+      margin-top: 10px;
+      padding-top: 0;
+    }
+    .storage-diag {
+      display: block;
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: "tnum" 1;
+    }
+    .storage-diag-total { margin-bottom: 6px; }
+    .storage-diag-track {
+      background: var(--surface-3);
+      border-radius: var(--r-pill);
+      height: 10px;
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+    .storage-diag-bar {
+      height: 100%;
+      width: 0%;
+    }
+    .storage-diag-bar-ok { background: var(--success, var(--ok)); }
+    .storage-diag-bar-warn { background: var(--warning, var(--warn)); }
+    .storage-diag-bar-danger { background: var(--danger); }
+    .storage-diag-top {
+      display: grid;
+      gap: 4px;
+    }
+    .storage-diag-warn {
+      color: var(--warning, var(--warn));
+      font-weight: 600;
+      margin-top: 8px;
+    }
+
+    @media (max-width: 680px) {
+      .settings-field-grid { grid-template-columns: 1fr; }
+    }
     .workspace-main { display:flex; flex-direction:column; gap:16px; min-width:0; }
+    .sidebar-all-projects {
+      margin-bottom: 4px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--rule);
+    }
+
     .sidebar-project {
       border: 1px solid var(--border);
+      border-left: 3px solid transparent;
       background: transparent;
       border-radius: 8px;
-      padding: 8px 10px;
+      padding: 10px 12px;
       cursor: pointer;
+      flex: 0 0 auto;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: flex-start;
+      text-align: left;
+      width: 100%;
+      gap: 7px;
       font-size: 14px;
+      line-height: 1.3;
+      white-space: normal;
     }
-    .sidebar-project.active { background: var(--surface-3); border-color: var(--border-light); }
-    .db-toolbar { display:grid; grid-template-columns:2fr repeat(3, minmax(130px,1fr)) auto; gap:8px; margin-bottom:12px; }
-    @media (max-width: 1080px) {
-      .workspace { grid-template-columns: 1fr; }
-      .workspace-sidebar { position: static; height: auto; overflow: visible; }
-      .sidebar-projects-panel { max-height: 55vh; }
-      #sidebarProjects { max-height: 45vh; }
-      .db-toolbar { grid-template-columns:1fr; }
+    .sidebar-project .title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      width: 100%;
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: 15px;
+      font-weight: 600;
+      line-height: 1.3;
+      color: var(--ink);
+    }
+    .sidebar-project .title > span:first-child {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .sidebar-project .archive-pill {
+      flex: 0 0 auto;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: .08em;
+      line-height: 1;
+      text-transform: uppercase;
+    }
+    .project-cycle-dots {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .cycle-dot {
+      width: 7px;
+      height: 7px;
+      border: 1px solid var(--rule-strong);
+      border-radius: 50%;
+      background: transparent;
+      flex: 0 0 auto;
+    }
+    .cycle-dot.is-done {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    .sidebar-project.active { background: var(--surface-3); border-color: var(--accent); border-left-color: var(--accent); font-weight: 700; }
+    .db-toolbar {
+      align-items: end;
+      background: var(--surface-2);
+      border: 1px solid var(--rule);
+      border-radius: var(--r-lg);
+      display: grid;
+      gap: 10px;
+      grid-template-columns: minmax(220px, 1.6fr) minmax(220px, auto) minmax(160px, .8fr) minmax(160px, .8fr) auto;
+      margin-bottom: 12px;
+      padding: 12px;
+    }
+    .db-toolbar .field { margin-bottom: 0; }
+    .db-toolbar .field label { margin-bottom: 5px; }
+    .db-toolbar input,
+    .db-toolbar select { min-height: var(--touch); }
+    .db-toolbar-actions {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .pool-segmented {
+      background: var(--surface);
+      border: 1px solid var(--rule);
+      border-radius: 999px;
+      display: flex;
+      gap: 4px;
+      padding: 4px;
+    }
+    .pool-segmented button {
+      background: transparent;
+      border: 0;
+      border-radius: 999px;
+      color: var(--ink-mid);
+      cursor: pointer;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      min-height: 34px;
+      padding: 6px 12px;
+    }
+    .pool-segmented button.is-active {
+      background: var(--accent-soft);
+      color: var(--accent-deep);
+      font-weight: 700;
+    }
+    .feature-title-stack,
+    .feature-cell-actions,
+    .feature-meta-pills {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .feature-title-stack {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+    .feature-detail-toggle {
+      background: transparent;
+      border: 0;
+      color: var(--ink-dim);
+      cursor: pointer;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: .08em;
+      padding: 0;
+      text-transform: uppercase;
+    }
+    details.feature-row-details {
+      background: transparent;
+      border: 0;
+      border-radius: 0;
+      padding: 0;
+    }
+    details.feature-row-details[open] { margin-top: 8px; }
+    .feature-row-detail-body {
+      background: var(--surface-2);
+      border: 1px solid var(--rule);
+      border-radius: var(--r-md);
+      display: grid;
+      gap: 8px;
+      margin-top: 8px;
+      padding: 10px;
+    }
+    .feature-row-detail-body select { max-width: 220px; }
+    .feature-cell-actions .btn { padding: 6px 9px; }
+    .feature-updated {
+      color: var(--ink-dim);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    @media (max-width: 940px) {
+      .workspace {
+        grid-template-columns: 1fr;
+        padding-top: 68px;
+      }
+      .workspace-sidebar {
+        border-radius: 0 var(--r-lg) var(--r-lg) 0;
+        bottom: 0;
+        box-shadow: var(--sh-3);
+        height: 100dvh;
+        left: -280px;
+        overflow-y: auto;
+        position: fixed;
+        top: 0;
+        transition: left .22s ease;
+        width: 280px;
+        z-index: 70;
+      }
+      body.sidebar-open .workspace-sidebar { left: 0; }
+      #sidebarToggle {
+        display: inline-flex;
+        left: 14px;
+        position: fixed;
+        top: 14px;
+        z-index: 80;
+      }
+      #sidebarScrim {
+        background: rgba(44,36,25,0.35);
+        bottom: 0;
+        left: 0;
+        position: fixed;
+        right: 0;
+        top: 0;
+        z-index: 60;
+      }
+      body.sidebar-open #sidebarScrim { display: block; }
+      .sidebar-projects-panel { max-height: none; }
+      #sidebarProjects { max-height: none; }
+      .db-toolbar { grid-template-columns: 1fr; }
+      .flow-steps {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .flow-steps::before,
+      .flow-steps::after { display: none; }
+    }
+
+    @media (max-width: 560px) {
+      .app.workspace {
+        padding-left: 10px;
+        padding-right: 10px;
+      }
+      .stats,
+      .topbar,
+      .layout,
+      .grid-cards,
+      .overview-destination-list,
+      .momentum-main-grid,
+      .flow-steps,
+      .settings-field-grid,
+      .db-toolbar {
+        grid-template-columns: 1fr;
+      }
+      [style*="grid-template-columns:1fr 1fr"] { grid-template-columns: 1fr !important; }
+      .workspace-header-actions .btn:not(.btn-primary),
+      .panel-title .btn-secondary {
+        display: none;
+      }
+      .workspace-header-actions .btn-primary ~ .btn-primary {
+        display: none;
+      }
+      .panel-title {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+      .panel-title > :last-child:not(:first-child) {
+        max-width: 100%;
+        text-align: left;
+      }
     }
   </style>
 </head>
 <body class="theme-light">
   <div class="app workspace" id="app">
     <aside class="workspace-sidebar panel">
-      <h1 style="font-size:20px;margin:0 0 12px;">Roadtrip</h1>
+      <h1 class="sidebar-title">Roadtrip</h1>
       <div class="segmented" id="navTabs"></div>
-      <div class="panel sidebar-projects-panel" style="margin-top:16px; box-shadow:none;">
+      <div class="panel sidebar-projects-panel">
         <div class="panel-title"><h3>Projects</h3></div>
         <div class="list" id="sidebarProjects"></div>
       </div>
-      <div class="stack-row" style="margin-top:auto;">
+      <div class="stack-row sidebar-actions">
         <button class="btn" id="btnSeed">Demo</button>
         <button class="btn" id="btnExport">Export</button>
         <button class="btn" id="btnBackupRaw">Raw Backup</button>
@@ -576,10 +1769,12 @@
       </div>
       <input id="importJsonInput" type="file" accept="application/json" class="hidden" />
     </aside>
+    <div id="sidebarScrim" aria-hidden="true"></div>
     <main class="workspace-main">
+      <button type="button" id="sidebarToggle" aria-label="Sidebar öffnen" aria-controls="navTabs" aria-expanded="false">☰</button>
       <section class="panel">
         <div class="panel-title">
-          <h2 id="viewTitle">Database</h2>
+          <h2 id="viewTitle">Karte</h2>
           <div class="mini" id="lastSavedLabel">—</div>
         </div>
         <div class="stats" id="stats"></div>
@@ -599,7 +1794,7 @@
       const UI_SPRINT_VIS_KEY = 'roadtrip.ui.showCompletedSprintsByProject';
       const UI_MOMENTUM_COLLAPSED_KEY = 'roadtrip.ui.projectMomentumCollapsedByProject';
       const ALL_PROJECTS_KEY = 'all';
-      const VIEWS = ['database', 'momentum', 'project', 'notes', 'learning', 'import', 'settings'];
+      const VIEWS = ['overview', 'database', 'momentum', 'project', 'notes', 'learning', 'import', 'settings'];
       const APP_TYPES = ['Daily Log', 'Braindump', 'Review', 'Tracker', 'Writing', 'Learning', 'Meta-App', 'Sonstiges'];
       const PROJECT_STATUS = ['aktiv', 'pausiert', 'archiviert'];
       const FEATURE_CATEGORIES = ['UI', 'Workflow', 'Sync', 'KI', 'Import/Export', 'Darstellung', 'Datenmodell', 'Ansicht', 'Sonstiges'];
@@ -661,7 +1856,7 @@
       let S = defaultState();
       let C = defaultConfig();
       let ui = {
-        view: 'database',
+        view: 'overview',
         editingProjectId: null,
         analysisDraftFeatures: [],
         activeProjectId: ALL_PROJECTS_KEY,
@@ -816,7 +2011,7 @@
 
       function defaultConfig() {
         return {
-          theme: 'theme-dark',
+          theme: 'theme-light',
           font: 'ui',
           gistId: '',
           gistToken: '',
@@ -1187,7 +2382,8 @@
           const pct = ratio * 100;
           total.textContent = `Gesamtgröße: ${report.totalMb.toFixed(2)} MB`;
           bar.style.width = pct.toFixed(1) + '%';
-          bar.style.background = pct < 50 ? '#22c55e' : (pct <= 80 ? '#f59e0b' : '#ef4444');
+          bar.classList.remove('storage-diag-bar-ok', 'storage-diag-bar-warn', 'storage-diag-bar-danger');
+          bar.classList.add(pct < 50 ? 'storage-diag-bar-ok' : (pct <= 80 ? 'storage-diag-bar-warn' : 'storage-diag-bar-danger'));
           top.innerHTML = report.areas.slice(0, 5).map(a => `<div class="mini">${escapeHtml(a.key)}: ${a.mb.toFixed(2)} MB</div>`).join('') || '<div class="mini">Keine Bereiche gefunden.</div>';
           const explain = 'Hinweis: 5 MB sind eine grobe Anzeigeannahme. Browser-/Origin-Quota kann abweichen; auch bei niedriger angezeigter Größe sind Save-Fehler möglich.';
           const modeLine = `Aktiver Speichermodus: ${storageMeta.storageMode === 'indexedDB' ? 'IndexedDB' : 'localStorage Fallback'}.`;
@@ -1235,19 +2431,47 @@
         $('lastSavedLabel').textContent = 'Gespeichert: ' + formatDateTime(S._lastLocalSaveAt);
       }
 
+      function normalizeThemeValue(theme) {
+        return theme === 'theme-eink' ? 'theme-eink' : 'theme-light';
+      }
+
+      function normalizeConfigTheme() {
+        const normalized = normalizeThemeValue(C.theme);
+        if (C.theme !== normalized) C.theme = normalized;
+        return normalized;
+      }
+
       function applyTheme() {
-        document.body.className = C.theme + (C.font === 'serif' ? ' font-serif' : '');
+        document.body.className = normalizeConfigTheme() + (C.font === 'serif' ? ' font-serif' : '');
       }
 
       function renderNav() {
         const wrap = $('navTabs');
         wrap.innerHTML = '';
-        VIEWS.forEach(v => {
-          const b = document.createElement('button');
-          b.className = 'seg' + (ui.view === v ? ' active' : '');
-          b.textContent = ({database:'Database',momentum:'Momentum',project:'Project',notes:'Notes',learning:'Learning',import:'Import',settings:'Settings'})[v];
-          b.addEventListener('click', () => { ui.view = v; renderNav(); renderView(); });
-          wrap.appendChild(b);
+        const labels = {overview:'Karte',database:'Database',momentum:'Momentum',project:'Project',notes:'Notes',learning:'Learning',import:'Import',settings:'Settings'};
+        const groups = [
+          { label: 'Reise', views: ['overview', 'project', 'momentum'] },
+          { label: 'Werkstatt', views: ['database', 'notes', 'learning'] },
+          { label: 'Werkzeuge', views: ['import', 'settings'] }
+        ];
+        groups.forEach(group => {
+          const section = document.createElement('div');
+          section.className = 'nav-group';
+          const groupLabel = document.createElement('div');
+          groupLabel.className = 'nav-group-label';
+          groupLabel.textContent = group.label;
+          const items = document.createElement('div');
+          items.className = 'nav-group-items';
+          group.views.filter(v => VIEWS.includes(v)).forEach(v => {
+            const b = document.createElement('button');
+            b.className = 'seg' + (ui.view === v ? ' active' : '');
+            b.textContent = labels[v];
+            b.addEventListener('click', () => { ui.view = v; renderNav(); renderView(); closeSidebarDrawer(); });
+            items.appendChild(b);
+          });
+          section.appendChild(groupLabel);
+          section.appendChild(items);
+          wrap.appendChild(section);
         });
       }
 
@@ -1294,6 +2518,7 @@
 
       function renderView() {
         const c = $('viewContainer');
+        if (ui.view === 'overview') c.innerHTML = renderOverview();
         if (ui.view === 'database') c.innerHTML = renderDatabaseView();
         if (ui.view === 'momentum') c.innerHTML = renderMomentumDashboardView();
         if (ui.view === 'project') c.innerHTML = renderProjectWorkspace();
@@ -1302,14 +2527,15 @@
         if (ui.view === 'import') c.innerHTML = renderImportWorkspace();
         if (ui.view === 'settings') c.innerHTML = renderSettingsWorkspace();
         renderProjectSelects();
-        if ($('themeSelect')) $('themeSelect').value = C.theme;
+        if ($('themeSelect')) $('themeSelect').value = normalizeConfigTheme();
         if ($('fontSelect')) $('fontSelect').value = C.font;
-        $('viewTitle').textContent = ({database:'Database',momentum:'Momentum',project:'Project',notes:'Notes',learning:'Learning',import:'Import',settings:'Settings'})[ui.view];
+        $('viewTitle').textContent = ({overview:'Karte',database:'Database',momentum:'Momentum',project:'Project',notes:'Notes',learning:'Learning',import:'Import',settings:'Settings'})[ui.view];
         wireDynamicView();
+        wireDrawer();
       }
 
       function wireDynamicView() {
-        // data-open-project is wired inside renderSidebarProjects()
+        wireProjectOpenButtons($('viewContainer'));
         const statusFilter = $('filterStatus');
         const poolFilter = $('filterPool');
         const catFilter = $('filterCategory');
@@ -1317,6 +2543,7 @@
         const kanbanToggle = $('toggleKanban');
         const allProjectsToggle = $('toggleAllProjects');
         if (poolFilter) poolFilter.addEventListener('change', e => { ui.filters.pool = e.target.value; ensureValidStatusFilterForPool(ui.filters.pool); renderView(); });
+        qq('[data-filter-pool]').forEach(btn => btn.addEventListener('click', () => { ui.filters.pool = btn.dataset.filterPool || 'alle'; ensureValidStatusFilterForPool(ui.filters.pool); renderView(); }));
         if (statusFilter) statusFilter.addEventListener('change', e => { ui.filters.status = e.target.value; ensureValidStatusFilterForPool(ui.filters.pool); renderView(); });
         if (catFilter) catFilter.addEventListener('change', e => { ui.filters.category = e.target.value; renderView(); });
         if (search) search.addEventListener('input', e => { ui.filters.search = e.target.value; renderView(); });
@@ -1365,7 +2592,7 @@
           });
         }
 
-        if ($('themeSelect')) $('themeSelect').addEventListener('change', e => { C.theme = e.target.value; applyTheme(); save(); });
+        if ($('themeSelect')) $('themeSelect').addEventListener('change', e => { C.theme = normalizeThemeValue(e.target.value); applyTheme(); save(); });
         if ($('fontSelect')) $('fontSelect').addEventListener('change', e => { C.font = e.target.value; applyTheme(); save(); });
         if ($('gistId')) $('gistId').addEventListener('input', e => { C.gistId = e.target.value; save(); });
         if ($('gistToken')) $('gistToken').addEventListener('input', e => { C.gistToken = e.target.value; save(); });
@@ -1827,64 +3054,119 @@
         if ($('btnCopyDailyLogProjectPrompt')) $('btnCopyDailyLogProjectPrompt').addEventListener('click', () => copyPrompt('dailyLogProjectPromptOutput'));
       }
 
+      function getProjectCycleDots(projectId) {
+        const chatStructure = getProjectChatStructure(projectId);
+        const projectChats = (S.chats || []).filter(c => c && c.projectId === projectId);
+        const hasCompletedChat = projectChats.some(c => c && c.status === 'abgeschlossen');
+        const hasCompletedSprint = projectChats.some(c => c && c.type === 'sprint' && c.status === 'abgeschlossen');
+        return [
+          { label: 'Start', done: chatStructure.hasMainChat },
+          { label: 'Sprint läuft', done: chatStructure.hasSprintChat },
+          { label: 'Abgeschlossen', done: hasCompletedChat },
+          { label: 'Zyklus rund', done: chatStructure.hasMainChat && hasCompletedSprint }
+        ];
+      }
+
+      function renderProjectCycleDots(projectId) {
+        const dots = getProjectCycleDots(projectId);
+        const completed = dots.filter(dot => dot.done).map(dot => dot.label);
+        const ariaLabel = completed.length ? `Sprint-Zyklus: ${completed.join(', ')}` : 'Sprint-Zyklus: noch kein Schritt erreicht';
+        return `<div class="project-cycle-dots" aria-label="${escapeAttr(ariaLabel)}">${dots.map(dot => `
+          <span class="cycle-dot ${dot.done ? 'is-done' : ''}" title="${escapeAttr(dot.label)}"></span>
+        `).join('')}</div>`;
+      }
+
+      function openProjectWorkspace(projectId) {
+        const pid = projectId || ALL_PROJECTS_KEY;
+        ui.activeProjectId = pid;
+        ui.projectEditMode = false;
+        ui.editingProjectId = pid === ALL_PROJECTS_KEY ? null : pid;
+        if (pid !== ALL_PROJECTS_KEY) ui.importDraft.projectId = pid;
+        if (ui.view !== 'database' && ui.view !== 'project') ui.view = 'project';
+        renderNav();
+        renderSidebarProjects();
+        renderView();
+        closeSidebarDrawer();
+      }
+
+      function setSidebarDrawerOpen(isOpen) {
+        document.body.classList.toggle('sidebar-open', !!isOpen);
+        const toggle = $('sidebarToggle');
+        if (toggle) {
+          toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+          toggle.setAttribute('aria-label', isOpen ? 'Sidebar schließen' : 'Sidebar öffnen');
+        }
+        const scrim = $('sidebarScrim');
+        if (scrim) scrim.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+      }
+
+      function closeSidebarDrawer() {
+        setSidebarDrawerOpen(false);
+      }
+
+      function wireDrawer() {
+        const toggle = $('sidebarToggle');
+        const scrim = $('sidebarScrim');
+        if (!toggle || !scrim) return;
+        toggle.onclick = () => {
+          setSidebarDrawerOpen(!document.body.classList.contains('sidebar-open'));
+        };
+        scrim.onclick = closeSidebarDrawer;
+        if (wireDrawer.bound) return;
+        document.addEventListener('keydown', e => {
+          if (e.key === 'Escape') closeSidebarDrawer();
+        });
+        window.addEventListener('resize', () => {
+          if (window.matchMedia('(min-width: 941px)').matches) closeSidebarDrawer();
+        });
+        wireDrawer.bound = true;
+      }
+
+      function wireProjectOpenButtons(root) {
+        if (!root) return;
+        qq('[data-open-project]', root).forEach(btn => btn.addEventListener('click', () => {
+          openProjectWorkspace(btn.dataset.openProject);
+        }));
+      }
+
       function renderSidebarProjects() {
         const wrap = $('sidebarProjects');
         const isAll = ui.activeProjectId === ALL_PROJECTS_KEY;
-        const featureCountByProjectId = getVisibleFeatures(S.features).reduce((acc, f) => {
-          const pid = f.projectId || '';
-          acc[pid] = (acc[pid] || 0) + 1;
-          return acc;
-        }, {});
         const allBtn = `
-          <button class="sidebar-project ${isAll ? 'active' : ''}" data-open-project="${ALL_PROJECTS_KEY}" style="${isAll ? 'border-left:3px solid var(--accent-2);' : ''}">⊕ Alle Projekte</button>
+          <div class="sidebar-all-projects">
+            <button class="sidebar-project ${isAll ? 'active' : ''}" data-open-project="${ALL_PROJECTS_KEY}">
+              <p class="title">⊕ Alle Projekte</p>
+            </button>
+          </div>
         `;
         wrap.innerHTML = allBtn + S.projects.filter(p => p.status !== 'archiviert').map(p => {
           const isActive = ui.activeProjectId === p.id;
-          const featureCount = featureCountByProjectId[p.id] || 0;
-          const updatedAt = p.updatedAt || p.lastAnalyzedAt || p.lastHtmlImportedAt || p.createdAt || '';
-          const updatedLabel = `aktualisiert: ${updatedAt ? formatDateTime(updatedAt) : '—'}`;
-          const emptyHint = featureCount === 0 ? ' · noch keine Features' : '';
           const chatStructure = getProjectChatStructure(p.id);
-          const chatIcons = `${chatStructure.hasMainChat ? '🧭' : '🕸️'}${chatStructure.hasSprintChat ? '🏃' : ''}`;
           const mainChatLabel = chatStructure.hasMainChat ? 'Hauptchat vorhanden' : 'Kein Hauptchat';
           const sprintLabel = `${chatStructure.sprintCount} ${chatStructure.sprintCount === 1 ? 'Sprint' : 'Sprints'}`;
           const chatStatusLabel = `${mainChatLabel} · ${sprintLabel}`;
-          return `<button class="sidebar-project ${isActive ? 'active' : ''}" data-open-project="${escapeAttr(p.id)}" title="${escapeAttr(chatStatusLabel)}" style="${isActive ? 'border-left:3px solid var(--accent);font-weight:700;' : ''}text-align:left;">
-            <div>${escapeHtml(chatIcons)} ${escapeHtml(p.title)} (${featureCount})${p.status === 'archiviert' ? '<span class="mini"> (arch.)</span>' : ''}</div>
-            <div class="mini">${escapeHtml(updatedLabel + ' · ' + chatStatusLabel + emptyHint)}</div>
+          const archivePill = p.status === 'archiviert' ? '<span class="pill pill-outline archive-pill">arch.</span>' : '';
+          return `<button class="sidebar-project ${isActive ? 'active' : ''}" data-open-project="${escapeAttr(p.id)}" title="${escapeAttr(chatStatusLabel)}">
+            <p class="title"><span>${escapeHtml(p.title)}</span>${archivePill}</p>
+            ${renderProjectCycleDots(p.id)}
           </button>`;
         }).join('');
         // Re-wire after DOM update
-        qq('[data-open-project]', wrap).forEach(btn => btn.addEventListener('click', () => {
-          const pid = btn.dataset.openProject;
-          ui.activeProjectId = pid;
-          ui.projectEditMode = false;
-          ui.editingProjectId = pid === ALL_PROJECTS_KEY ? null : pid;
-          // Sync import draft project
-          if (pid !== ALL_PROJECTS_KEY) ui.importDraft.projectId = pid;
-          if (ui.view === 'database' || ui.view === 'project') {
-            // Stay in current view but re-render with new context
-          } else {
-            ui.view = 'project';
-          }
-          renderNav();
-          renderSidebarProjects();
-          renderView();
-        }));
+        wireProjectOpenButtons(wrap);
       }
 
       function renderContextBanner() {
         const isAll = ui.activeProjectId === ALL_PROJECTS_KEY;
         const p = isAll ? null : S.projects.find(x => x.id === ui.activeProjectId);
         if (isAll) {
-          return `<div style="background:var(--surface-3);border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin-bottom:12px;display:flex;align-items:center;gap:8px;">
-            <span class="eyebrow" style="color:var(--accent-2)">Kontext</span>
-            <strong style="color:var(--accent-2)">Alle Projekte</strong>
+          return `<div class="context-banner">
+            <span class="eyebrow">Kontext</span>
+            <strong>Alle Projekte</strong>
             <span class="mini">(kein Projekt-Filter aktiv)</span>
           </div>`;
         }
         if (!p) return '';
-        return `<div style="background:var(--surface-3);border:1px solid var(--accent);border-left:3px solid var(--accent);border-radius:10px;padding:8px 12px;margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        return `<div class="context-banner active-project">
           <span class="eyebrow">Aktives Projekt</span>
           <strong>${escapeHtml(p.title)}</strong>
           <span class="pill">${escapeHtml(p.status)}</span>
@@ -1907,12 +3189,29 @@
               Alle Projekte
             </label>
           </div>
-          <div class="db-toolbar">
-            <input id="filterSearch" type="text" value="${escapeAttr(ui.filters.search)}" placeholder="Search features..." />
-            <select id="filterPool">${['alle'].concat(FEATURE_POOLS).map(s => `<option value="${s}" ${ui.filters.pool===s?'selected':''}>${s === 'alle' ? 'alle' : getFeaturePoolLabel(s)}</option>`).join('')}</select>
-            <select id="filterStatus">${statusOptions.map(s => `<option value="${s}" ${ui.filters.status===s?'selected':''}>${s === 'alle' ? 'alle' : getFeatureStatusLabel(s)}</option>`).join('')}</select>
-            <select id="filterCategory">${['alle'].concat(FEATURE_CATEGORIES).map(s => `<option ${ui.filters.category===s?'selected':''}>${s}</option>`).join('')}</select>
-            <label class="pill"><input id="toggleKanban" type="checkbox" ${ui.showKanban?'checked':''} /> Kanban</label>
+          <div class="db-toolbar" aria-label="Feature-Datenbank Filter">
+            <div class="field">
+              <label for="filterSearch">Suche</label>
+              <input id="filterSearch" type="text" value="${escapeAttr(ui.filters.search)}" placeholder="Titel, Beschreibung, Projekt ..." />
+            </div>
+            <div class="field">
+              <label>Pool</label>
+              <div class="pool-segmented" role="group" aria-label="Pool-Filter">
+                ${['alle'].concat(FEATURE_POOLS).map(pool => `<button type="button" class="${ui.filters.pool===pool?'is-active':''}" data-filter-pool="${escapeAttr(pool)}" aria-pressed="${ui.filters.pool===pool?'true':'false'}">${pool === 'alle' ? 'Alle' : escapeHtml(getFeaturePoolLabel(pool))}</button>`).join('')}
+              </div>
+              <select id="filterPool" class="hidden" aria-hidden="true" tabindex="-1">${['alle'].concat(FEATURE_POOLS).map(s => `<option value="${s}" ${ui.filters.pool===s?'selected':''}>${s === 'alle' ? 'alle' : getFeaturePoolLabel(s)}</option>`).join('')}</select>
+            </div>
+            <div class="field">
+              <label for="filterStatus">Status</label>
+              <select id="filterStatus">${statusOptions.map(s => `<option value="${s}" ${ui.filters.status===s?'selected':''}>${s === 'alle' ? 'alle' : getFeatureStatusLabel(s)}</option>`).join('')}</select>
+            </div>
+            <div class="field">
+              <label for="filterCategory">Kategorie</label>
+              <select id="filterCategory">${['alle'].concat(FEATURE_CATEGORIES).map(s => `<option ${ui.filters.category===s?'selected':''}>${s}</option>`).join('')}</select>
+            </div>
+            <div class="db-toolbar-actions">
+              <label class="pill pill-outline"><input id="toggleKanban" type="checkbox" ${ui.showKanban?'checked':''} /> Kanban</label>
+            </div>
           </div>
           ${ui.showKanban
             ? (renderKanban(plannedFeatures, { title: getFeaturePoolLabel('planned'), pool: 'planned' }) + renderKanban(implementedFeatures, { title: getFeaturePoolLabel('implemented'), pool: 'implemented' }))
@@ -3699,10 +4998,10 @@
               ${updates.length ? `<div class="list" style="margin-bottom:8px;">${updates.map(update => `
                 <div class="item">
                   <div class="row-top"><strong>${escapeHtml(update._projectTitle || 'Unbekanntes Projekt')}</strong><span class="pill">confidence: ${escapeHtml(update.confidence || 'mittel')}</span></div>
-                  ${update.focusUpdate ? `<div class="mini" style="margin-top:6px;"><strong>Fokus:</strong> ${escapeHtml(update.focusUpdate)}</div><div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-focus="${update._idx}" ${update._focusDone || update._focusIgnored ? 'disabled' : ''}>${update._focusDone ? '✓ Fokus übernommen' : 'Fokus übernehmen'}</button><button class="btn" data-multi-ignore="focus|${update._idx}|-1" ${update._focusDone || update._focusIgnored ? 'disabled' : ''}>${update._focusIgnored ? '✓ Ignoriert' : 'Ignorieren'}</button>${update._focusDone ? '<span class="pill" style="background:var(--green);color:#0d2615;">übernommen</span>' : ''}${update._focusIgnored ? '<span class="pill">ignoriert</span>' : ''}</div>` : ''}
-                  ${update.nextStep ? `<div class="mini" style="margin-top:6px;"><strong>Nächster Schritt:</strong> ${escapeHtml(update.nextStep)}</div><div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-next-step="${update._idx}" ${update._nextStepDone || update._nextStepIgnored ? 'disabled' : ''}>${update._nextStepDone ? '✓ Next Step übernommen' : 'Next Step übernehmen'}</button><button class="btn" data-multi-ignore="next-step|${update._idx}|-1" ${update._nextStepDone || update._nextStepIgnored ? 'disabled' : ''}>${update._nextStepIgnored ? '✓ Ignoriert' : 'Ignorieren'}</button>${update._nextStepDone ? '<span class="pill" style="background:var(--green);color:#0d2615;">übernommen</span>' : ''}${update._nextStepIgnored ? '<span class="pill">ignoriert</span>' : ''}</div>` : ''}
-                  ${update.notes && update.notes.length ? `<div style="margin-top:8px;"><strong>Notes</strong><div class="list" style="margin-top:6px;">${update.notes.map(note => `<div class="item" style="${note._done || note._ignored ? 'opacity:.72;' : ''}"><div>${escapeHtml(note.text || '')}</div><div class="mini">${escapeHtml(note.type || 'note')} · ${escapeHtml(note.confidence || 'mittel')}</div><div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-note="${update._idx}|${note._idx}" ${note._done || note._ignored ? 'disabled' : ''}>${note._done ? '✓ Note übernommen' : 'Als Note übernehmen'}</button><button class="btn" data-multi-ignore="note|${update._idx}|${note._idx}" ${note._done || note._ignored ? 'disabled' : ''}>${note._ignored ? '✓ Ignoriert' : 'Ignorieren'}</button>${note._done ? '<span class="pill" style="background:var(--green);color:#0d2615;">übernommen</span>' : ''}${note._ignored ? '<span class="pill">ignoriert</span>' : ''}</div></div>`).join('')}</div></div>` : ''}
-                  ${update.proposedFeatures && update.proposedFeatures.length ? `<div style="margin-top:8px;"><strong>Proposed Features</strong><div class="list" style="margin-top:6px;">${update.proposedFeatures.map(feature => `<div class="item" style="${feature._done || feature._ignored ? 'opacity:.72;' : ''}"><div><strong>${escapeHtml(feature.title || 'Ohne Titel')}</strong></div><div class="mini">${escapeHtml(feature.category || 'Sonstiges')} · ${escapeHtml(feature.priority || 'mittel')} · ${escapeHtml(feature.status || 'idea')}</div>${feature.description ? `<div class="mini">${escapeHtml(shorten(feature.description, 220))}</div>` : ''}<div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-feature="${update._idx}|${feature._idx}" ${feature._done || feature._ignored ? 'disabled' : ''}>${feature._done ? '✓ Feature übernommen' : 'Als Feature übernehmen'}</button><button class="btn" data-multi-ignore="feature|${update._idx}|${feature._idx}" ${feature._done || feature._ignored ? 'disabled' : ''}>${feature._ignored ? '✓ Ignoriert' : 'Ignorieren'}</button>${feature._done ? '<span class="pill" style="background:var(--green);color:#0d2615;">übernommen</span>' : ''}${feature._ignored ? '<span class="pill">ignoriert</span>' : ''}</div></div>`).join('')}</div></div>` : ''}
+                  ${update.focusUpdate ? `<div class="mini" style="margin-top:6px;"><strong>Fokus:</strong> ${escapeHtml(update.focusUpdate)}</div><div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-focus="${update._idx}" ${update._focusDone || update._focusIgnored ? 'disabled' : ''}>${update._focusDone ? '✓ Fokus übernommen' : 'Fokus übernehmen'}</button><button class="btn" data-multi-ignore="focus|${update._idx}|-1" ${update._focusDone || update._focusIgnored ? 'disabled' : ''}>${update._focusIgnored ? '✓ Ignoriert' : 'Ignorieren'}</button>${update._focusDone ? '<span class="pill pill-success">übernommen</span>' : ''}${update._focusIgnored ? '<span class="pill">ignoriert</span>' : ''}</div>` : ''}
+                  ${update.nextStep ? `<div class="mini" style="margin-top:6px;"><strong>Nächster Schritt:</strong> ${escapeHtml(update.nextStep)}</div><div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-next-step="${update._idx}" ${update._nextStepDone || update._nextStepIgnored ? 'disabled' : ''}>${update._nextStepDone ? '✓ Next Step übernommen' : 'Next Step übernehmen'}</button><button class="btn" data-multi-ignore="next-step|${update._idx}|-1" ${update._nextStepDone || update._nextStepIgnored ? 'disabled' : ''}>${update._nextStepIgnored ? '✓ Ignoriert' : 'Ignorieren'}</button>${update._nextStepDone ? '<span class="pill pill-success">übernommen</span>' : ''}${update._nextStepIgnored ? '<span class="pill">ignoriert</span>' : ''}</div>` : ''}
+                  ${update.notes && update.notes.length ? `<div style="margin-top:8px;"><strong>Notes</strong><div class="list" style="margin-top:6px;">${update.notes.map(note => `<div class="item" style="${note._done || note._ignored ? 'opacity:.72;' : ''}"><div>${escapeHtml(note.text || '')}</div><div class="mini">${escapeHtml(note.type || 'note')} · ${escapeHtml(note.confidence || 'mittel')}</div><div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-note="${update._idx}|${note._idx}" ${note._done || note._ignored ? 'disabled' : ''}>${note._done ? '✓ Note übernommen' : 'Als Note übernehmen'}</button><button class="btn" data-multi-ignore="note|${update._idx}|${note._idx}" ${note._done || note._ignored ? 'disabled' : ''}>${note._ignored ? '✓ Ignoriert' : 'Ignorieren'}</button>${note._done ? '<span class="pill pill-success">übernommen</span>' : ''}${note._ignored ? '<span class="pill">ignoriert</span>' : ''}</div></div>`).join('')}</div></div>` : ''}
+                  ${update.proposedFeatures && update.proposedFeatures.length ? `<div style="margin-top:8px;"><strong>Proposed Features</strong><div class="list" style="margin-top:6px;">${update.proposedFeatures.map(feature => `<div class="item" style="${feature._done || feature._ignored ? 'opacity:.72;' : ''}"><div><strong>${escapeHtml(feature.title || 'Ohne Titel')}</strong></div><div class="mini">${escapeHtml(feature.category || 'Sonstiges')} · ${escapeHtml(feature.priority || 'mittel')} · ${escapeHtml(feature.status || 'idea')}</div>${feature.description ? `<div class="mini">${escapeHtml(shorten(feature.description, 220))}</div>` : ''}<div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-feature="${update._idx}|${feature._idx}" ${feature._done || feature._ignored ? 'disabled' : ''}>${feature._done ? '✓ Feature übernommen' : 'Als Feature übernehmen'}</button><button class="btn" data-multi-ignore="feature|${update._idx}|${feature._idx}" ${feature._done || feature._ignored ? 'disabled' : ''}>${feature._ignored ? '✓ Ignoriert' : 'Ignorieren'}</button>${feature._done ? '<span class="pill pill-success">übernommen</span>' : ''}${feature._ignored ? '<span class="pill">ignoriert</span>' : ''}</div></div>`).join('')}</div></div>` : ''}
                 </div>`).join('')}</div>` : '<div class="mini">Noch keine geladenen Vorschläge.</div>'}
               ${unmatched.length ? `<details open><summary>Unmatched Notes (${unmatched.length})</summary><div class="stack-row" style="margin:8px 0;"><button class="btn" id="btnSaveCurrentUnmatchedNotes">Alle unmatched speichern</button></div><div class="list" style="margin-top:8px;">${unmatched.map(item => `<div class="item"><div>${escapeHtml(item.text || '')}</div><div class="mini">${escapeHtml(item.reason || 'ohne Grund')}</div></div>`).join('')}</div></details>` : ''}
             </div>
@@ -3729,6 +5028,153 @@
           f.projectId === projectId &&
           isPlannedFeature(f)
         );
+      }
+
+      function getOverviewProjectHue(index) {
+        const hues = ['var(--hue-sage)', 'var(--hue-slate)', 'var(--hue-plum)', 'var(--hue-ochre)', 'var(--hue-teal)'];
+        return hues[Math.abs(index) % hues.length];
+      }
+
+      function getStableProjectSortValue(project) {
+        const id = String((project && project.id) || '');
+        let hash = 0;
+        for (let i = 0; i < id.length; i++) hash = ((hash << 5) - hash + id.charCodeAt(i)) | 0;
+        return Math.abs(hash);
+      }
+
+      function getOverviewProjects() {
+        return (S.projects || [])
+          .filter(p => p && p.status !== 'archiviert')
+          .slice()
+          .sort((a, b) => getStableProjectSortValue(a) - getStableProjectSortValue(b) || String(a.title || '').localeCompare(String(b.title || '')));
+      }
+
+      function getOverviewNodePosition(index, count) {
+        if (count <= 1) return { x: 50, y: 52 };
+        const angle = (-90 + (360 / count) * index) * Math.PI / 180;
+        const rx = count <= 6 ? 31 : 36;
+        const ry = count <= 6 ? 29 : 32;
+        return {
+          x: Math.round((50 + Math.cos(angle) * rx) * 10) / 10,
+          y: Math.round((52 + Math.sin(angle) * ry) * 10) / 10
+        };
+      }
+
+      function renderOverviewDestination(project, index, options) {
+        const opts = Object.assign({ asCard: false }, options || {});
+        const plannedFeatures = getPlannedProjectFeatures(project.id);
+        const openNotes = getOpenProjectNotes(project.id);
+        const hue = getOverviewProjectHue(index);
+        const isActive = ui.activeProjectId === project.id;
+        if (opts.asCard) {
+          return `<button class="item overview-destination-card ${isActive ? 'is-active' : ''}" data-open-project="${escapeAttr(project.id)}" style="--node-color:${hue};">
+            <div class="row-top">
+              <div>
+                <strong>${escapeHtml(project.title || 'Ohne Titel')}</strong>
+                <div class="mini">${escapeHtml(project.type || 'Sonstiges')} · ${escapeHtml(project.status || 'aktiv')}</div>
+              </div>
+              <span class="pill">${plannedFeatures.length} Features</span>
+            </div>
+            <div class="mini">${openNotes.length} offene Notizen · aktualisiert ${escapeHtml(formatDateTime(getProjectUpdatedAt(project)))}</div>
+          </button>`;
+        }
+        const pos = getOverviewNodePosition(index, opts.count || 1);
+        return `<button class="overview-node ${isActive ? 'is-active' : ''}" data-open-project="${escapeAttr(project.id)}" style="--node-x:${pos.x}%;--node-y:${pos.y}%;--node-color:${hue};" title="${escapeAttr(project.title || 'Projekt öffnen')}">
+          <span class="overview-node-marker" aria-hidden="true"></span>
+          <span>
+            <span class="overview-node-title">${escapeHtml(project.title || 'Ohne Titel')}</span>
+            <span class="overview-node-meta">${escapeHtml(project.status || 'aktiv')} · ${plannedFeatures.length}/${openNotes.length}</span>
+          </span>
+        </button>`;
+      }
+
+      function renderOverviewMomentumCard(project, index) {
+        const plannedFeatures = getPlannedProjectFeatures(project.id);
+        const openNotes = getOpenProjectNotes(project.id);
+        const data = getProjectMomentumData(project.id, plannedFeatures, openNotes);
+        const hue = getOverviewProjectHue(index);
+        const focus = project.currentFocus || (data.activeFeatures && data.activeFeatures[0] && data.activeFeatures[0].title) || 'Noch kein Fokus gesetzt.';
+        const nextStep = project.nextStep || (data.candidateFeatures && data.candidateFeatures[0] && data.candidateFeatures[0].title) || '';
+        return `<div class="item overview-momentum-card" style="--node-color:${hue};">
+          <div class="row-top">
+            <div>
+              <strong>${escapeHtml(project.title || 'Ohne Titel')}</strong>
+              <div class="mini">${escapeHtml(project.status || 'aktiv')} · ${escapeHtml(project.type || 'Sonstiges')} · ${escapeHtml(formatDateTime(getProjectUpdatedAt(project)))}</div>
+            </div>
+            <div class="stack-row" style="gap:6px;">
+              <span class="pill">${plannedFeatures.length} Features</span>
+              <span class="pill">${openNotes.length} Notizen</span>
+            </div>
+          </div>
+          <div class="momentum-main-grid">
+            <div>
+              <div class="momentum-focus"><strong>Fokus:</strong> ${escapeHtml(shorten(focus, 220))}</div>
+              ${nextStep ? `<div class="momentum-next-step"><div class="label">Nächster Schritt</div><div class="value">${escapeHtml(shorten(nextStep, 260))}</div></div>` : '<div class="notice" style="margin-top:8px;">Noch kein nächster Schritt gesetzt.</div>'}
+            </div>
+            <div class="momentum-actions">
+              <button class="btn" data-open-project="${escapeAttr(project.id)}">Projekt-Workspace öffnen</button>
+              <div class="mini">Blockiert: ${data.blockedFeatures.length} · Aufgeschoben: ${data.deferredFeatures.length} · Top-Kandidaten: ${data.candidateFeatures.length}</div>
+            </div>
+          </div>
+        </div>`;
+      }
+
+      function renderOverview() {
+        const projects = getOverviewProjects();
+        if (!projects.length) {
+          return `
+            <div class="panel-title">
+              <div>
+                <h3>Karten-Übersicht</h3>
+                <div class="mini">Ein ruhiger Startpunkt für deine Reiseziele.</div>
+              </div>
+              <button class="btn btn-primary" id="btnStartNewProject">+ Neues Projekt</button>
+            </div>
+            <div class="notice">Noch keine aktiven Projekte vorhanden. Lege ein Reiseziel an, um die Karte zu füllen.</div>
+          `;
+        }
+        const useListFallback = true;
+        return `
+          <div class="overview-hero">
+            <div class="panel-title">
+              <div>
+                <h3>Karten-Übersicht</h3>
+                <div class="mini">Wo bin ich, was bewegt sich — alle aktiven Projekte als ruhige Reiseziele.</div>
+              </div>
+              <button class="btn btn-primary" id="btnStartNewProject">+ Neues Projekt</button>
+            </div>
+            ${useListFallback ? `
+              <div class="overview-destination-list">
+                ${projects.map((project, index) => renderOverviewDestination(project, index, { asCard: true })).join('')}
+              </div>
+            ` : `
+              <div class="overview-map" aria-label="Projektkarte">
+                <div class="overview-map-header">
+                  <div>
+                    <div class="eyebrow">Atlas</div>
+                    <strong>Reiseziele</strong>
+                    <div class="mini">Positionen werden deterministisch aus der Projekt-ID abgeleitet und nicht gespeichert.</div>
+                  </div>
+                  <span class="pill">${projects.length} aktive Projekte</span>
+                </div>
+                <div class="overview-map-stage">
+                  ${projects.map((project, index) => renderOverviewDestination(project, index, { count: projects.length })).join('')}
+                </div>
+              </div>
+            `}
+            <div>
+              <div class="panel-title" style="margin-bottom:10px;">
+                <div>
+                  <h3>Momentum</h3>
+                  <div class="mini">Fokus, nächster Schritt und Status je Projekt.</div>
+                </div>
+              </div>
+              <div class="overview-momentum-list">
+                ${projects.map(renderOverviewMomentumCard).join('')}
+              </div>
+            </div>
+          </div>
+        `;
       }
 
       function getMomentumDashboardProjects() {
@@ -3860,7 +5306,7 @@
         const counters = `<div class="stack-row" style="gap:6px;"><span class="pill pill-info">Aktiv ${data.activeFeatures.length}</span><span class="pill">Kandidaten ${data.candidateFeatures.length}</span>${data.blockedFeatures.length ? `<span class="pill pill-warning">Blockiert ${data.blockedFeatures.length}</span>` : ''}</div>`;
         return `
           <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:12px;">
-            <div class="row-top" style="margin-bottom:6px;"><strong>Projekt-Momentum</strong><div class="stack-row" style="gap:6px;"><button class="btn btn-ghost" data-toggle-momentum="${project.id}">${isCollapsed ? 'Momentum ausklappen' : 'Momentum einklappen'}</button><button class="btn btn-secondary" data-enter-project-edit="${project.id}">Bearbeiten</button><button class="btn btn-primary" id="btnBuildProjectMomentumPrompt">Nächsten Projektschritt planen</button></div></div>
+            <div class="row-top" style="margin-bottom:6px;"><strong>Projekt-Momentum</strong><div class="stack-row" style="gap:6px;"><button class="btn btn-ghost" data-toggle-momentum="${project.id}">${isCollapsed ? 'Momentum ausklappen' : 'Momentum einklappen'}</button><button class="btn btn-secondary" data-enter-project-edit="${project.id}">Bearbeiten</button><button class="btn btn-secondary" id="btnBuildProjectMomentumPrompt">Nächsten Projektschritt planen</button></div></div>
             <div class="mini" style="margin-bottom:8px;">Was hält dieses Projekt als nächstes in Bewegung?</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;"><div style="background:var(--surface-3);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:10px;padding:10px 12px;"><div class="eyebrow">Aktueller Fokus</div><div>${escapeHtml(project.currentFocus || 'Noch kein Fokus gesetzt.')}</div></div><div style="background:var(--surface-3);border:1px solid var(--border);border-left:3px solid var(--green);border-radius:10px;padding:10px 12px;"><div class="eyebrow">Nächster Schritt</div><div>${escapeHtml(project.nextStep || 'Noch kein nächster Schritt gesetzt.')}</div></div></div>
             ${promptState.prompt ? `<div style="background:var(--surface-3);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;"><label for="projectMomentumPromptOutput">Projekt-Momentum-Prompt</label><textarea id="projectMomentumPromptOutput" style="min-height:180px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(promptState.prompt || '')}</textarea><div class="stack-row" style="margin-top:6px;"><button class="btn btn-secondary" id="btnCopyProjectMomentumPrompt">Copy</button></div><div class="field" style="margin-top:8px;"><label for="projectMomentumResultJsonInput">Ergebnis / Fokus-Update aus ChatGPT</label><textarea id="projectMomentumResultJsonInput" style="min-height:140px;font-family:var(--font-mono);font-size:12px;" placeholder='{"currentFocus":"...","nextStep":"..."}'>${escapeHtml(promptState.resultJson || '')}</textarea><div class="stack-row" style="margin-top:6px;"><button class="btn btn-primary" id="btnImportProjectMomentumResult">Fokus & nächsten Schritt übernehmen</button></div></div></div>` : ''}
@@ -4123,16 +5569,49 @@
         const driveUrl = (p.driveUrl || '').trim();
         const obsidianUrl = (p.obsidianUrl || '').trim();
         const hasLinks = mainChatUrl || driveUrl || obsidianUrl;
+        const chatStructure = getProjectChatStructure(p.id);
+        const updatedAt = getProjectUpdatedAt(p);
+        const momentumPromptState = getProjectMomentumPromptState(p.id);
+        const headerPrimaryClass = momentumPromptState.prompt ? 'btn-secondary' : 'btn-primary';
+        const mainChatLabel = projectMainChat ? (projectMainChat.title || 'Hauptchat vorhanden') : (chatStructure.hasMainChat ? 'Hauptchat vorhanden' : 'Kein Hauptchat');
+        const mainChatMeta = `${chatStructure.sprintCount} ${chatStructure.sprintCount === 1 ? 'Sprint' : 'Sprints'} · ${projectChats.length} ${projectChats.length === 1 ? 'Chat' : 'Chats'}`;
 
         return `
           ${renderContextBanner()}
-          <div class="panel-title">
-            <h3>${escapeHtml(p.title)}</h3>
-            <div class="stack-row" style="gap:6px;">
+          <header class="workspace-header">
+            <div class="workspace-crumb"><span class="eyebrow">Kontext</span><span>/</span><strong>Projekt-Workspace</strong></div>
+            <h2 class="workspace-title">${escapeHtml(p.title)}</h2>
+            <div class="workspace-header-row">
               <span class="pill">${escapeHtml(p.status)}</span>
-              <button class="btn" id="btnStartNewProject">+ Neues Projekt</button>
-              <button class="btn" id="btnEditActiveProject">✏ Bearbeiten</button>
+              <div class="workspace-header-actions">
+                <button class="btn ${headerPrimaryClass}" id="btnSprintCycleBuildMainChatStart" ${isArchivedProject || !projectMainChat ? 'disabled' : ''}>Hauptchat um Sprintstart bitten</button>
+                <button class="btn" id="btnStartNewProject">+ Neues Projekt</button>
+                <button class="btn" id="btnEditActiveProject">✏ Bearbeiten</button>
+              </div>
             </div>
+          </header>
+
+          <div class="workspace-status-strip">
+            <div class="status-card">
+              <div class="eyebrow">Status</div>
+              <div class="status-card-value"><span class="pill">${escapeHtml(p.status || '—')}</span></div>
+              <div class="meta">${projectFeatures.length} Features · aktualisiert ${escapeHtml(formatDateTime(updatedAt))}</div>
+            </div>
+            <div class="status-card">
+              <div class="eyebrow">Aktueller Fokus</div>
+              <div class="status-card-value">${escapeHtml(p.currentFocus || 'Noch kein Fokus gesetzt.')}</div>
+              <div class="meta">${projectNotes.length} Notizen</div>
+            </div>
+            <div class="status-card">
+              <div class="eyebrow">Nächster Schritt</div>
+              <div class="status-card-value">${escapeHtml(p.nextStep || 'Noch kein nächster Schritt gesetzt.')}</div>
+              <div class="meta">${getSelectedSprintFeatureIds(p.id).length} für Sprint ausgewählt</div>
+            </div>
+            <a class="status-card link" href="#projectChatsSection">
+              <div class="eyebrow">Hauptchat</div>
+              <div class="status-card-value">${escapeHtml(mainChatLabel)}</div>
+              <div class="meta">${escapeHtml(mainChatMeta)}</div>
+            </a>
           </div>
 
           ${p.summary ? `<div class="notice" style="margin-bottom:10px;">${escapeHtml(p.summary)}</div>` : ''}
@@ -4157,7 +5636,7 @@
             `}
           </div>
 
-          <details style="margin-bottom:12px;" ${projectChats.length ? 'open' : ''}>
+          <details id="projectChatsSection" style="margin-bottom:12px;" ${projectChats.length ? 'open' : ''}>
             <summary style="font-weight:700;">Chats &amp; Sprints (${visibleChats.length}/${projectChats.length})</summary>
             <div class="stack-row" style="margin-top:8px;">
               <span class="pill">${visibleChats.length} sichtbar · ${hiddenDoneSprints} abgeschlossene Sprints ${showCompletedSprints ? 'eingeblendet' : 'ausgeblendet'}</span>
@@ -4247,9 +5726,7 @@
                         }
                       </div>
                     </div>
-                    <div class="stack-row">
-                      <button class="btn btn-primary" id="btnSprintCycleBuildMainChatStart" ${isArchivedProject || !projectMainChat ? 'disabled' : ''}>Hauptchat um Sprintstart bitten</button>
-                    </div>
+                    <div class="mini" style="margin-top:6px;">Sprintstart-Aktion liegt im Projektkopf.</div>
                     ${chatWorkflow.sprintStartPrompt ? `
                       <div class="field" style="margin-top:8px;">
                         <label for="sprintCycleStartPromptOutput">Sprintstart-Prompt für Hauptchat</label>
@@ -4298,8 +5775,8 @@
                   </div>
                 </div>
               </div>
-              <details style="margin-bottom:8px;">
-                <summary style="font-weight:700;">Advanced · Hauptchat-Werkzeuge</summary>
+              <details class="sprint-advanced-zone">
+                <summary>Advanced · Hauptchat-Werkzeuge</summary>
                 <div class="stack-row" style="margin-top:8px;">
                   <button class="btn btn-ghost" id="btnChatWorkflowSetMain" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Als Hauptchat markieren</button>
                   <button class="btn btn-ghost" id="btnChatWorkflowBuildReturn" ${isArchivedProject || !chatWorkflow.sourceChatId || !projectMainChat ? 'disabled' : ''}>Zum Hauptchat-Kontext zurück</button>
@@ -4316,8 +5793,8 @@
                   </div>
                 </div>
               </details>
-              <details style="margin-bottom:8px;">
-                <summary style="font-weight:700;">Legacy · alte Sprint-Werkzeuge</summary>
+              <details class="sprint-advanced-zone">
+                <summary>Legacy · alte Sprint-Werkzeuge</summary>
                 <div class="stack-row" style="margin-top:8px;">
                   <button class="btn btn-ghost" id="btnChatWorkflowBuildLegacyMigration" ${isArchivedProject ? 'disabled' : ''}>Prompt: Alten Sprintchat migrieren</button>
                   <button class="btn btn-ghost" id="btnChatWorkflowBuildSprint" ${isArchivedProject || !projectMainChat ? 'disabled' : ''}>Legacy: Prompt für direkten Sprintchat-Start</button>
@@ -4592,65 +6069,99 @@
 
       function renderSettingsWorkspace() {
         return `
-          <div class="panel-title"><h3>Settings</h3></div>
-          <div class="field"><label for="themeSelect">Theme</label><select id="themeSelect"><option value="theme-dark">Dark</option><option value="theme-light">Light</option><option value="theme-eink">E-Ink</option></select></div>
-          <div class="field"><label for="fontSelect">Font</label><select id="fontSelect"><option value="ui">UI</option><option value="serif">Serif</option></select></div>
-          <hr style="border:none;border-top:1px solid var(--border);margin:12px 0;">
-          <div class="panel-title" style="margin-top:8px;"><h3>GitHub Gist Sync</h3><div class="mini">Manueller Cloud-Backup</div></div>
-          <div class="field"><label for="gistId">Gist ID</label><input id="gistId" type="text" value="${escapeAttr(C.gistId || '')}" /></div>
-          <div class="field"><label for="gistToken">GitHub Token</label><input id="gistToken" type="password" value="${escapeAttr(C.gistToken || '')}" /></div>
-          <div class="field"><label for="gistPassphrase">Gist-Passphrase</label><input id="gistPassphrase" type="password" value="" autocomplete="off" /></div>
-          <label class="mini" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;"><input id="gistRememberPassphraseSession" type="checkbox" ${_gistRememberPassphraseForSession ? 'checked' : ''} /> Passphrase für diese Sitzung merken</label>
-          <div class="notice" style="font-size:12px;margin-bottom:8px;">Gist-Sync ist verschlüsselt.<br>Ohne Passphrase kann ein verschlüsselter Gist nicht gelesen werden.<br>Passphrase wird standardmäßig nicht dauerhaft gespeichert.<br>Bei vergessener Passphrase ist der Gist nicht wiederherstellbar. Lokale ZIP-Backups behalten.</div>
-          <div class="stack-row" style="margin-bottom:8px;">
-            <button class="btn btn-primary" id="btnGistPull">↕️ Gist synchronisieren</button>
+          <div class="panel-title settings-title"><h3>Settings</h3><div class="pill pill-outline">Atlas</div></div>
+          <div class="settings-stack">
+            <section class="settings-group" aria-label="Darstellung">
+              <div class="panel-title"><h3>Darstellung</h3><div class="section-label">Theme · Schrift</div></div>
+              <div class="settings-field-grid">
+                <div class="field"><label for="themeSelect">Theme</label><select id="themeSelect"><option value="theme-light">Atlas</option><option value="theme-eink">E-Ink</option></select></div>
+                <div class="field"><label for="fontSelect">UI-Font / Serif-Modus</label><select id="fontSelect"><option value="ui">UI</option><option value="serif">Serif</option></select></div>
+              </div>
+            </section>
+
+            <section class="settings-group" aria-label="GitHub Gist">
+              <div class="panel-title"><h3>GitHub Gist</h3><div class="section-label">Sync · Passphrase</div></div>
+              <div class="field"><label for="gistId">Gist ID</label><input id="gistId" type="text" value="${escapeAttr(C.gistId || '')}" /></div>
+              <div class="field"><label for="gistPassphrase">Gist-Passphrase</label><input id="gistPassphrase" type="password" value="" autocomplete="off" /></div>
+              <label class="mini settings-inline-check"><input id="gistRememberPassphraseSession" type="checkbox" ${_gistRememberPassphraseForSession ? 'checked' : ''} /> Passphrase für diese Sitzung merken</label>
+              <div class="notice notice-info settings-note">Gist-Sync ist verschlüsselt.<br>Ohne Passphrase kann ein verschlüsselter Gist nicht gelesen werden.<br>Passphrase wird standardmäßig nicht dauerhaft gespeichert.<br>Bei vergessener Passphrase ist der Gist nicht wiederherstellbar. Lokale ZIP-Backups behalten.</div>
+              <div class="stack-row settings-actions">
+                <button class="btn btn-primary" id="btnGistPull">↕️ Gist synchronisieren</button>
+              </div>
+              <div class="notice notice-info settings-status" id="gistStatusInfo">Noch kein Sync durchgeführt.</div>
+            </section>
+
+            <section class="settings-group" aria-label="Trello">
+              <div class="panel-title"><h3>Trello</h3><div class="section-label">Board-Verbindung</div></div>
+              <div class="settings-field-grid">
+                <div class="field"><label for="trelloKey">Trello API Key</label><input id="trelloKey" type="text" value="${escapeAttr(C.trelloKey || '')}" /></div>
+                <div class="field"><label for="trelloToken">Trello Token</label><input id="trelloToken" type="password" value="${escapeAttr(C.trelloToken || '')}" /></div>
+              </div>
+              <div class="field"><label for="trelloBoardId">Trello Board ID</label><input id="trelloBoardId" type="text" value="${escapeAttr(C.trelloBoardId || '')}" /></div>
+              <div class="stack-row settings-actions">
+                <button class="btn btn-secondary" id="btnTestTrello">Trello-Verbindung testen</button>
+              </div>
+              <div class="notice notice-info settings-note">Listen werden bei Bedarf anhand deiner Statusnamen erstellt. Labels folgen der Konvention <code>P:</code>, <code>C:</code> und <code>Prio:</code>. Die Kartenbeschreibung bekommt oben einen von Roadtrip verwalteten Sync-Block.</div>
+            </section>
+
+            <section class="settings-group" aria-label="Datenverwaltung">
+              <div class="panel-title"><h3>Datenverwaltung</h3><div class="section-label">Export · Import · Modell</div></div>
+              <div class="settings-field-grid">
+                <div class="field"><label for="openAiModel">OpenAI Model</label><input id="openAiModel" type="text" value="${escapeAttr(C.openAiModel || '')}" /></div>
+              </div>
+              <div class="stack-row settings-actions">
+                <button class="btn btn-secondary" id="btnZipBackupExport">ZIP-Backup exportieren</button>
+                <label class="btn btn-secondary" for="importZipBackupInput">ZIP-Backup prüfen/importieren</label>
+                <input id="importZipBackupInput" class="hidden" type="file" accept=".zip,application/zip,application/x-zip-compressed">
+              </div>
+              <details class="settings-danger-zone">
+                <summary>Advanced · Danger-Zone</summary>
+                <div class="notice notice-danger settings-note">Seltene oder destruktive Werkzeuge: vorher ein ZIP-Backup exportieren. Aktionen bleiben ghost-only und überschreiben keine Daten ohne deine bestehende Handler-Bestätigung.</div>
+
+                <div class="settings-danger-block">
+                  <div class="section-label">Gist-Token · Remote überschreiben</div>
+                  <div class="field"><label for="gistToken">GitHub Token</label><input id="gistToken" type="password" value="${escapeAttr(C.gistToken || '')}" /></div>
+                  <div class="stack-row settings-actions">
+                    <button class="btn btn-ghost settings-danger-action" id="btnGistPush">Remote mit lokalem Stand überschreiben</button>
+                  </div>
+                </div>
+
+                <div class="settings-danger-block">
+                  <div class="section-label">Raw Backup Gist</div>
+                  <div class="settings-field-grid">
+                    <div class="field"><label for="rawGistId">Backup Gist ID</label><input id="rawGistId" type="text" value="${escapeAttr(C.rawGistId || '')}" /></div>
+                    <div class="field"><label for="rawGistToken">Backup Token</label><input id="rawGistToken" type="password" value="${escapeAttr(C.rawGistToken || '')}" /></div>
+                  </div>
+                  <div class="stack-row settings-actions">
+                    <button class="btn btn-ghost" id="btnGistRawBackup">📦 Raw-Backup zum Gist</button>
+                  </div>
+                  <div class="notice notice-danger settings-note">Raw Backup Gist ist nicht Teil der verschlüsselten Haupt-Gist-Sync-Änderung. Für private Daten bis zu einem separaten Patch nicht verwenden.</div>
+                </div>
+
+                <div class="settings-danger-block">
+                  <div class="section-label">Notfall · Kompaktierung</div>
+                  <div class="stack-row settings-actions">
+                    <button class="btn btn-ghost settings-danger-action" id="btnEmergencyExportFull">Notfall-Export vollständig</button>
+                    <button class="btn btn-ghost" id="btnCompactExport">Kompakt-Export</button>
+                    <button class="btn btn-ghost" id="btnCompactRawData">Rohdaten komprimieren</button>
+                    <button class="btn btn-ghost" id="btnBackfillImportMetadata">Fehlende Projekt-Summarys aus Import-Historie ergänzen</button>
+                  </div>
+                </div>
+
+                <div class="settings-danger-block">
+                  <div class="section-label">Speicherdiagnose</div>
+                  <div id="storageDiagWrap" class="notice notice-info storage-diag">
+                    <div id="storageDiagTotal" class="storage-diag-total">Gesamtgröße: 0.00 MB</div>
+                    <div class="storage-diag-track">
+                      <div id="storageDiagBar" class="storage-diag-bar storage-diag-bar-ok"></div>
+                    </div>
+                    <div id="storageDiagTop" class="storage-diag-top"></div>
+                    <div id="storageDiagWarn" class="storage-diag-warn"></div>
+                  </div>
+                </div>
+              </details>
+            </section>
           </div>
-          <details style="margin-bottom:8px;">
-            <summary>Erweiterte / riskante Gist-Aktionen</summary>
-            <div class="notice" style="font-size:12px;margin-top:8px;">Diese Aktionen können Daten auf einem anderen Gerät überschreiben. Vorher ZIP-Backup exportieren.</div>
-            <div class="stack-row" style="margin-top:8px;">
-              <button class="btn btn-danger" id="btnGistPush">Remote mit lokalem Stand überschreiben</button>
-            </div>
-          </details>
-          <div class="notice" id="gistStatusInfo" style="font-size:12px;">Noch kein Sync durchgeführt.</div>
-          <hr style="border:none;border-top:1px solid var(--border);margin:12px 0;">
-          <div class="panel-title" style="margin-top:8px;"><h3>Raw Backup Gist</h3><div class="mini">Nur Notizen &amp; Analysen (optional separates Gist)</div></div>
-          <div class="field"><label for="rawGistId">Backup Gist ID</label><input id="rawGistId" type="text" value="${escapeAttr(C.rawGistId || '')}" /></div>
-          <div class="field"><label for="rawGistToken">Backup Token</label><input id="rawGistToken" type="password" value="${escapeAttr(C.rawGistToken || '')}" /></div>
-          <div class="stack-row" style="margin-bottom:8px;">
-            <button class="btn" id="btnGistRawBackup">📦 Raw-Backup zum Gist</button>
-          </div>
-          <div class="notice" style="font-size:12px;">Hinweis: Raw Backup Gist ist nicht Teil der verschlüsselten Haupt-Gist-Sync-Änderung. Für private Daten bis zu einem separaten Patch nicht verwenden.</div>
-          <hr style="border:none;border-top:1px solid var(--border);margin:12px 0;">
-          <div class="panel-title" style="margin-top:8px;"><h3>Daten & Speicher</h3><div class="mini">Diagnose und Notfall-Werkzeuge</div></div>
-          <div id="storageDiagWrap" class="notice" style="display:block;">
-            <div id="storageDiagTotal" style="margin-bottom:6px;">Gesamtgröße: 0.00 MB</div>
-            <div style="height:10px;border-radius:999px;background:var(--surface-3);overflow:hidden;margin-bottom:8px;">
-              <div id="storageDiagBar" style="height:100%;width:0%;background:#22c55e;"></div>
-            </div>
-            <div id="storageDiagTop" style="display:grid;gap:4px;"></div>
-            <div id="storageDiagWarn" style="margin-top:8px;color:#f59e0b;font-weight:600;"></div>
-          </div>
-          <div class="stack-row" style="margin:8px 0;">
-            <button class="btn btn-danger" id="btnEmergencyExportFull">Notfall-Export vollständig</button>
-            <button class="btn" id="btnCompactExport">Kompakt-Export</button>
-            <button class="btn" id="btnZipBackupExport">ZIP-Backup exportieren</button>
-            <label class="btn" for="importZipBackupInput">ZIP-Backup prüfen/importieren</label>
-            <input id="importZipBackupInput" type="file" accept=".zip,application/zip,application/x-zip-compressed" style="display:none;">
-            <button class="btn" id="btnCompactRawData">Rohdaten komprimieren</button>
-            <button class="btn" id="btnBackfillImportMetadata">Fehlende Projekt-Summarys aus Import-Historie ergänzen</button>
-          </div>
-          <hr style="border:none;border-top:1px solid var(--border);margin:12px 0;">
-          <div class="field"><label for="openAiModel">OpenAI Model</label><input id="openAiModel" type="text" value="${escapeAttr(C.openAiModel || '')}" /></div>
-          <hr style="border:none;border-top:1px solid var(--border);margin:10px 0;">
-          <div class="panel-title" style="margin-top:8px;"><h3>Trello</h3><div class="mini">V1 Push-Sync für Features</div></div>
-          <div class="field"><label for="trelloKey">Trello API Key</label><input id="trelloKey" type="text" value="${escapeAttr(C.trelloKey || '')}" /></div>
-          <div class="field"><label for="trelloToken">Trello Token</label><input id="trelloToken" type="password" value="${escapeAttr(C.trelloToken || '')}" /></div>
-          <div class="field"><label for="trelloBoardId">Trello Board ID</label><input id="trelloBoardId" type="text" value="${escapeAttr(C.trelloBoardId || '')}" /></div>
-          <div class="stack-row">
-            <button class="btn" id="btnTestTrello">Trello-Verbindung testen</button>
-          </div>
-          <div class="notice" style="margin-top:10px;">Listen werden bei Bedarf anhand deiner Statusnamen erstellt. Labels folgen der Konvention <code>P:</code>, <code>C:</code> und <code>Prio:</code>. Die Kartenbeschreibung bekommt oben einen von Roadtrip verwalteten Sync-Block.</div>
         `;
       }
 
@@ -4716,47 +6227,85 @@
         `;
       }
 
+      function featurePillClass(kind, value) {
+        if (kind === 'pool') return normalizeFeaturePool(value) === 'implemented' ? 'pill pill-info' : 'pill pill-gold';
+        if (kind === 'status') {
+          if (['blocked', 'obsolete'].includes(value)) return 'pill pill-warning';
+          if (['in-progress', 'selected-for-sprint', 'confirmed'].includes(value)) return 'pill pill-success';
+          if (['needs-review', 'detected'].includes(value)) return 'pill pill-info';
+        }
+        if (kind === 'review') return value === 'reviewed' ? 'pill pill-success' : 'pill pill-warning';
+        return 'pill';
+      }
+
+      function getFeatureReviewLabel(reviewStatus) {
+        return reviewStatus === 'reviewed' ? 'Review erledigt' : 'Review nötig';
+      }
+
+      function renderFeatureRowDetails(f) {
+        const sourceLabel = f.sourceType || 'manuell';
+        const trelloBadge = getTrelloSyncBadge(f);
+        return `
+          <details class="feature-row-details">
+            <summary class="feature-detail-toggle">Details & Aktionen</summary>
+            <div class="feature-row-detail-body">
+              <div class="feature-meta-pills">
+                <span class="pill">Projekt: ${escapeHtml(getProjectTitle(f.projectId))}</span>
+                <span class="${featurePillClass('review', f.reviewStatus)}">${escapeHtml(getFeatureReviewLabel(f.reviewStatus))}</span>
+                <span class="pill pill-outline" title="Quelle">Quelle: ${escapeHtml(sourceLabel)}</span>
+                <span class="pill pill-outline" title="Trello-Sync">Trello: ${escapeHtml(trelloBadge)}</span>
+              </div>
+              <div class="feature-meta-pills">
+                <label class="mini">Pool ändern <select data-pool-feature="${escapeAttr(f.id)}">${FEATURE_POOLS.map(pool => `<option value="${pool}" ${pool===f.pool?'selected':''}>${getFeaturePoolLabel(pool)}</option>`).join('')}</select></label>
+                <label class="mini">Status ändern <select data-status-feature="${escapeAttr(f.id)}">${getFeatureStatusesForPool(f.pool).map(s => `<option value="${s}" ${s===f.status?'selected':''}>${getFeatureStatusLabel(s)}</option>`).join('')}</select></label>
+              </div>
+              <div class="feature-cell-actions">
+                <button class="btn" data-sync-feature="${escapeAttr(f.id)}">${f.trello && f.trello.cardId ? 'Trello updaten' : 'Nach Trello'}</button>
+                ${f.trello && f.trello.cardId ? `<button class="btn" data-pull-feature="${escapeAttr(f.id)}">Von Trello</button>` : ''}
+                ${f.trello && f.trello.cardId ? `<button class="btn" data-open-trello-card="${escapeAttr(f.id)}">Öffnen</button>` : ''}
+              </div>
+            </div>
+          </details>
+        `;
+      }
+
       function renderTable(features, options) {
         const opts = Object.assign({ title: 'Tabelle' }, options || {});
         return `
-          <div class="panel-title"><h3>${escapeHtml(opts.title)}</h3><div class="mini">Filtern, sichten, Prioritäten anpassen</div></div>
-          <div style="overflow:auto">
+          <div class="panel-title"><h3>${escapeHtml(opts.title)}</h3><div class="mini">Primärdaten in 6 Spalten, Details pro Zeile ausklappbar</div></div>
+          <div class="table-scroll">
             <table>
               <thead>
                 <tr>
                   <th>Feature</th>
-                  <th>Projekt</th>
                   <th>Pool</th>
                   <th>Status</th>
                   <th>Priorität</th>
                   <th>Kategorie</th>
-                  <th>Quelle</th>
-                  <th>Trello</th>
+                  <th>Aktualisiert</th>
                 </tr>
               </thead>
               <tbody>
                 ${features.map(f => `
                   <tr>
-                    <td>
-                      <strong>${escapeHtml(f.title)}</strong><br>
-                      <span class="mini">${escapeHtml(f.description || '')}</span>
-                    </td>
-                    <td>${escapeHtml(getProjectTitle(f.projectId))}</td>
-                    <td><select data-pool-feature="${f.id}">${FEATURE_POOLS.map(pool => `<option value="${pool}" ${pool===f.pool?'selected':''}>${getFeaturePoolLabel(pool)}</option>`).join('')}</select></td>
-                    <td><select data-status-feature="${f.id}">${getFeatureStatusesForPool(f.pool).map(s => `<option value="${s}" ${s===f.status?'selected':''}>${getFeatureStatusLabel(s)}</option>`).join('')}</select></td>
-                    <td><select data-prio-feature="${f.id}">${PRIORITIES.map(p => `<option value="${p}" ${p===f.priority?'selected':''}>${p}</option>`).join('')}</select></td>
-                    <td>${escapeHtml(f.category)}</td>
-                    <td>${escapeHtml(f.sourceType || 'manuell')}</td>
-                    <td>
-                      <div class="mini">${escapeHtml(getTrelloSyncBadge(f))}</div>
-                      <div class="stack-row" style="margin-top:6px;">
-                        <button class="btn" data-sync-feature="${f.id}">${f.trello && f.trello.cardId ? 'Trello updaten' : 'Nach Trello'}</button>
-                        ${f.trello && f.trello.cardId ? `<button class="btn" data-pull-feature="${f.id}">Von Trello</button>` : ''}
-                        ${f.trello && f.trello.cardId ? `<button class="btn" data-open-trello-card="${f.id}">Öffnen</button>` : ''}
+                    <td class="title">
+                      <div class="feature-title-stack">
+                        <strong>${escapeHtml(f.title)}</strong>
+                        ${f.description ? `<span class="mini">${escapeHtml(shorten(f.description, 150))}</span>` : ''}
+                        <div class="feature-meta-pills">
+                          <span class="pill pill-outline">${escapeHtml(getProjectTitle(f.projectId))}</span>
+                          <span class="${featurePillClass('review', f.reviewStatus)}">${escapeHtml(getFeatureReviewLabel(f.reviewStatus))}</span>
+                        </div>
+                        ${renderFeatureRowDetails(f)}
                       </div>
                     </td>
+                    <td><span class="${featurePillClass('pool', f.pool)}">${escapeHtml(getFeaturePoolLabel(f.pool))}</span></td>
+                    <td><span class="${featurePillClass('status', f.status)}">${escapeHtml(getFeatureStatusLabel(f.status))}</span></td>
+                    <td><select data-prio-feature="${escapeAttr(f.id)}">${PRIORITIES.map(p => `<option value="${p}" ${p===f.priority?'selected':''}>${p}</option>`).join('')}</select></td>
+                    <td><span class="pill pill-outline">${escapeHtml(f.category)}</span></td>
+                    <td><span class="feature-updated">${escapeHtml(formatDateTime(f.updatedAt || f.createdAt || ''))}</span></td>
                   </tr>
-                `).join('') || '<tr><td colspan="8">Keine Features passend zu deinen Filtern.</td></tr>'}
+                `).join('') || '<tr><td colspan="6">Keine Features passend zu deinen Filtern.</td></tr>'}
               </tbody>
             </table>
           </div>
@@ -4819,25 +6368,27 @@
           .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
         const activeProjectId = st.projectId && st.projectId !== 'all' && st.projectId !== 'none' ? st.projectId : '';
         return `
-          <div class="panel-title"><h3>Notes Workspace</h3><div class="mini">Zentraler Workspace für rohe Projekt-Notizen aus S.notes.</div></div>
-          <div class="field">
-            <label for="notesWorkspaceText">Neue Notiz</label>
-            <textarea id="notesWorkspaceText" placeholder="Notiz, Idee, Bug, Frage, Entscheidung ..."></textarea>
-          </div>
-          <div class="toolbar" style="margin-bottom:12px;">
-            <div class="field" style="min-width:220px;"><label for="notesWorkspaceProject">Projekt</label><select id="notesWorkspaceProject"><option value="">— Kein Projekt —</option>${(S.projects || []).map(project => `<option value="${escapeAttr(project.id)}" ${activeProjectId === project.id ? 'selected' : ''}>${escapeHtml(project.title || 'Ohne Titel')}</option>`).join('')}</select></div>
-            <div class="field" style="min-width:180px;"><label for="notesWorkspaceType">Typ</label><select id="notesWorkspaceType">${NOTE_TYPES.map(type => `<option value="${escapeAttr(type)}">${escapeHtml(type)}</option>`).join('')}</select></div>
-            <button class="btn btn-primary" id="btnAddNotesWorkspaceNote">Notiz hinzufügen</button>
-          </div>
-          <div class="toolbar" style="margin-bottom:12px;">
-            <div class="field" style="min-width:220px;"><label for="notesWorkspaceProjectFilter">Projektfilter</label><select id="notesWorkspaceProjectFilter">${projectOptions}</select></div>
-            <div class="field"><label for="notesWorkspaceStatusFilter">Status</label><select id="notesWorkspaceStatusFilter">${statusOptions}</select></div>
-            <div class="field"><label for="notesWorkspaceTypeFilter">Typ</label><select id="notesWorkspaceTypeFilter">${typeOptions}</select></div>
-            <div class="field" style="min-width:240px;"><label for="notesWorkspaceSearch">Suche</label><input id="notesWorkspaceSearch" value="${escapeAttr(st.search || '')}" placeholder="Text, Projekt, Quelle ..." /></div>
-          </div>
-          ${activeProjectId ? `<div class="notice" style="margin-bottom:12px;">Batch-Pipeline für dieses Projekt bleibt im Project View: <button class="btn btn-secondary" data-open-notes-project="${escapeAttr(activeProjectId)}">Projekt öffnen</button></div>` : ''}
-          <div class="list">
-            ${notes.map(note => renderNotesWorkspaceItem(note)).join('') || '<div class="notice">Keine passenden Notizen.</div>'}
+          <div class="notes-workspace">
+            <div class="panel-title"><h3>Notes Workspace</h3><div class="mini">Zentraler Workspace für rohe Projekt-Notizen aus S.notes.</div></div>
+            <div class="field">
+              <label for="notesWorkspaceText">Neue Notiz</label>
+              <textarea id="notesWorkspaceText" placeholder="Notiz, Idee, Bug, Frage, Entscheidung ..."></textarea>
+            </div>
+            <div class="toolbar notes-workspace-toolbar notes-workspace-add">
+              <div class="field notes-workspace-project-field"><label for="notesWorkspaceProject">Projekt</label><select id="notesWorkspaceProject"><option value="">— Kein Projekt —</option>${(S.projects || []).map(project => `<option value="${escapeAttr(project.id)}" ${activeProjectId === project.id ? 'selected' : ''}>${escapeHtml(project.title || 'Ohne Titel')}</option>`).join('')}</select></div>
+              <div class="field notes-workspace-type-field"><label for="notesWorkspaceType">Typ</label><select id="notesWorkspaceType">${NOTE_TYPES.map(type => `<option value="${escapeAttr(type)}">${escapeHtml(type)}</option>`).join('')}</select></div>
+              <button class="btn btn-primary" id="btnAddNotesWorkspaceNote">Notiz hinzufügen</button>
+            </div>
+            <div class="toolbar notes-workspace-toolbar notes-workspace-filter">
+              <div class="field notes-workspace-project-field"><label for="notesWorkspaceProjectFilter">Projektfilter</label><select id="notesWorkspaceProjectFilter">${projectOptions}</select></div>
+              <div class="field notes-workspace-status-field"><label for="notesWorkspaceStatusFilter">Status</label><select id="notesWorkspaceStatusFilter">${statusOptions}</select></div>
+              <div class="field notes-workspace-type-field"><label for="notesWorkspaceTypeFilter">Typ</label><select id="notesWorkspaceTypeFilter">${typeOptions}</select></div>
+              <div class="field notes-workspace-search-field"><label for="notesWorkspaceSearch">Suche</label><input id="notesWorkspaceSearch" value="${escapeAttr(st.search || '')}" placeholder="Text, Projekt, Quelle ..." /></div>
+            </div>
+            ${activeProjectId ? `<div class="notice notes-workspace-notice">Batch-Pipeline für dieses Projekt bleibt im Project View: <button class="btn btn-secondary" data-open-notes-project="${escapeAttr(activeProjectId)}">Projekt öffnen</button></div>` : ''}
+            <div class="list">
+              ${notes.map(note => renderNotesWorkspaceItem(note)).join('') || '<div class="notice">Keine passenden Notizen.</div>'}
+            </div>
           </div>
         `;
       }
@@ -4851,13 +6402,14 @@
         const isEditing = ui.notesWorkspace && ui.notesWorkspace.editingNoteId === note.id;
         const featureHint = note.processedIntoFeatureId ? `<span class="pill pill-success">Feature: ${escapeHtml(note.processedIntoFeatureId)}</span>` : '';
         const sourceHint = note.sourceType ? `<span class="pill">Quelle: ${escapeHtml(note.sourceType)}</span>` : '';
+        const statusPillClass = status === 'processed' ? 'pill pill-success' : (status === 'archived' ? 'pill pill-outline' : 'pill');
         if (isEditing) {
           return `
-            <div class="item">
+            <div class="item notes-workspace-item">
               <div class="field"><label>Inhalt</label><textarea data-note-edit-text="${escapeAttr(note.id)}">${escapeHtml(text)}</textarea></div>
-              <div class="toolbar">
-                <div class="field" style="min-width:220px;"><label>Projekt</label><select data-note-edit-project="${escapeAttr(note.id)}"><option value="">— Kein Projekt —</option>${(S.projects || []).map(project => `<option value="${escapeAttr(project.id)}" ${projectId === project.id ? 'selected' : ''}>${escapeHtml(project.title || 'Ohne Titel')}</option>`).join('')}</select></div>
-                <div class="field"><label>Typ</label><select data-note-edit-type="${escapeAttr(note.id)}">${NOTE_TYPES.map(t => `<option value="${escapeAttr(t)}" ${type === t ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}</select></div>
+              <div class="toolbar notes-workspace-toolbar note-edit-toolbar">
+                <div class="field notes-workspace-project-field"><label>Projekt</label><select data-note-edit-project="${escapeAttr(note.id)}"><option value="">— Kein Projekt —</option>${(S.projects || []).map(project => `<option value="${escapeAttr(project.id)}" ${projectId === project.id ? 'selected' : ''}>${escapeHtml(project.title || 'Ohne Titel')}</option>`).join('')}</select></div>
+                <div class="field notes-workspace-type-field"><label>Typ</label><select data-note-edit-type="${escapeAttr(note.id)}">${NOTE_TYPES.map(t => `<option value="${escapeAttr(t)}" ${type === t ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}</select></div>
                 <button class="btn btn-primary" data-save-note-edit="${escapeAttr(note.id)}">Speichern</button>
                 <button class="btn btn-secondary" data-cancel-note-edit="${escapeAttr(note.id)}">Abbrechen</button>
               </div>
@@ -4865,10 +6417,10 @@
           `;
         }
         return `
-          <div class="item">
+          <div class="item notes-workspace-item">
             <div class="row-top">
               <h4 class="item-title">${escapeHtml(projectName)}</h4>
-              <div class="stack-row" style="gap:6px;"><span class="pill">${escapeHtml(status)}</span><span class="pill">${escapeHtml(type)}</span></div>
+              <div class="stack-row"><span class="${statusPillClass}">${escapeHtml(status)}</span><span class="pill">${escapeHtml(type)}</span></div>
             </div>
             <div class="item-desc">${escapeHtml(text || '—')}</div>
             <div class="meta">
@@ -6673,60 +8225,104 @@
         if (!ui.cleanupReview.visible) return '';
         const proposals = ui.cleanupReview.proposals || [];
         const typeLabel = { 'match-existing': 'Unverändert / bereits vorhanden', 'update-existing': 'Update', 'new-implemented-feature': 'Neu', 'new-feature': 'Neu', 'duplicate-of': 'Dublette / vermutlich bereits vorhanden', 'probably-stale': 'Möglicherweise veraltet' };
-        const typeColor = { 'match-existing': 'var(--blue)', 'update-existing': 'var(--accent-2)', 'new-implemented-feature': 'var(--green)', 'new-feature': 'var(--green)', 'duplicate-of': 'var(--yellow)', 'probably-stale': 'var(--ink-dim)' };
         const modeLabel = ui.cleanupReview.mode === 'project-dedupe' ? 'Feature-Bereinigung' : 'Import-Cleanup';
+        const cleanupStats = proposals.reduce((acc, proposal) => {
+          const normalizedType = normalizeCleanupProposalType(proposal.type, ui.cleanupReview.mode);
+          if (normalizedType === 'new-feature' || normalizedType === 'new-implemented-feature') acc.newCount += 1;
+          if (normalizedType === 'update-existing') acc.updateCount += 1;
+          if (normalizedType === 'duplicate-of') acc.duplicateCount += 1;
+          if (proposal._done && !proposal._ignored && !proposal._reviewedOnly) acc.acceptedCount += 1;
+          return acc;
+        }, { newCount: 0, updateCount: 0, duplicateCount: 0, acceptedCount: 0 });
+        const openCount = proposals.filter(p => !p._done).length;
+        const reviewCounter = `${cleanupStats.newCount} neu · ${cleanupStats.updateCount} Updates · ${cleanupStats.duplicateCount} Dubletten · ${cleanupStats.acceptedCount} übernommen`;
+        const renderCleanupActions = (proposal, normalizedType, hasTarget, hasDuplicate) => {
+          const disabledAttr = proposal._done ? ' disabled' : '';
+          const primaryAction = hasTarget
+            ? `<button class="btn btn-primary" data-cleanup-accept-update="${proposal._idx}"${disabledAttr}>Bestehendes Feature aktualisieren</button>`
+            : `<button class="btn btn-primary" data-cleanup-accept-new="${proposal._idx}"${disabledAttr}>Als neues Feature anlegen</button>`;
+          const secondaryAction = hasTarget
+            ? `<button class="btn btn-secondary" data-cleanup-accept-new="${proposal._idx}"${disabledAttr}>Trotzdem als neues Feature anlegen</button>`
+            : '';
+          const reviewOnlyAction = (normalizedType === 'match-existing' || normalizedType === 'probably-stale')
+            ? `<button class="btn btn-secondary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als geprüft abhaken</button>`
+            : '';
+          const dangerAction = normalizedType === 'duplicate-of' && hasDuplicate
+            ? `<button class="btn btn-danger" data-cleanup-mark-duplicate="${proposal._idx}"${disabledAttr}>Dublette in Papierkorb verschieben</button>`
+            : '';
+          return `
+            <div class="stack-row cleanup-review-actions">
+              ${primaryAction}
+              ${secondaryAction}
+              ${reviewOnlyAction}
+              ${dangerAction}
+              <button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button>
+            </div>
+          `;
+        };
         return `
-          <details open style="margin-top:10px;">
-            <summary style="font-weight:700;">Cleanup-Review (${modeLabel}) · ${proposals.filter(p=>!p._done).length} offen</summary>
-            <div style="margin-top:8px;" class="field">
-              <label for="cleanupReviewJsonInput">Cleanup-JSON einfügen</label>
-              <textarea id="cleanupReviewJsonInput" style="min-height:100px;font-family:var(--font-mono);font-size:12px;" placeholder='{"proposals":[...]}'></textarea>
-              <div class="stack-row" style="margin-top:6px;">
+          <details class="cleanup-review-shell" open>
+            <summary class="cleanup-review-summary">Cleanup-Review (${modeLabel}) · ${openCount} offen</summary>
+            <section class="cleanup-review-stage" aria-label="Quelle">
+              <div class="cleanup-review-stage-head">
+                <h3 class="cleanup-review-stage-title">Quelle</h3>
+                <span class="section-label">Cleanup-JSON</span>
+              </div>
+              <div class="field">
+                <label for="cleanupReviewJsonInput">Cleanup-JSON einfügen</label>
+                <textarea id="cleanupReviewJsonInput" class="cleanup-review-textarea" placeholder='{"proposals":[...]}'></textarea>
+              </div>
+            </section>
+            <section class="cleanup-review-stage" aria-label="Prompt und Import">
+              <div class="cleanup-review-stage-head">
+                <h3 class="cleanup-review-stage-title">Prompt+Import</h3>
+                <span class="section-label">Prüfen & übernehmen</span>
+              </div>
+              <div class="stack-row cleanup-review-prompt">
                 <button class="btn btn-primary" id="btnLoadCleanupReview">Cleanup-Vorschläge laden</button>
                 <button class="btn" id="btnClearCleanupReview">Cleanup schließen</button>
               </div>
-              ${ui.cleanupReview.summary ? `<div class="mini" style="margin-top:8px;">Summary: ${escapeHtml(ui.cleanupReview.summary)}</div>` : ''}
-            </div>
-            ${proposals.length ? `
-              <div class="list" style="margin-top:10px;">
-                ${proposals.map(p => {
-                  const normalizedType = normalizeCleanupProposalType(p.type, ui.cleanupReview.mode);
-                  const targetFeature = resolveCleanupTargetFeature(p);
-                  const duplicateFeature = p.duplicateFeatureId ? S.features.find(f => f.id === p.duplicateFeatureId) : null;
-                  const hasTarget = !!targetFeature;
-                  const hasDuplicate = !!duplicateFeature;
-                  return `
-                  <div class="item" style="${p._done ? 'opacity:0.45;' : ''}border-left:3px solid ${typeColor[p.type] || 'var(--border)'}">
-                    <div class="row-top">
-                      <strong>${escapeHtml(p.resolvedTitle || p.incomingTitle || '—')}</strong>
-                      <span class="pill">${typeLabel[normalizedType] || p.type}</span>
-                    </div>
-                    ${p.incomingTitle ? `<div class="mini">Import: ${escapeHtml(p.incomingTitle)}</div>` : ''}
-                    ${p.targetFeatureId ? `<div class="mini">Ziel-ID: ${escapeHtml(p.targetFeatureId)}</div>` : ''}
-                    ${p.duplicateFeatureId ? `<div class="mini">Duplikat-ID: ${escapeHtml(p.duplicateFeatureId)}</div>` : ''}
-                    ${p.duplicateFeatureId ? `<div class="mini">Duplikat-Titel: ${escapeHtml(((S.features.find(f => f.id === p.duplicateFeatureId) || {}).title) || '—')}</div>` : ''}
-                    ${p.resolvedDescription ? `<div class="item-desc">${escapeHtml(p.resolvedDescription)}</div>` : ''}
-                    <div class="mini">Confidence: ${escapeHtml(p.confidence)}</div>
-                    ${p.changeSummary ? `<div class="mini">Änderung: ${escapeHtml(p.changeSummary)}</div>` : ''}
-                    ${p.rationale ? `<div class="mini" style="color:var(--ink-dim)">Grund: ${escapeHtml(p.rationale)}</div>` : ''}
-                    ${hasTarget ? `<div class="mini">Ziel: ${escapeHtml(targetFeature.title || '—')}</div>` : `<div class="mini" style="color:var(--accent-2)">Kein bestehendes Feature erkannt – kann als neues Feature übernommen werden.</div>`}
-                    ${normalizedType === 'duplicate-of' && !hasDuplicate ? '<div class="mini" style="color:var(--ink-dim)">Keine konkrete Dublette zugeordnet.</div>' : ''}
-                    ${p._done ? `<div class="mini"><span class="pill ${(p._ignored || p._reviewedOnly) ? '' : 'pill-success'}">${p._ignored ? 'ignoriert' : (p._reviewedOnly ? 'geprüft' : 'übernommen')}</span></div>` : `
-                      <div class="stack-row">
-                        ${normalizedType === 'update-existing' && hasTarget ? `<button class="btn btn-primary" data-cleanup-accept-update="${p._idx}">Bestehendes Feature aktualisieren</button>` : ''}
-                        ${normalizedType === 'new-implemented-feature' && !hasTarget ? `<button class="btn btn-primary" data-cleanup-accept-new="${p._idx}">Als neues umgesetztes Feature ergänzen</button>` : ''}
-                        ${normalizedType === 'new-implemented-feature' && hasTarget ? `<button class="btn btn-secondary" data-cleanup-accept-new="${p._idx}">Trotzdem als neues umgesetztes Feature ergänzen</button>` : ''}
-                        ${normalizedType === 'match-existing' ? `<button class="btn btn-secondary" data-cleanup-review-only="${p._idx}">Als geprüft abhaken</button>` : ''}
-                        ${normalizedType === 'probably-stale' ? `<button class="btn btn-secondary" data-cleanup-review-only="${p._idx}">Als geprüft abhaken</button>` : ''}
-                        ${normalizedType === 'duplicate-of' && hasDuplicate ? `<button class="btn btn-danger" data-cleanup-mark-duplicate="${p._idx}">Dublette in Papierkorb verschieben</button>` : ''}
-                        <button class="btn btn-ghost" style="margin-left:auto;" data-cleanup-ignore="${p._idx}">Nicht übernehmen</button>
-                      </div>
-                    `}
-                  </div>
-                `;
-                }).join('')}
+              ${ui.cleanupReview.summary ? `<div class="mini cleanup-review-summary-text">Summary: ${escapeHtml(ui.cleanupReview.summary)}</div>` : ''}
+            </section>
+            <section class="cleanup-review-stage" aria-label="Review">
+              <div class="cleanup-review-stage-head">
+                <h3 class="cleanup-review-stage-title">Review</h3>
+                <span class="pill pill-outline cleanup-review-counter">${reviewCounter}</span>
               </div>
-            ` : ''}
+              ${proposals.length ? `
+                <div class="list cleanup-review-list">
+                  ${proposals.map(p => {
+                    const normalizedType = normalizeCleanupProposalType(p.type, ui.cleanupReview.mode);
+                    const targetFeature = resolveCleanupTargetFeature(p);
+                    const duplicateFeature = p.duplicateFeatureId ? S.features.find(f => f.id === p.duplicateFeatureId) : null;
+                    const hasTarget = !!targetFeature;
+                    const hasDuplicate = !!duplicateFeature;
+                    const statusLabel = p._ignored ? 'ignoriert' : (p._reviewedOnly ? 'geprüft' : 'übernommen');
+                    const statusClass = p._ignored ? 'pill-outline' : (p._reviewedOnly ? 'pill-info' : 'pill-success');
+                    return `
+                    <div class="item cleanup-review-card ${p._done ? 'is-done' : ''}">
+                      <div class="row-top">
+                        <strong>${escapeHtml(p.resolvedTitle || p.incomingTitle || '—')}</strong>
+                        <span class="pill pill-outline">${typeLabel[normalizedType] || p.type}</span>
+                      </div>
+                      ${p.incomingTitle ? `<div class="mini">Import: ${escapeHtml(p.incomingTitle)}</div>` : ''}
+                      ${p.targetFeatureId ? `<div class="mini">Ziel-ID: ${escapeHtml(p.targetFeatureId)}</div>` : ''}
+                      ${p.duplicateFeatureId ? `<div class="mini">Duplikat-ID: ${escapeHtml(p.duplicateFeatureId)}</div>` : ''}
+                      ${p.duplicateFeatureId ? `<div class="mini">Duplikat-Titel: ${escapeHtml(((S.features.find(f => f.id === p.duplicateFeatureId) || {}).title) || '—')}</div>` : ''}
+                      ${p.resolvedDescription ? `<div class="item-desc">${escapeHtml(p.resolvedDescription)}</div>` : ''}
+                      <div class="mini">Confidence: ${escapeHtml(p.confidence)}</div>
+                      ${p.changeSummary ? `<div class="mini">Änderung: ${escapeHtml(p.changeSummary)}</div>` : ''}
+                      ${p.rationale ? `<div class="mini cleanup-review-note-muted">Grund: ${escapeHtml(p.rationale)}</div>` : ''}
+                      ${hasTarget ? `<div class="mini">Ziel: ${escapeHtml(targetFeature.title || '—')}</div>` : `<div class="mini cleanup-review-note-info">Kein bestehendes Feature erkannt – kann als neues Feature übernommen werden.</div>`}
+                      ${normalizedType === 'duplicate-of' && !hasDuplicate ? '<div class="mini cleanup-review-note-muted">Keine konkrete Dublette zugeordnet.</div>' : ''}
+                      ${p._done ? `<div class="mini"><span class="pill ${statusClass}">${statusLabel}</span></div>` : ''}
+                      ${renderCleanupActions(p, normalizedType, hasTarget, hasDuplicate)}
+                    </div>
+                  `;
+                  }).join('')}
+                </div>
+              ` : '<div class="notice">Keine Vorschläge geladen. Erzeuge den Cleanup-Prompt und füge das KI-JSON oben ein.</div>'}
+            </section>
           </details>
         `;
       }
@@ -8551,7 +10147,7 @@
                 ${Object.entries(analysis.localCounts || {}).map(([k,v]) => `<span class="pill">${escapeHtml(k)}: ${Number(v || 0)}</span>`).join('')}
               </div>
             </div>
-            ${warnings.length ? `<div class="notice" style="margin-bottom:12px;color:#f59e0b;">${warnings.map(w => escapeHtml(w)).join('<br>')}</div>` : ''}
+            ${warnings.length ? `<div class="notice" style="margin-bottom:12px;color:var(--warning);">${warnings.map(w => escapeHtml(w)).join('<br>')}</div>` : ''}
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
               <button id="btnZipImportConfirm" class="btn btn-danger" style="flex:1;">ZIP-Backup importieren / ersetzen</button>
               <button id="btnZipImportCancel" class="btn" style="flex:1;">Abbrechen</button>
