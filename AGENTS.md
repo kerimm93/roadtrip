@@ -1,20 +1,24 @@
 # AGENTS.md — Roadtrip Coding-Agent-Vertrag
 
-> Stand: Sprint 29. Dieser Vertrag gilt für **jeden** Coding-Agent-Auftrag
-> (Codex, Claude Code) an `index.html`. Er ist sprint-unabhängig.
-> Er ersetzt den früheren eingefrorenen Etappe-1-Einzelauftrag.
+> Stand: Sprint 39 Phase 2. Dieser Vertrag gilt für jeden Coding-Agent-Auftrag
+> (Codex, Claude Code, GPT) im Roadtrip-Repository. Er ist sprint-unabhängig und
+> ersetzt ältere Sprint-29-Arbeitsnotizen, soweit sie widersprechen.
 
 ---
 
 ## Projekt
 
-Roadtrip ist eine **Single-File-HTML-App** (`index.html`, ~11.000 Zeilen):
-Vanilla JS, CSS Custom Properties, **keine Frameworks, kein Build-Step**.
-Persistenz: IndexedDB-first mit localStorage-Fallback. Optional GitHub-Gist-Sync,
-ZIP-Backup, Trello-Anbindung.
+Roadtrip ist eine browserbasierte **Single-File-HTML-/Vanilla-JS-App**:
 
-Alle Änderungen sind **minimal-invasiv**: kleiner Diff, eine Etappe pro Commit,
-Render-Logik nur anfassen, wenn eine CSS-Klasse nicht genügt.
+- produktive App: `index.html`
+- Vanilla JS, CSS Custom Properties
+- keine Frameworks, kein Build-Step
+- Persistenz: IndexedDB-first mit localStorage-Fallback
+- optionale Funktionen: verschlüsselter bidirektionaler GitHub-Gist-Sync,
+  ZIP-Backup, JSON Export/Import, Trello-Anbindung, Tombstone-Löschschutz
+
+Änderungen bleiben **minimal-invasiv**: kleine, prüfbare Patches statt großer
+Rewrites. Render-Logik nur anfassen, wenn eine CSS-/Markup-Korrektur nicht reicht.
 
 ---
 
@@ -23,95 +27,150 @@ Render-Logik nur anfassen, wenn eine CSS-Klasse nicht genügt.
 | Dokument | Rolle |
 |---|---|
 | `DECISIONS.md` | Finale Umsetzungsentscheidungen — **hat Vorrang** vor DESIGN/ARCHITECTURE |
-| `docs/DESIGN.md` | Designsystem (Tokens, Komponenten, Screen-Regeln) |
-| `docs/ARCHITECTURE.md` | Informationsarchitektur / Navigation (Mermaid) |
-| `docs/CODEX-HANDOFF.md` | Ursprünglicher 15-Etappen-Plan (Sprint 25, abgeschlossen) — Referenz, kein laufender Auftrag |
+| `docs/DESIGN.md` | Designsystem, UI-Prinzipien, Roadmap-Designrichtungen |
+| `docs/ARCHITECTURE.md` | Architektur-, Workflow- und Schutzbereichsübersicht |
+| `docs/audits/` | Audit-/Review-Befunde als Sprint-Kontext |
+| `docs/handoffs/` | Sprint-Handoffs und Merge-/Risiko-Einschätzungen |
 
-Der visuelle Prototyp (`Roadtrip Atlas Redesign (standalone).html`) ist
-**Inspirationsquelle, kein Soll-Stand**.
+Der visuelle Roadtrip-/Atlas-Prototyp ist **Designreferenz und Inspiration, kein
+1:1-Bauplan**.
 
-### Gültigkeit / Präzedenz (bei Widerspruch)
+### Präzedenz bei Widerspruch
 
-1. aktueller `main`-Code
+1. aktueller produktiver Code
 2. `DECISIONS.md`
-3. Sprint-Delta-Analyse (sofern beigelegt)
+3. Sprint-Delta-/Audit-/Handoff-Dokumente des aktuellen Auftrags
 4. `docs/DESIGN.md`
 5. `docs/ARCHITECTURE.md`
-6. Atlas-Prototyp
+6. Prototypen / Archivmaterial
 
 ---
 
 ## ⛔ Harte Grenzen — Schutzliste (NICHT ändern)
 
-Wenn ein Auftrag eine dieser Grenzen zu verletzen scheint: **anhalten und melden,
-nicht umgehen.**
+Wenn ein Auftrag eine Grenze zu verletzen scheint: **anhalten und melden, nicht
+umgehen**.
 
 - **State-Schema (`S`):** `S.projects`, `S.features`, `S.notes`, `S.analyses`,
   `S.chats`, `S.importVersions` — Struktur und Feldnamen.
 - **Config-Key-Namen (`C`).**
-- **Persistenz:** IndexedDB-/localStorage-Logik. Nur **neue** UI-Keys unter
-  `roadtrip.ui.*` sind erlaubt.
-- **Migrations-/Normalisierungslogik** beim Laden (alte deutsche Statuswerte).
-- **Sprintstart-JSON-Validierung** (`type === "roadtrip-sprint-start"`, Pflichtfelder).
+- **Persistenz:** IndexedDB-/localStorage-Logik. Nur neue UI-Keys unter
+  `roadtrip.ui.*` sind ohne explizite Entscheidung erlaubt.
+- **Migrations-/Normalisierungslogik** beim Laden.
+- **Sprintstart-/Handoff-Verträge** inklusive JSON-Validierung.
+- **Chat-Workflow-Verträge** und Hauptchat-/Sprintchat-Rückführung.
 - **Gist-Sync-Algorithmus & Verschlüsselungslogik.**
 - **ZIP-Backup, JSON-Export/-Import, Tombstone-Logik, Trello-Sync.**
 - **Notes-Workspace-Datenmodell.**
-- **Sprintstart-/Handoff-Verträge.**
-- **Element-IDs, Event-Handler-Bindings, Funktionsnamen.** Buttons behalten ihre `id`.
-- **Funktions-Vokabular:** Projekt, Feature, Sprint, Hauptchat, Handoff —
-  keine narrative Umbenennung. Die Landkarten-Metapher ist rein
-  visuell/atmosphärisch, **nicht** im Datenmodell.
+- **Planned-Feature-Detailfelder** (`purpose`, `workflowContext`,
+  `acceptanceCriteria`, `sourceContext`) ohne explizite Vertragsentscheidung.
+- **`featureFlow`-Textfeld und Mermaid-Preview-Vertrag:** Preview bleibt optional,
+  visuell und nicht-destruktiv.
+- **Element-IDs, Event-Handler-Bindings, Funktionsnamen.** Buttons behalten ihre
+  `id`.
+- **Funktions-Vokabular:** Projekt, Feature, Sprint, Hauptchat, Handoff — keine
+  narrative Umbenennung. Die Landkarten-Metapher ist rein visuell.
 
-**Token-Strategie:** Neue kanonische Tokens definieren, alte Variablennamen als
-umgefärbte **Aliase** behalten, damit Bestandscode automatisch erbt.
+Token-Strategie: neue kanonische Tokens definieren, alte Variablennamen als
+umgefärbte Aliase behalten, damit Bestandscode automatisch erbt.
 
 ---
 
-## Bewusst akzeptierte Abweichungen (nicht „korrigieren")
+## Bewusst akzeptierte Abweichungen / nicht automatisch korrigieren
 
-Diese Punkte sind entschieden und werden ohne neue DECISIONS.md-Entscheidung
-nicht angefasst:
+Diese Punkte sind entschieden und werden nicht nebenbei als Bugfix, Cleanup oder
+Prototyp-Angleichung geändert:
 
-- Kein App-Shell-Umbau auf CSS-Variable-Grid (Roadtrip bleibt `workspace-sidebar`,
-  nicht das React/`.app-shell`-Grid des Prototyps).
-- Mobile Sidebar bleibt Off-Canvas mit `body.sidebar-open`.
-- Kein semantisches Nav-System als Großrefactor.
+- Kein automatischer App-Shell-Umbau auf Prototyp-/Atlas-Grid.
+- Mobile Sidebar bleibt Off-Canvas, solange kein eigener UI-Sprint etwas anderes
+  entscheidet.
+- Kein semantisches Nav-System als Großrefactor nebenbei.
 - Eigenes Modal-System bleibt bestehen.
-- `.kindgrid` wird nicht nachgezogen, solange die aktuelle Lösung funktioniert.
-- Paper-Grain wird nicht automatisch umgesetzt.
-- Relationship Map ist ein eigener späterer Sprint (Schema-Änderung).
+- `.kindgrid`, Paper-Grain und ähnliche Prototypdetails nicht automatisch
+  nachziehen.
+- Relationship Map / Project Graph bleibt eigener späterer Sprint mit Schema-/
+  Contract-Entscheidung.
 - Keine Datenmodelländerung für rein visuellen Polish.
-
----
-
-## Pflicht-Smoke-Test (nach JEDER Etappe ausführen + berichten)
-
-```bash
-node -e "const fs=require('fs');const vm=require('vm');const c=fs.readFileSync('index.html','utf8');const scripts=[];let m;const re=/<script(?![^>]*src)[^>]*>([\s\S]*?)<\/script>/gi;while((m=re.exec(c))!==null)scripts.push(m[1]);new vm.Script(scripts.join('\n'));console.log('JS OK');"
-```
-
-- `git diff` prüfen — keine unerwarteten Dateien.
-- App lädt ohne Konsolenfehler; ein bestehendes Projekt mit Features/Sprints rendert.
-- `JSON-Export → Re-Import` ergibt identische Daten (mindestens 1× pro 3 Etappen).
-- **Sichtprüfung** beschreiben: Sidebar · Projektliste · Settings · Projektansicht ·
-  Feature-Datenbank · mobile Breite (falls betroffen).
-
----
-
-## Git-/Workflow
-
-- Git läuft über SSH-Key im Terminal.
-- Branch, Commit, Push per Kommandozeile.
-- PR wird **manuell** auf github.com erstellt.
-- **Keine** Vorschläge für gh-CLI-Setup, gh-Auth oder WebStorm-GitHub-Login,
-  außer ausdrücklich gefragt.
+- Prototyp ist Referenz, nicht Soll-Stand; bei Konflikt gelten produktiver Code und
+  `DECISIONS.md`.
 
 ---
 
 ## Arbeitsweise
 
-- Pro Etappe: kleiner Diff, ein Commit, Smoke-Test, kurze Ergebnisnotiz.
-- Erst nach sauberem Review die nächste Etappe.
-- Bei Konflikt mit den harten Grenzen: anhalten und melden.
+- Kleine, prüfbare Änderungen bevorzugen.
+- Keine Framework-, Build- oder Architektur-Rewrites ohne expliziten Auftrag.
+- Keine Roadmap-Features nebenbei implementieren.
+- Pro Etappe/Task: kleiner Diff, Checks, kurze Ergebnisnotiz.
+- Bei Konflikt mit Schutzliste oder Dokumentenpräzedenz: stoppen und melden.
 
-*Roadtrip · Coding-Agent-Vertrag · Sprint 29*
+### Code-Sprints
+
+Nach jeder JS-/App-Code-Änderung ausführen und berichten:
+
+```bash
+node -e "const fs=require('fs');const vm=require('vm');const c=fs.readFileSync('index.html','utf8');const scripts=[];let m;const re=/<script(?![^>]*src)[^>]*>([\s\S]*?)<\/script>/gi;while((m=re.exec(c))!==null)scripts.push(m[1]);new vm.Script(scripts.join('\n'));console.log('JS OK');"
+```
+
+Zusätzlich:
+
+- `git diff` prüfen — keine unerwarteten Dateien.
+- Wenn UI sichtbar betroffen ist: Sichtprüfung/Screenshot nach Auftragsscope.
+- App-Code-Smoke-Tests nur auslassen, wenn nachweislich kein App-Code geändert wurde.
+
+### Docs-only-Sprints
+
+Für Docs-only-Sprints gilt:
+
+- kein `index.html`, keine App-Code-, CSS- oder JS-Dateien ändern
+- nur Markdown-/Dokumentationsdateien bearbeiten
+- kein JS-Syntaxcheck erforderlich, wenn kein App-Code geändert wurde
+- stattdessen dokumentieren:
+  - `git diff --check`
+  - `git diff --name-only`
+  - `git diff --stat`
+  - `git diff -- index.html`
+  - Liste geänderter und neu angelegter Dateien
+  - Nachweis, dass `index.html` unverändert blieb
+
+---
+
+## Codex-Internetregel
+
+Standard: **Internet AUS**.
+
+Internet nur nutzen, wenn die Aufgabe wirklich aktuelle offizielle externe
+Dokumentation braucht, z. B. externe API-Doku, Library-Doku, Browser-/PWA-Fragen
+oder Security-/Dependency-Fragen.
+
+Für Roadtrip-Docs-only-, UI-Polish-, Backlog-, Prompt-/Workflow- und private
+Daten-Sprints bleibt Internet aus.
+
+Falls Internet in einem späteren Sprint genutzt wird:
+
+- nur offizielle Quellen verwenden
+- keine Tokens, Backups, App-Exports oder privaten Projektdaten an externe Dienste
+  geben
+- genutzte Quellen im Handoff dokumentieren
+
+---
+
+## Git-/Workflow
+
+- Git per SSH/Terminal.
+- Branch, Commit, Push per Kommandozeile.
+- PR wird manuell auf github.com erstellt.
+- Keine WebStorm-GitHub-Login-, GitHub-CLI- oder `gh auth`-Empfehlungen, außer
+  ausdrücklich gefragt.
+
+Handoffs dokumentieren mindestens:
+
+- Branchname
+- geänderte Dateien
+- neu angelegte Dateien
+- ausgeführte Checks und Ergebnisse
+- Risiken/offene Fragen
+- bewusste Nicht-Umsetzungen
+- klare Merge-Einschätzung
+
+*Roadtrip · Coding-Agent-Vertrag · Sprint 39 Phase 2*

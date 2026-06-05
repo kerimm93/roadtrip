@@ -1,5 +1,85 @@
 # Roadtrip · Atlas — Architektur-Diagramme
 
+> Aktualisierung Sprint 39 Phase 2: Diese Datei beschreibt nicht mehr nur die
+> Atlas-Skin-Navigation aus Sprint 25, sondern zusätzlich den aktuellen
+> Roadtrip-Architektur- und Workflow-Contract. Mermaid-Diagramme unten bleiben
+> Design-/IA-Referenz; Roadmap-Hinweise sind nicht als implementiert zu lesen.
+
+## Aktueller Architektur-Contract ab Sprint 39
+
+Roadtrip ist eine browserbasierte Single-File-HTML-/Vanilla-JS-App. Der produktive
+App-Code liegt in `index.html`; es gibt keinen Framework- oder Build-Step.
+
+### Technische Grundrichtung
+
+- Single-File HTML mit Vanilla JS und CSS Custom Properties.
+- Lokal-first: IndexedDB-first mit localStorage-Fallback.
+- JSON Export/Import für portable Datenübergaben.
+- ZIP-Backup als Sicherheits- und Archivierungsweg.
+- Optionaler verschlüsselter bidirektionaler GitHub-Gist-Sync.
+- Tombstone-Löschschutz gegen versehentliche Wiederbelebung gelöschter Daten.
+- Optionale Trello-Anbindung.
+
+### Kernbereiche und Flüsse
+
+- Projekte bilden den Hauptkontext für Features, Chats, Sprints, Notes und
+  Ressourcen.
+- Feature-Datenbank trennt planned und implemented Features und stützt
+  Soll-/Ist-Arbeit.
+- Planned Features enthalten Detailfelder `purpose`, `workflowContext`,
+  `acceptanceCriteria` und `sourceContext`.
+- `featureFlow` ist ein optionales Textfeld für Mermaid-/Feature-Flow-Quelltext.
+- Mermaid Preview ist eine rein visuelle, defensive Preview-Schicht für befülltes
+  `featureFlow`; sie ist keine Datenmodelländerung und darf den gespeicherten Text
+  nicht verändern.
+- Notes Workspace bleibt eigener Arbeitsbereich mit geschütztem Datenmodell.
+- Chat-Struktur unterscheidet Hauptchat-, Sprintchat- und weitere Arbeitskontexte.
+- Sprint-/Handoff-Workflow führt Kontext zwischen Roadtrip, Hauptchat, Sprintchat
+  und zurück in Roadtrip.
+
+### Schutzbereiche
+
+Diese Bereiche nur mit explizitem Auftrag und eigenem Review anfassen:
+
+- Sync und Gist-Sync-Algorithmus
+- Verschlüsselung
+- ZIP-Backup
+- Tombstones
+- JSON Import-/Export-Verträge
+- Sprintstart-/Handoff-Verträge
+- Chat-Workflow-Verträge
+- Projekt-Schema und State-Schema
+- Notes-Workspace-Datenmodell
+- `featureFlow`-/Mermaid-Preview-Vertrag
+
+### Docs-only-Sprint-Regel
+
+Docs-only-Sprints ändern keine Codepfade:
+
+- kein `index.html`
+- keine HTML-/JS-/CSS-App-Code-Dateien
+- keine App-Feature-Implementierung
+- keine Handoff-, Import-/Export-, Sync- oder Datenmodell-Vertragsänderung
+- Checks über Diff, Dateiliste und Nachweis unveränderter App-Dateien statt
+  JS-Syntaxcheck, sofern wirklich kein App-Code geändert wurde
+
+### Architektur-/Workflow-Roadmap
+
+Folgende Punkte sind Ausblick, nicht implementierte Architektur:
+
+- Sprintabschluss soll Codeanalyse-Bedarf einschätzen statt reflexhaft
+  Voll-Codeanalyse empfehlen.
+- Sprint-Handoffs können später auf wiederverwendbare SOPs geprüft werden.
+- Normaler Sprintstart kann später eine kleine Hauptchat→Feature-Database-Mitnahme
+  unterstützen; der große Hauptchat-Abgleich bleibt separat.
+- Open Questions Workspace für Fragen aus Projekten, Features, Handoffs und
+  Backfills.
+- Selektives Feature-Merge für übersprungene Import-Kandidaten mit Feldvergleich
+  und Review-Aktionen.
+
+---
+
+
 > Mermaid-Quellcode. In jedem Mermaid-fähigen Renderer (GitHub, VS Code, Obsidian, mermaid.live) anzeigbar.
 > Drei Diagramme: (a) Informationsarchitektur/Navigation · (b) Sprint-Zyklus als Statusdiagramm · (c) Modi-Trennung.
 

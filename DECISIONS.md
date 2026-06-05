@@ -106,3 +106,155 @@ Pip als Kategorie-Signal, Farbe via ID-Hashing, kein Schema-Eingriff.
 - TABU (dynamisch, niemals anfassen): `--node-x/y`, `--node-color`, `--pip`,
   `--hue-*`, `opacity`-States, Positions-/`transform`-Werte. Fragile Modal-Container
   mit `var(--shadow)` auslassen.
+
+---
+
+## Stand Sprint 31–39 — aktuelle Roadtrip-Contracts
+
+Diese Entscheidungen ergänzen die Atlas-/Sprint-29-Entscheidungen und beschreiben
+den heutigen Roadtrip-Stand. Sie sind Dokumentations- und Workflow-Contracts; sie
+implementieren keine neuen App-Features.
+
+### Sprint 31 — Planned Feature Editing MVP
+
+- Planned Features können direkt in Roadtrip gepflegt und nachgeführt werden.
+- Ziel ist eine belastbare Feature-Datenbank als Soll-/Ist-Arbeitsbasis, nicht nur
+  eine lose Ideensammlung.
+- Das Projekt-Schema bleibt geschützt; Änderungen am Datenmodell brauchen einen
+  eigenen Sprintvertrag.
+
+### Sprint 32 — Planned Feature Detail & Brainstorm MVP
+
+- Planned Features haben kontextreiche Detailfelder:
+  - `purpose`
+  - `workflowContext`
+  - `acceptanceCriteria`
+  - `sourceContext`
+- Diese Felder sind Teil des aktuellen Feature-Workflow-Vertrags.
+- UI-seitig sollen die Details beherrschbar bleiben; nicht jede Detailtiefe muss
+  dauerhaft sichtbar sein.
+
+### Sprint 33 — Planned Feature Backfill / Hauptchat-Abgleich MVP
+
+- Roadtrip unterstützt den Abgleich sparse geplanter Features mit Hauptchat- bzw.
+  Kontextmaterial.
+- Zweck: bessere Detailfelder und sauberere Feature-Absichten, ohne den normalen
+  Sprintstart zu einem Vollabgleich umzubauen.
+- Normaler Sprintstart und großer Hauptchat-Abgleich bleiben getrennte Werkzeuge.
+
+### Sprint 34 — Detailfelder in Prompt-Workflows
+
+- Planned-Feature-Details werden in Sprintstart-, Hauptchat-, Codex- sowie
+  Analyse-/Import-/Cleanup-Prompts genutzt.
+- Prompt-Verträge sind Schutzbereiche: Änderungen daran brauchen einen klaren
+  Auftrag und Review.
+
+### Sprint 35 — Next-Sprint-/Hauptchat-Handoff
+
+- Sprintabschlüsse sollen Kontext für den nächsten Sprint und den Hauptchat
+  strukturiert zurückführen.
+- Handoff-Dokumente sollen Branch, Dateien, Checks, Risiken und Mergefähigkeit
+  enthalten.
+
+### Sprint 36 — Sprint-Dock / Sprint-Zyklus konsolidiert
+
+- Der Sprint-Zyklus ist als zentraler Arbeitsbereich konsolidiert.
+- Der Ablauf bleibt ein klarer Prozess mit offenen Schritten und direkt erreichbarer
+  nächster Aktion.
+- Rückführungs- und Handoff-Logik bleiben geschützte Verträge.
+
+### Sprint 36.1 — Arbeitsmodus-Dropdown
+
+- Das Arbeitsmodus-Dropdown unterscheidet Codex-Steuerung und Direktmodus.
+- Es sitzt oben im Sprint-Dock und dient der Workflow-Steuerung, nicht einer
+  Datenmodelländerung.
+
+### Sprint 37 — `featureFlow`
+
+- Planned Features können optional ein Feld `featureFlow` enthalten.
+- `featureFlow` ist Textquelle für Mermaid-/Feature-Flow-Notizen.
+- Das Feld ist optional; leere Werte sollen keine UI- oder Importpflicht erzeugen.
+
+### Sprint 38 — Mermaid-/Feature-Flow-Preview
+
+- Für befülltes `featureFlow` kann eine optionale Mermaid-/Feature-Flow-Preview
+  angezeigt werden.
+- Die Preview ist rein visuell und defensiv.
+- Die Preview verändert den gespeicherten `featureFlow`-Text nicht.
+- Renderfehler werden sichtbar gemacht, dürfen aber gespeicherte Daten nicht
+  destruktiv verändern.
+
+### Sprint 39 Phase 1 — Docs-/Design-Contract-Audit
+
+- Sprint 39 Phase 1 war ein Docs-only-Audit.
+- Ergebnis: `AGENTS.md`, `DECISIONS.md`, `docs/DESIGN.md`,
+  `docs/ARCHITECTURE.md` und `readme.md` waren teilweise veraltet und sollten
+  gezielt aktualisiert werden.
+- Bestehende Kern-Dokumente, `index.html` und Prototyp-Dateien blieben in Phase 1
+  unverändert.
+
+### Sprint 39 Phase 2 — Kern-Dokumente aktualisiert
+
+- Kern-Dokumente werden gezielt auf den Stand nach Sprint 31–39 gebracht.
+- Dieser Sprint ist Docs-only: kein App-Code, kein `index.html`, keine neuen
+  App-Features.
+- Codex-Internet bleibt für diesen Sprint aus.
+
+---
+
+## Aktuelle Roadmap-/Workflow-Entscheidungen
+
+### Prototyp-Status
+
+- Der alte Roadtrip-/Atlas-Prototyp ist Designreferenz, kein 1:1-Bauplan.
+- Prototyp-Ideen dürfen als Richtung genutzt werden, aber nicht gegen aktuellen
+  Code, `DECISIONS.md` oder Schutzbereiche durchgesetzt werden.
+
+### Sprintabschluss-Codeanalyse-Bedarf
+
+Roadtrip soll künftig nicht reflexhaft nach jedem Sprint eine Voll-Codeanalyse
+empfehlen. Stattdessen soll der Bedarf eingeschätzt werden:
+
+- Docs-only: Docs-Review + Diff-Checks.
+- Kleiner UI-/Hotfix: Smoke-Test + JS-Syntaxcheck + Changed-Files-Review.
+- Große Datenmodell-/Sync-/Import-/Export-/Promptvertrag-Änderung: Voll-Codeanalyse
+  sinnvoll.
+
+### Sprint-Handoff SOP-Extraktion
+
+- Sprint-Handoffs sollen später optional darauf geprüft werden, ob daraus eine
+  wiederverwendbare Arbeitsweise als SOP entstehen sollte.
+- Beispiele: Codex-Materialpaket vorbereiten, Docs-/Design-Contract-Audit
+  orchestrieren, Kern-Dokumente pflegen, Sprintchat → Codex → Review → Handoff
+  sauber führen.
+- Diese SOP-Prüfung ist Roadmap, noch keine implementierte App-Funktion.
+
+### Sprintstart und Hauptchat-Abgleich
+
+- Normaler Sprintstart und großer Hauptchat-Abgleich bleiben getrennte Werkzeuge.
+- Spätere Richtung: Beim normalen Sprintstart kann eine kleine
+  Hauptchat→Feature-Database-Mitnahme entstehen.
+- Mögliche Mitnahme: neue planned Features, aktualisierte Detailfelder, offene
+  Fragen, kleine Kontextfetzen.
+- Der große Hauptchat-Abgleich bleibt separates Werkzeug für umfassende Reviews.
+
+### Open Questions Workspace
+
+- Offene Fragen sollen später aus Projekten, Features, Sprint-Handoffs und
+  Backfills gesammelt werden können.
+- Gewünschte Richtung: Übersicht mit Bezug/Tags/Filter, Brainstorm-Prompt für
+  ausgewählte Fragen, JSON-Handoff mit Antworten, Speicherung der Antworten bei
+  Fragen und optionale Markierung betroffener Features als refine-needed.
+- Dies ist Roadmap, keine bestehende Architektur.
+
+### Selektives Feature-Merge für übersprungene Import-Kandidaten
+
+- Problem: `proposedFeatures` können beim Import wegen möglicher Dubletten
+  übersprungen werden; dabei können bessere neue Detailfelder verloren gehen.
+- Spätere Richtung: Import-Zusammenfassung unterscheidet neu angelegt,
+  aktualisiert, übersprungen wegen möglicher Dublette und Fehler.
+- Für übersprungene Kandidaten soll später eine Review-Liste möglich werden:
+  bestehendes Feature vs. Import-Kandidat vergleichen; Aktionen wie ignorieren,
+  später prüfen, leere Felder ergänzen, einzelne Felder übernehmen, als neues
+  Feature anlegen oder mit bestehendem Feature mergen.
+- Dies ist Roadmap und ändert aktuell keinen Import-/Export-Vertrag.
