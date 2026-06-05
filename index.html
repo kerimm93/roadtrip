@@ -2661,6 +2661,7 @@
       }
 
       function renderView() {
+        if (typeof cleanupMermaidArtifacts === 'function') cleanupMermaidArtifacts();
         const c = $('viewContainer');
         if (ui.view === 'overview') c.innerHTML = renderOverview();
         if (ui.view === 'database') c.innerHTML = renderDatabaseView();
@@ -5113,6 +5114,7 @@
           `Der JSON-type muss exakt "${NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE}" sein.`,
           'Verwende in featureUpdates nur bestehende Feature-IDs aus Roadtrip.',
           'Aktualisiere keine implemented Features. Neue Ideen gehören ausschließlich nach proposedFeatures.',
+          ...getFeatureFlowPromptContractLines(),
           '',
           '## Projektkontext (aus Roadtrip)',
           `- Projekttitel: ${project.title || '—'}`,
@@ -5148,8 +5150,8 @@
           JSON.stringify({
             type: NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE,
             recommendedSprint: { title: '...', goal: '...', reason: '...', selectedFeatureIds: ['...'], notes: ['...'] },
-            featureUpdates: [{ featureId: '...', title: '...', description: '...', purpose: '...', workflowContext: '...', acceptanceCriteria: ['...'], featureFlow: '...', sourceContext: '...', priority: 'hoch', status: 'planned', openQuestions: ['...'] }],
-            proposedFeatures: [{ title: '...', description: '...', purpose: '...', workflowContext: '...', acceptanceCriteria: ['...'], featureFlow: '...', sourceContext: '...', category: 'Workflow', priority: 'mittel', status: 'planned' }],
+            featureUpdates: [{ featureId: '...', title: '...', description: '...', purpose: '...', workflowContext: '...', acceptanceCriteria: ['...'], featureFlow: getFeatureFlowPromptExample(), sourceContext: '...', priority: 'hoch', status: 'planned', openQuestions: ['...'] }],
+            proposedFeatures: [{ title: '...', description: '...', purpose: '...', workflowContext: '...', acceptanceCriteria: ['...'], featureFlow: getFeatureFlowPromptExample(), sourceContext: '...', category: 'Workflow', priority: 'mittel', status: 'planned' }],
             openQuestions: ['...'],
             deferredIdeas: ['...']
           }, null, 2)
@@ -5210,6 +5212,7 @@
           '- Keine implemented Features aktualisieren; featureUpdates nur für bestehende planned Feature-IDs aus Roadtrip.',
           '- Kleine neue Ideen optional als proposedFeatures zurückgeben; Status nur idea/planned, niemals implemented.',
           '- Kleine Ergänzungen optional in featureUpdates zurückgeben: description, purpose, workflowContext, acceptanceCriteria, sourceContext, featureFlow, openQuestions, priority, status.',
+          ...getFeatureFlowPromptContractLines(),
           '- Wenn es keine kleine Mitnahme gibt: featureUpdates/proposedFeatures leer lassen oder weglassen.',
           '',
           '## Deine Ausgabe muss exakt so strukturiert sein',
@@ -5245,6 +5248,20 @@
         const text = String(value || '').replace(/\s+/g, ' ').trim();
         const limit = Number(maxChars) || 400;
         return text.length > limit ? text.slice(0, limit - 1).trimEnd() + '…' : text;
+      }
+
+      function getFeatureFlowPromptContractLines() {
+        return [
+          '- featureFlow ist optional für eine Mermaid-Flowchart-Skizze des Features.',
+          '- Wenn featureFlow gefüllt wird, muss der Wert ausschließlich gültiger Mermaid-Code sein.',
+          '- Keine Markdown-Codefences, kein erklärender Fließtext, kein Pseudocode, kein JSON im featureFlow-Feld.',
+          '- Bevorzugtes featureFlow-Format: Start mit flowchart TD; kurze, sprechende Knoten und einfache gerichtete Kanten nutzen.',
+          '- Wenn kein sinnvolles Diagramm ableitbar ist, setze featureFlow auf "".'
+        ];
+      }
+
+      function getFeatureFlowPromptExample() {
+        return 'flowchart TD\n  A[Auslöser] --> B[Aktion]\n  B --> C[Ergebnis]';
       }
 
       function formatPlannedFeatureDetailsForPrompt(feature, options = {}) {
@@ -6954,7 +6971,7 @@
               <div class="field"><label>Status</label><select data-edit-feature-status="${escapeAttr(f.id)}">${plannedStatuses.map(status => `<option value="${escapeAttr(status)}" ${status===statusValue?'selected':''}>${escapeHtml(getFeatureStatusLabel(status))}</option>`).join('')}</select></div>
               <div class="field field-wide"><label>Zweck / Warum?</label><textarea data-edit-feature-purpose="${escapeAttr(f.id)}" placeholder="Warum gibt es dieses Feature?">${escapeHtml(f.purpose || '')}</textarea></div>
               <div class="field field-wide"><label>Workflow-Kontext / Problem</label><textarea data-edit-feature-workflow-context="${escapeAttr(f.id)}" placeholder="Welchen alten Workflow oder welches Problem verbessert es?">${escapeHtml(f.workflowContext || '')}</textarea></div>
-              <div class="field field-wide"><label>Feature-Flow / Mermaid-Skizze</label><textarea data-edit-feature-feature-flow="${escapeAttr(f.id)}" placeholder="${escapeAttr(featureFlowPlaceholder)}">${escapeHtml(f.featureFlow || '')}</textarea><div class="muted" style="font-size:12px;margin-top:4px;">Optional: Mermaid-Flowchart, Datenfluss, UI-Ablauf oder Entscheidungslogik. Wird nur als Text gespeichert und in Prompts übernommen.</div>${renderFeatureFlowPreviewShell(f.id, f.featureFlow)}</div>
+              <div class="field field-wide"><label>Feature-Flow / Mermaid-Skizze</label><textarea data-edit-feature-feature-flow="${escapeAttr(f.id)}" placeholder="${escapeAttr(featureFlowPlaceholder)}">${escapeHtml(f.featureFlow || '')}</textarea><div class="muted" style="font-size:12px;margin-top:4px;">Optional: ausschließlich Mermaid-Code, bevorzugt mit flowchart TD. Wird nur als Text gespeichert und in Prompts übernommen.</div>${renderFeatureFlowPreviewShell(f.id, f.featureFlow)}</div>
               <div class="field field-wide"><label>Akzeptanzkriterien (eine Zeile pro Kriterium)</label><textarea data-edit-feature-acceptance-criteria="${escapeAttr(f.id)}" placeholder="Kriterium 1\nKriterium 2">${escapeHtml(criteriaText)}</textarea></div>
               <div class="field field-wide"><label>Quellen / Notizen / Handoff-Bezug</label><textarea data-edit-feature-source-context="${escapeAttr(f.id)}" placeholder="Notizen, Handoff-Link, Chat-Bezug ...">${escapeHtml(f.sourceContext || '')}</textarea></div>
             </div>
@@ -7753,7 +7770,34 @@
         return qq('[data-feature-flow-preview-output]').find(el => el.dataset.featureFlowPreviewOutput === featureId) || null;
       }
 
+      function isLikelyMermaidDiagram(value) {
+        const text = String(value || '').trim();
+        if (!text) return false;
+        return /^(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|journey|gantt|pie|erDiagram|mindmap|timeline)\b/i.test(text);
+      }
+
+      function cleanupMermaidArtifacts() {
+        if (typeof document === 'undefined') return;
+        qq('[data-feature-flow-preview-temp="true"], .feature-flow-preview-render-host').forEach(el => el.remove());
+        qq('#dmermaidTooltip, .mermaidTooltip').forEach(el => el.remove());
+        qq('[id^="feature-flow-preview-render-"]').forEach(el => {
+          if (!el.closest('[data-feature-flow-preview-output]')) el.remove();
+        });
+      }
+
+      function showFeatureFlowPreviewError(featureId, message, statusMessage) {
+        const output = getFeatureFlowPreviewOutput(featureId);
+        if (!output) return;
+        output.innerHTML = '';
+        const errorBox = document.createElement('div');
+        errorBox.className = 'feature-flow-preview-error';
+        errorBox.textContent = message;
+        output.appendChild(errorBox);
+        setFeatureFlowPreviewStatus(featureId, statusMessage || message, true);
+      }
+
       async function renderFeatureFlowPreview(featureId) {
+        cleanupMermaidArtifacts();
         const output = getFeatureFlowPreviewOutput(featureId);
         if (!output) return;
         output.innerHTML = '';
@@ -7762,21 +7806,23 @@
           setFeatureFlowPreviewStatus(featureId, 'Kein Feature-Flow vorhanden.', true);
           return;
         }
+        if (!isLikelyMermaidDiagram(source)) {
+          showFeatureFlowPreviewError(featureId, 'featureFlow enthält keinen erkennbaren Mermaid-Code.', 'Preview übersprungen. Der Feature-Flow-Text bleibt unverändert.');
+          return;
+        }
         setFeatureFlowPreviewStatus(featureId, 'Preview wird gerendert …', false);
         try {
           const mermaid = await ensureFeatureFlowMermaidLoaded();
-          const renderId = `feature-flow-preview-${++featureFlowMermaidRenderSeq}`;
+          cleanupMermaidArtifacts();
+          const renderId = `feature-flow-preview-render-${++featureFlowMermaidRenderSeq}`;
           const result = await mermaid.render(renderId, source);
+          cleanupMermaidArtifacts();
           output.innerHTML = result && result.svg ? result.svg : '';
           if (result && typeof result.bindFunctions === 'function') result.bindFunctions(output);
           setFeatureFlowPreviewStatus(featureId, 'Preview gerendert. Der gespeicherte Text wurde nicht verändert.', false);
         } catch (err) {
-          output.innerHTML = '';
-          const errorBox = document.createElement('div');
-          errorBox.className = 'feature-flow-preview-error';
-          errorBox.textContent = `Mermaid-Preview fehlgeschlagen: ${err && err.message ? err.message : String(err || 'Unbekannter Fehler')}`;
-          output.appendChild(errorBox);
-          setFeatureFlowPreviewStatus(featureId, 'Preview fehlgeschlagen. Der Feature-Flow-Text bleibt unverändert.', true);
+          cleanupMermaidArtifacts();
+          showFeatureFlowPreviewError(featureId, `Mermaid-Preview fehlgeschlagen: ${err && err.message ? err.message : String(err || 'Unbekannter Fehler')}`, 'Preview fehlgeschlagen. Der Feature-Flow-Text bleibt unverändert.');
         }
       }
 
@@ -7898,7 +7944,7 @@ Hinweis: Es gibt insgesamt ${totalSparse} sparse planned Features in diesem Proj
 - title ist optional und darf nur gefüllt werden, wenn ein klar besserer Titel naheliegt.
 - openQuestions ist optional.
 - acceptanceCriteria sollen kurze, testbare Strings sein.
-- featureFlow ist optional und darf nur gesetzt werden, wenn ein vorhandener Ablauf, Datenfluss oder Mermaid-Text sicher aus dem Kontext ableitbar ist.
+${getFeatureFlowPromptContractLines().join('\n')}
 
 Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, kein Erklärtext. Das JSON muss exakt dieses Format verwenden:
 {
@@ -7910,7 +7956,7 @@ Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, ke
       "purpose": "...",
       "workflowContext": "...",
       "acceptanceCriteria": ["...", "..."],
-      "featureFlow": "...",
+      "featureFlow": "flowchart TD\\n  A[Auslöser] --> B[Aktion]\\n  B --> C[Ergebnis]",
       "sourceContext": "...",
       "openQuestions": ["...", "..."]
     }
@@ -8714,7 +8760,7 @@ ${notesContext || '- —'}
 - Beschreibe klar Zweck / Warum.
 - Benenne den alten Workflow, das Problem oder den Schmerzpunkt.
 - Formuliere konkrete, testbare Akzeptanzkriterien.
-- Skizziere optional einen Feature-Flow / Mermaid-Text, wenn das für Ablauf, Datenfluss oder Entscheidungslogik hilfreich ist.
+${getFeatureFlowPromptContractLines().join('\n')}
 - Markiere offene Fragen, falls Informationen fehlen.
 - Aktualisiere optional den Titel, aber setze ihn niemals leer.
 
@@ -8726,7 +8772,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
   "purpose": "...",
   "workflowContext": "...",
   "acceptanceCriteria": ["...", "..."],
-  "featureFlow": "...",
+  "featureFlow": "flowchart TD\\n  A[Auslöser] --> B[Aktion]\\n  B --> C[Ergebnis]",
   "sourceContext": "...",
   "openQuestions": ["...", "..."]
 }`;
