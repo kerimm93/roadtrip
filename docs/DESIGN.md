@@ -8,6 +8,79 @@
 
 ---
 
+
+> Aktualisierung Sprint 39 Phase 2: Dieses Dokument bleibt das Designsystem und
+> die Designreferenz für Roadtrip, wird aber nicht mehr als 1:1-Atlas-Umsetzungsplan
+> gelesen. Der produktive Stand ist die Single-File-HTML-/Vanilla-JS-App
+> `index.html`; der Prototyp ist Inspiration, kein Soll-Stand. Roadmap-Ideen in
+> diesem Dokument sind ausdrücklich nicht automatisch implementiert.
+
+## 0 · Aktueller Design-Contract ab Sprint 39
+
+Roadtrip ist ein ruhiges Meta-Tool für Projekt-, Feature-, Chat- und
+Sprintsteuerung. Das UI soll Kontext ordnen, nächste Aktionen sichtbar machen und
+Prompt-/Handoff-Arbeit unterstützen, ohne die App in ein schweres Dashboard oder
+einen Prototyp-Nachbau zu verwandeln.
+
+### Prototyp-Status
+
+- Der Roadtrip-/Atlas-Prototyp ist Designreferenz und Inspirationsquelle.
+- Er ist kein 1:1-Bauplan, keine aktuelle Architektur und kein automatischer
+  Implementierungsauftrag.
+- Wo Prototyp und aktueller Roadtrip-Stand kollidieren, gelten produktiver Code und
+  `DECISIONS.md`.
+
+### Gewünschte Designrichtungen
+
+Diese Richtungen sind Leitplanken für spätere UI-Sprints, nicht Behauptungen über
+bereits umgesetzte Features:
+
+- Beziehungskarte als elegante Projektlandkarte / Graph-Visualisierung, aber nur
+  als eigener späterer Sprint mit Schema-/Contract-Entscheidung.
+- Momentum-Übersicht als Meta-Dashboard für Fokus, Bewegung, Blocker und nächste
+  Schritte.
+- Sidebar mit sprechenden Icons, Labels und klarer Hierarchie statt bloßer
+  Bubble-Sprache.
+- Sprintzyklus als 4-Schritt-Prozess; die primäre Aktion soll direkt unter oder
+  bei dem offenen Schritt liegen.
+- Projektansicht als Meta-Tool: Status, Fokus, Features, Chats, Sprints, Ressourcen
+  und Handoffs sollen zusammen lesbar bleiben.
+- Aktive, abgeschlossene und ausgeblendete Chats klar unterscheiden.
+- Copy-/Prompt-Aktionen bevorzugt mit ruhigen Toasts bestätigen statt unnötige
+  Aufklappbereiche zu erzeugen.
+- Notes Workspace ruhig, minimalistisch und textfreundlich halten.
+- Settings clean gruppieren; Verbindung/Sync nicht in destruktiven Bereichen
+  verstecken.
+- Sync langfristig auf globale Sichtbarkeit prüfen, ohne Sync-/Token-Verträge
+  nebenbei zu ändern.
+- Feature Database optisch beruhigen, aber nicht auf die niedrigere
+  Prototyp-Komplexität zurückbauen.
+- Lern-/Skill-Ansicht in Roadtrip eher als Chat-Verarbeitung, Themenverteilung,
+  Lernmaterial-Backlog und Projekt-/Deep-Research-Impulse interpretieren, nicht als
+  simple alte Lernziel-Logik.
+
+### Mermaid Preview und `featureFlow`
+
+- `featureFlow` ist ein optionales Textfeld für Mermaid-/Feature-Flow-Quelltext.
+- Eine Mermaid Preview ist optional und erscheint nur sinnvoll bei befülltem
+  `featureFlow`.
+- Die Preview verändert den gespeicherten Text nicht.
+- Renderfehler sollen sichtbar, aber nicht destruktiv sein.
+- Preview-Polish darf keine Datenmodell-, Import-/Export- oder Promptvertrag-Änderung
+  verdeckt mitbringen.
+
+### Feature Database
+
+- Die Feature Database ist ein Arbeitsbereich für planned und implemented Features
+  und für Soll-/Ist-Denken.
+- Planned-Feature-Detailfelder (`purpose`, `workflowContext`,
+  `acceptanceCriteria`, `sourceContext`) sollen Kontext liefern, aber UI-seitig
+  beherrschbar bleiben.
+- Die Feature Database soll nicht blind komplexer werden; Komplexität braucht einen
+  Workflow-Nutzen.
+- Umgekehrt soll sie nicht auf den alten Prototyp-Stand vereinfacht werden, weil der
+  heutige Feature-/Prompt-Workflow mehr Kontext benötigt.
+
 ## 1 · Prinzipien
 
 - **Hell und warm statt dunkel.** Pergament-/Papier-Canvas als Grund. Eine Oberfläche, in die man gerne schaut.
