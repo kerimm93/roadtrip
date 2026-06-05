@@ -2905,6 +2905,7 @@
         qq('[data-cleanup-mark-duplicate]').forEach(btn => btn.addEventListener('click', () => markCleanupProposalAsDuplicate(+btn.dataset.cleanupMarkDuplicate)));
         qq('[data-import-dup-ignore]').forEach(btn => btn.addEventListener('click', () => ignoreImportedFeatureDuplicate(btn.dataset.importDupIgnore || '')));
         qq('[data-import-dup-fill]').forEach(btn => btn.addEventListener('click', () => fillImportedFeatureDuplicateEmptyFields(btn.dataset.importDupFill || '')));
+        qq('[data-import-dup-adopt]').forEach(btn => btn.addEventListener('click', () => adoptImportedFeatureDuplicateCandidate(btn.dataset.importDupAdopt || '')));
         qq('[data-import-dup-create]').forEach(btn => btn.addEventListener('click', () => createImportedFeatureDuplicateAsNew(btn.dataset.importDupCreate || '', 'Als neues planned Feature angelegt')));
         qq('[data-import-dup-later]').forEach(btn => btn.addEventListener('click', () => createImportedFeatureDuplicateAsNew(btn.dataset.importDupLater || '', 'Später prüfen')));
         qq('[data-cleanup-ignore]').forEach(btn => btn.addEventListener('click', () => ignoreCleanupProposal(+btn.dataset.cleanupIgnore)));
@@ -8223,6 +8224,94 @@ Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, ke
         renderView();
       }
 
+      function mergeImportReviewAcceptanceCriteria(candidateCriteria, existingCriteria) {
+        const seen = new Set();
+        const merged = [];
+        normalizeAcceptanceCriteria(candidateCriteria).concat(normalizeAcceptanceCriteria(existingCriteria)).forEach(criterion => {
+          const key = normalizeText(criterion);
+          if (!key || seen.has(key)) return;
+          seen.add(key);
+          merged.push(criterion);
+        });
+        return merged;
+      }
+
+      function adoptImportedFeatureDuplicateCandidate(reviewId) {
+        const item = getImportReviewItem(reviewId);
+        if (!item) return;
+        const feature = S.features.find(f => f && f.id === item.existingFeatureId && f.projectId === item.projectId);
+        if (!feature) return alert('Bestehendes Feature wurde nicht gefunden.');
+        applyFeatureDefaults(feature);
+        if (isImplementedFeature(feature)) return alert('Dieses Match ist implemented. Roadtrip überschreibt implemented Features beim Import-Review nicht.');
+        if (!isPlannedFeature(feature)) return alert('Nur planned Features können den Import-Kandidaten als bessere Version übernehmen.');
+        const candidate = item.candidate || {};
+        const ok = window.confirm(`Import-Kandidat als bessere Version übernehmen?
+
+Die bestehende Feature-ID bleibt erhalten:
+${feature.id}
+
+Das planned Feature wird mit Kandidatendaten aktualisiert.
+Alte relevante Informationen wie sourceContext, acceptanceCriteria und offene Fragen werden defensiv erhalten oder ergänzt.
+Implemented Features können nicht überschrieben werden.
+
+Diese Aktion ist keine Neuanlage.
+
+Fortfahren?`);
+        if (!ok) return;
+
+        const keepId = feature.id;
+        const keepProjectId = feature.projectId;
+        const keepCreatedAt = feature.createdAt;
+        const previousSourceContext = normalizeFeatureDetailText(feature.sourceContext);
+        const previousOpenQuestions = Object.prototype.hasOwnProperty.call(feature, 'openQuestions') ? normalizeAcceptanceCriteria(feature.openQuestions) : [];
+        const previousSnapshotOpenQuestions = normalizeAcceptanceCriteria(item.existing && item.existing.openQuestions);
+        const now = new Date().toISOString();
+        const setFromCandidate = (field) => {
+          const incoming = normalizeFeatureDetailText(candidate[field]);
+          if (incoming) feature[field] = incoming;
+        };
+
+        ['title', 'description', 'purpose', 'workflowContext', 'featureFlow'].forEach(setFromCandidate);
+        const category = normalizeFeatureDetailText(candidate.category);
+        if (FEATURE_CATEGORIES.includes(category)) feature.category = category;
+        const priority = normalizeFeatureDetailText(candidate.priority);
+        if (PRIORITIES.includes(priority)) feature.priority = priority;
+        const status = normalizeFeatureDetailText(candidate.status);
+        if (FEATURE_STATUS_BY_POOL.planned.includes(status)) feature.status = status;
+        const reviewStatus = normalizeFeatureDetailText(candidate.reviewStatus);
+        if (FEATURE_REVIEW_STATUS.includes(reviewStatus)) feature.reviewStatus = reviewStatus;
+
+        feature.acceptanceCriteria = mergeImportReviewAcceptanceCriteria(candidate.acceptanceCriteria, feature.acceptanceCriteria);
+
+        const candidateSourceContext = normalizeFeatureDetailText(candidate.sourceContext);
+        let sourceContext = candidateSourceContext || previousSourceContext;
+        if (candidateSourceContext && previousSourceContext && !normalizeText(candidateSourceContext).includes(normalizeText(previousSourceContext))) {
+          sourceContext = appendUniqueText(sourceContext, `Bisheriger sourceContext vor Import-Übernahme:
+${previousSourceContext}`);
+        }
+        const openQuestions = mergeImportReviewAcceptanceCriteria(candidate.openQuestions, previousOpenQuestions.concat(previousSnapshotOpenQuestions));
+        if (openQuestions.length) {
+          sourceContext = appendUniqueSection(sourceContext, 'Offene Fragen aus Import-Review:', openQuestions);
+          if (Object.prototype.hasOwnProperty.call(feature, 'openQuestions')) feature.openQuestions = openQuestions;
+        }
+        sourceContext = appendUniqueText(sourceContext, `Import-Review ${now}: Import-Kandidat als bessere Version übernommen; bestehende Feature-ID blieb erhalten.`);
+        feature.sourceContext = sourceContext;
+
+        feature.id = keepId;
+        feature.projectId = keepProjectId;
+        feature.createdAt = keepCreatedAt || feature.createdAt;
+        feature.pool = 'planned';
+        feature.status = FEATURE_STATUS_BY_POOL.planned.includes(feature.status) ? feature.status : 'idea';
+        feature.updatedAt = now;
+        markFeatureDirtyRoadtrip(feature);
+        item.status = 'candidate-adopted';
+        item.adoptedFeatureId = feature.id;
+        item.resolvedAt = now;
+        item.existing = getFeatureImportReviewSnapshot(feature);
+        save();
+        renderView();
+      }
+
       function createImportedFeatureDuplicateAsNew(reviewId, modeLabel) {
         const item = getImportReviewItem(reviewId);
         if (!item) return;
@@ -8265,13 +8354,15 @@ Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, ke
           <div class="cleanup-review-list list">
             ${items.map(item => {
               const isDone = item.status && item.status !== 'open';
-              const implemented = item.existingPool === 'implemented';
+              const existingPool = normalizeFeaturePool(item.existingPool || item.existing && item.existing.pool);
+              const implemented = existingPool === 'implemented';
+              const canAdopt = !isDone && existingPool === 'planned' && !implemented;
               return `<div class="item cleanup-review-card ${isDone ? 'is-done' : ''}">
                 <div class="row-top">
                   <div><strong>Mögliche Dublette</strong><div class="mini">${escapeHtml(item.importSource || 'Import')} · ${escapeHtml(item.reason || 'mögliche Dublette')} · Status: ${escapeHtml(item.status || 'open')}</div></div>
-                  <span class="pill">${escapeHtml(item.existingPool || 'planned')}</span>
+                  <span class="pill">${escapeHtml(existingPool || 'planned')}</span>
                 </div>
-                ${implemented ? '<div class="notice notice-info" style="margin-top:8px;">Match ist implemented: leere Felder ergänzen ist gesperrt; implemented Feature bleibt unverändert.</div>' : ''}
+                ${implemented ? '<div class="notice notice-info" style="margin-top:8px;">Match ist implemented: leere Felder ergänzen und Kandidat übernehmen sind gesperrt; implemented Feature bleibt unverändert.</div>' : ''}
                 <div class="stack-row" style="align-items:stretch;margin-top:10px;">
                   ${renderImportReviewFeatureColumn('Bestehendes Feature', item.existing)}
                   ${renderImportReviewFeatureColumn('Import-Kandidat', item.candidate)}
@@ -8279,10 +8370,11 @@ Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, ke
                 <div class="cleanup-review-actions stack-row" style="margin-top:10px;">
                   <button class="btn" data-import-dup-ignore="${escapeAttr(item.id)}">Ignorieren</button>
                   <button class="btn btn-secondary" data-import-dup-fill="${escapeAttr(item.id)}" ${implemented || isDone ? 'disabled' : ''} title="Überschreibt keine bestehenden nichtleeren Felder.">Nur leere Felder ergänzen</button>
+                  <button class="btn btn-secondary" data-import-dup-adopt="${escapeAttr(item.id)}" ${canAdopt ? '' : 'disabled'} title="Behält die bestehende Feature-ID und aktualisiert das planned Feature defensiv mit Kandidatendaten.">Import-Kandidat als bessere Version übernehmen</button>
                   <button class="btn btn-secondary" data-import-dup-create="${escapeAttr(item.id)}" ${isDone ? 'disabled' : ''}>Als neues planned Feature anlegen</button>
                   <button class="btn btn-secondary" data-import-dup-later="${escapeAttr(item.id)}" ${isDone ? 'disabled' : ''}>Später prüfen</button>
                 </div>
-                <div class="mini" style="margin-top:6px;">Feldweise Auswahl ist noch nicht Teil dieses MVP. Aktuell kannst du nur leere Felder ergänzen, den Kandidaten neu anlegen, später prüfen oder ignorieren.</div>
+                <div class="mini" style="margin-top:6px;">Du kannst leere Felder ergänzen, den Import-Kandidaten als bessere Version übernehmen, den Kandidaten neu anlegen, später prüfen oder ignorieren. Feldweise Auswahl ist nicht Teil dieses MVP.</div>
               </div>`;
             }).join('')}
           </div>
