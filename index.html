@@ -3385,6 +3385,7 @@
         const chatWorkflow = getChatWorkflowState(projectId);
         const quick = getSprintQuickPanelState(projectId);
         const nextSprintMainchatHandoff = getNextSprintMainchatHandoffState(projectId);
+        const keepNextSprintMainchatDetailsOpen = !!(nextSprintMainchatHandoff.summary || hasOpenImportedFeatureDuplicateReviews(projectId));
         const quickTitle = quick.mode === 'end' ? 'Sprintende angefordert' : 'Sprintstart angefordert';
         const quickNotice = quick.mode === 'end'
           ? 'Abschluss-Prompt wurde in die Zwischenablage kopiert. Füge das Sprint-Handoff hier ein.'
@@ -3455,7 +3456,7 @@
                 </div>
               </details>
             ` : ''}
-            <details style="margin-top:10px;">
+            <details style="margin-top:10px;" ${keepNextSprintMainchatDetailsOpen ? 'open' : ''}>
               <summary>Optional · Hauptchat vor Sprintstart abgleichen</summary>
               <div class="field" style="margin-top:8px;">
                 <label for="nextSprintMainchatPromptOutput">Next-Sprint-/Hauptchat-Handoff-Prompt</label>
@@ -8059,6 +8060,11 @@ Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, ke
         return state;
       }
 
+      function hasOpenImportedFeatureDuplicateReviews(projectId) {
+        const state = getImportFeatureDuplicateReviewState(projectId);
+        return (state.items || []).some(item => item && item.status === 'open');
+      }
+
       function isImportEmptyValue(value) {
         if (value == null) return true;
         if (Array.isArray(value)) return normalizeAcceptanceCriteria(value).length === 0;
@@ -8272,10 +8278,11 @@ Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, ke
                 </div>
                 <div class="cleanup-review-actions stack-row" style="margin-top:10px;">
                   <button class="btn" data-import-dup-ignore="${escapeAttr(item.id)}">Ignorieren</button>
-                  <button class="btn btn-secondary" data-import-dup-fill="${escapeAttr(item.id)}" ${implemented || isDone ? 'disabled' : ''}>Leere Felder ergänzen</button>
+                  <button class="btn btn-secondary" data-import-dup-fill="${escapeAttr(item.id)}" ${implemented || isDone ? 'disabled' : ''} title="Überschreibt keine bestehenden nichtleeren Felder.">Nur leere Felder ergänzen</button>
                   <button class="btn btn-secondary" data-import-dup-create="${escapeAttr(item.id)}" ${isDone ? 'disabled' : ''}>Als neues planned Feature anlegen</button>
                   <button class="btn btn-secondary" data-import-dup-later="${escapeAttr(item.id)}" ${isDone ? 'disabled' : ''}>Später prüfen</button>
                 </div>
+                <div class="mini" style="margin-top:6px;">Feldweise Auswahl ist noch nicht Teil dieses MVP. Aktuell kannst du nur leere Felder ergänzen, den Kandidaten neu anlegen, später prüfen oder ignorieren.</div>
               </div>`;
             }).join('')}
           </div>
