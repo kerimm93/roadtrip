@@ -5101,8 +5101,8 @@
           JSON.stringify({
             type: NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE,
             recommendedSprint: { title: '...', goal: '...', reason: '...', selectedFeatureIds: ['...'], notes: ['...'] },
-            featureUpdates: [{ featureId: '...', title: '...', description: '...', purpose: '...', workflowContext: '...', acceptanceCriteria: ['...'], sourceContext: '...', priority: 'hoch', status: 'planned', openQuestions: ['...'] }],
-            proposedFeatures: [{ title: '...', description: '...', purpose: '...', workflowContext: '...', acceptanceCriteria: ['...'], sourceContext: '...', category: 'Workflow', priority: 'mittel', status: 'planned' }],
+            featureUpdates: [{ featureId: '...', title: '...', description: '...', purpose: '...', workflowContext: '...', acceptanceCriteria: ['...'], featureFlow: '...', sourceContext: '...', priority: 'hoch', status: 'planned', openQuestions: ['...'] }],
+            proposedFeatures: [{ title: '...', description: '...', purpose: '...', workflowContext: '...', acceptanceCriteria: ['...'], featureFlow: '...', sourceContext: '...', category: 'Workflow', priority: 'mittel', status: 'planned' }],
             openQuestions: ['...'],
             deferredIdeas: ['...']
           }, null, 2)
@@ -5198,6 +5198,16 @@
           if (!clean) return;
           lines.push(`- ${label}: ${compactPromptText(clean, limit || maxTextChars)}`);
         };
+        const addBlock = (label, value, limit) => {
+          const clean = normalizeFeatureDetailText(value);
+          if (!clean) return;
+          if (!/\r?\n/.test(clean)) {
+            addLine(label, clean, limit);
+            return;
+          }
+          lines.push(`- ${label}:`);
+          clean.split(/\r?\n/).forEach(line => lines.push(`  ${compactPromptText(line, limit || maxTextChars)}`));
+        };
         const includeHeading = options.includeHeading !== false;
         const includeBasics = options.includeBasics !== false;
 
@@ -5212,6 +5222,7 @@
         }
         addLine('Zweck', feature.purpose);
         addLine('Workflow-Kontext', feature.workflowContext);
+        addBlock('Feature-Flow / Mermaid', feature.featureFlow);
 
         const criteria = normalizeAcceptanceCriteria(feature.acceptanceCriteria).slice(0, Math.max(0, maxCriteria));
         if (criteria.length) {
@@ -6844,6 +6855,7 @@
         const parts = [
           ['Zweck', f.purpose],
           ['Workflow-Kontext', f.workflowContext],
+          ['Feature-Flow / Mermaid', f.featureFlow],
           ['Akzeptanzkriterien', criteria.map(item => `• ${item}`).join('\n')],
           ['Quellen / Notizen / Handoff', f.sourceContext]
         ].filter(([, value]) => String(value || '').trim());
@@ -6857,6 +6869,7 @@
         const priorityValue = PRIORITIES.includes(f.priority) ? f.priority : 'mittel';
         const statusValue = normalizeFeatureStatus(f.status, 'planned');
         const criteriaText = normalizeAcceptanceCriteria(f.acceptanceCriteria).join('\n');
+        const featureFlowPlaceholder = 'flowchart TD\n  A[Start] --> B{Entscheidung}\n  B -->|Ja| C[Aktion]\n  B -->|Nein| D[Abbruch]';
         return `
           <div class="feature-edit-form" data-planned-feature-edit-form="${escapeAttr(f.id)}">
             <div class="feature-edit-grid">
@@ -6867,6 +6880,7 @@
               <div class="field"><label>Status</label><select data-edit-feature-status="${escapeAttr(f.id)}">${plannedStatuses.map(status => `<option value="${escapeAttr(status)}" ${status===statusValue?'selected':''}>${escapeHtml(getFeatureStatusLabel(status))}</option>`).join('')}</select></div>
               <div class="field field-wide"><label>Zweck / Warum?</label><textarea data-edit-feature-purpose="${escapeAttr(f.id)}" placeholder="Warum gibt es dieses Feature?">${escapeHtml(f.purpose || '')}</textarea></div>
               <div class="field field-wide"><label>Workflow-Kontext / Problem</label><textarea data-edit-feature-workflow-context="${escapeAttr(f.id)}" placeholder="Welchen alten Workflow oder welches Problem verbessert es?">${escapeHtml(f.workflowContext || '')}</textarea></div>
+              <div class="field field-wide"><label>Feature-Flow / Mermaid-Skizze</label><textarea data-edit-feature-feature-flow="${escapeAttr(f.id)}" placeholder="${escapeAttr(featureFlowPlaceholder)}">${escapeHtml(f.featureFlow || '')}</textarea><div class="muted" style="font-size:12px;margin-top:4px;">Optional: Mermaid-Flowchart, Datenfluss, UI-Ablauf oder Entscheidungslogik. Wird nur als Text gespeichert und in Prompts übernommen.</div></div>
               <div class="field field-wide"><label>Akzeptanzkriterien (eine Zeile pro Kriterium)</label><textarea data-edit-feature-acceptance-criteria="${escapeAttr(f.id)}" placeholder="Kriterium 1\nKriterium 2">${escapeHtml(criteriaText)}</textarea></div>
               <div class="field field-wide"><label>Quellen / Notizen / Handoff-Bezug</label><textarea data-edit-feature-source-context="${escapeAttr(f.id)}" placeholder="Notizen, Handoff-Link, Chat-Bezug ...">${escapeHtml(f.sourceContext || '')}</textarea></div>
             </div>
@@ -7551,6 +7565,7 @@
         const purpose = (getPlannedFeatureEditField(id, 'purpose') || {}).value || '';
         const workflowContext = (getPlannedFeatureEditField(id, 'workflow-context') || {}).value || '';
         const acceptanceCriteria = (getPlannedFeatureEditField(id, 'acceptance-criteria') || {}).value || '';
+        const featureFlow = (getPlannedFeatureEditField(id, 'feature-flow') || {}).value || '';
         const sourceContext = (getPlannedFeatureEditField(id, 'source-context') || {}).value || '';
         const existingCategory = FEATURE_CATEGORIES.includes(f.category) ? f.category : 'Sonstiges';
         const existingPriority = PRIORITIES.includes(f.priority) ? f.priority : 'mittel';
@@ -7563,6 +7578,7 @@
         f.purpose = normalizeFeatureDetailText(purpose);
         f.workflowContext = normalizeFeatureDetailText(workflowContext);
         f.acceptanceCriteria = normalizeAcceptanceCriteria(acceptanceCriteria);
+        f.featureFlow = normalizeFeatureDetailText(featureFlow);
         f.sourceContext = normalizeFeatureDetailText(sourceContext);
         f.updatedAt = new Date().toISOString();
         markFeatureDirtyRoadtrip(f);
@@ -7586,6 +7602,7 @@
         const purposeField = readField('purpose');
         const workflowContextField = readField('workflow-context');
         const acceptanceCriteriaField = readField('acceptance-criteria');
+        const featureFlowField = readField('feature-flow');
         const sourceContextField = readField('source-context');
         return Object.assign(f, {
           title: titleField ? normalizeFeatureDetailText(titleField.value) : f.title,
@@ -7596,6 +7613,7 @@
           purpose: purposeField ? normalizeFeatureDetailText(purposeField.value) : f.purpose,
           workflowContext: workflowContextField ? normalizeFeatureDetailText(workflowContextField.value) : f.workflowContext,
           acceptanceCriteria: acceptanceCriteriaField ? normalizeAcceptanceCriteria(acceptanceCriteriaField.value) : normalizeAcceptanceCriteria(f.acceptanceCriteria),
+          featureFlow: featureFlowField ? normalizeFeatureDetailText(featureFlowField.value) : f.featureFlow,
           sourceContext: sourceContextField ? normalizeFeatureDetailText(sourceContextField.value) : f.sourceContext
         });
       }
@@ -7634,7 +7652,8 @@
           purpose: normalizeFeatureDetailText(f.purpose),
           workflowContext: normalizeFeatureDetailText(f.workflowContext),
           acceptanceCriteria: normalizeAcceptanceCriteria(f.acceptanceCriteria),
-          sourceContext: normalizeFeatureDetailText(f.sourceContext)
+          sourceContext: normalizeFeatureDetailText(f.sourceContext),
+          featureFlow: normalizeFeatureDetailText(f.featureFlow)
         }));
         const prompt = `# Roadtrip Planned Feature Backfill / Hauptchat-Abgleich
 
@@ -7675,6 +7694,7 @@ Hinweis: Es gibt insgesamt ${totalSparse} sparse planned Features in diesem Proj
 - title ist optional und darf nur gefüllt werden, wenn ein klar besserer Titel naheliegt.
 - openQuestions ist optional.
 - acceptanceCriteria sollen kurze, testbare Strings sein.
+- featureFlow ist optional und darf nur gesetzt werden, wenn ein vorhandener Ablauf, Datenfluss oder Mermaid-Text sicher aus dem Kontext ableitbar ist.
 
 Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, kein Erklärtext. Das JSON muss exakt dieses Format verwenden:
 {
@@ -7686,6 +7706,7 @@ Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, ke
       "purpose": "...",
       "workflowContext": "...",
       "acceptanceCriteria": ["...", "..."],
+      "featureFlow": "...",
       "sourceContext": "...",
       "openQuestions": ["...", "..."]
     }
@@ -7733,7 +7754,7 @@ Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, ke
         const title = Object.prototype.hasOwnProperty.call(update, 'title') ? normalizeFeatureDetailText(update.title) : '';
         if (title && title !== normalizeFeatureDetailText(feature.title)) setField('title', title);
 
-        ['purpose', 'workflowContext'].forEach(field => {
+        ['purpose', 'workflowContext', 'featureFlow'].forEach(field => {
           if (!Object.prototype.hasOwnProperty.call(update, field)) return;
           const incoming = normalizeFeatureDetailText(update[field]);
           if (incoming && isFeatureDetailShort(feature[field])) setField(field, incoming);
@@ -7820,6 +7841,7 @@ Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, ke
           workflowContext: normalizeFeatureDetailText(item.workflowContext),
           acceptanceCriteria: normalizeAcceptanceCriteria(item.acceptanceCriteria),
           sourceContext: appendUniqueText('Quelle: Next-Sprint-/Hauptchat-Handoff.', source),
+          featureFlow: normalizeFeatureDetailText(item.featureFlow),
           category,
           priority,
           status
@@ -8090,6 +8112,7 @@ Du schärfst genau EIN geplantes Feature. Erzeuge keine neuen Features und ände
 - Status: ${getFeatureStatusLabel(f.status)} (${f.status || '—'})
 - Zweck: ${f.purpose || '—'}
 - Workflow-Kontext / altes Problem: ${f.workflowContext || '—'}
+- Feature-Flow / Mermaid:\n${f.featureFlow ? f.featureFlow.split(/\r?\n/).map(line => `  ${line}`).join('\n') : '  - —'}
 - Akzeptanzkriterien:\n${f.acceptanceCriteria.length ? f.acceptanceCriteria.map(item => `  - ${item}`).join('\n') : '  - —'}
 - Quellen / Notizen / Handoff-Bezug: ${f.sourceContext || '—'}
 - SourceType: ${f.sourceType || '—'}
@@ -8103,6 +8126,7 @@ ${notesContext || '- —'}
 - Beschreibe klar Zweck / Warum.
 - Benenne den alten Workflow, das Problem oder den Schmerzpunkt.
 - Formuliere konkrete, testbare Akzeptanzkriterien.
+- Skizziere optional einen Feature-Flow / Mermaid-Text, wenn das für Ablauf, Datenfluss oder Entscheidungslogik hilfreich ist.
 - Markiere offene Fragen, falls Informationen fehlen.
 - Aktualisiere optional den Titel, aber setze ihn niemals leer.
 
@@ -8114,6 +8138,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
   "purpose": "...",
   "workflowContext": "...",
   "acceptanceCriteria": ["...", "..."],
+  "featureFlow": "...",
   "sourceContext": "...",
   "openQuestions": ["...", "..."]
 }`;
@@ -8175,6 +8200,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         if (Object.prototype.hasOwnProperty.call(payload, 'purpose')) feature.purpose = normalizeFeatureDetailText(payload.purpose);
         if (Object.prototype.hasOwnProperty.call(payload, 'workflowContext')) feature.workflowContext = normalizeFeatureDetailText(payload.workflowContext);
         if (Object.prototype.hasOwnProperty.call(payload, 'acceptanceCriteria')) feature.acceptanceCriteria = normalizeAcceptanceCriteria(payload.acceptanceCriteria);
+        if (Object.prototype.hasOwnProperty.call(payload, 'featureFlow')) feature.featureFlow = normalizeFeatureDetailText(payload.featureFlow);
         let sourceContext = Object.prototype.hasOwnProperty.call(payload, 'sourceContext') ? normalizeFeatureDetailText(payload.sourceContext) : normalizeFeatureDetailText(feature.sourceContext);
         const openQuestions = normalizeAcceptanceCriteria(payload.openQuestions);
         if (openQuestions.length) {
@@ -11657,6 +11683,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           workflowContext: '',
           acceptanceCriteria: [],
           sourceContext: '',
+          featureFlow: '',
           trashedAt: '',
           trashReason: '',
           trashedByWorkflow: '',
@@ -11673,6 +11700,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         clone.workflowContext = normalizeFeatureDetailText(clone.workflowContext);
         clone.acceptanceCriteria = normalizeAcceptanceCriteria(clone.acceptanceCriteria);
         clone.sourceContext = normalizeFeatureDetailText(clone.sourceContext);
+        clone.featureFlow = normalizeFeatureDetailText(clone.featureFlow);
         clone.trello = Object.assign({
           enabled: false,
           boardId: '',
