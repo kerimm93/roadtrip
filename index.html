@@ -1738,6 +1738,44 @@
       padding: 8px;
       white-space: pre-wrap;
     }
+    .feature-flow-preview-shell {
+      background: var(--surface-2);
+      border: 1px solid var(--rule);
+      border-radius: var(--r-sm);
+      display: grid;
+      gap: 8px;
+      margin-top: 6px;
+      padding: 8px;
+    }
+    .feature-flow-preview-actions {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .feature-flow-preview-status {
+      color: var(--ink-dim);
+      font-size: 12px;
+    }
+    .feature-flow-preview-status.is-error { color: var(--danger); }
+    .feature-flow-preview-output {
+      background: var(--surface);
+      border: 1px solid var(--rule);
+      border-radius: var(--r-sm);
+      color: var(--ink);
+      overflow-x: auto;
+      padding: 8px;
+    }
+    .feature-flow-preview-output:empty { display: none; }
+    .feature-flow-preview-output svg { max-width: 100%; }
+    .feature-flow-preview-error {
+      background: var(--danger-soft);
+      border: 1px solid var(--danger);
+      border-radius: var(--r-sm);
+      color: var(--danger);
+      padding: 8px;
+      white-space: pre-wrap;
+    }
     .feature-cell-actions .btn { padding: 6px 9px; }
     @media (max-width: 760px) {
       .feature-edit-grid { grid-template-columns: 1fr; }
@@ -2900,6 +2938,8 @@
         qq('[data-cancel-planned-feature-edit]').forEach(btn => btn.addEventListener('click', () => { ui.editingFeatureId = ''; renderView(); }));
         qq('[data-build-planned-feature-prompt]').forEach(btn => btn.addEventListener('click', () => buildPlannedFeatureRefinePrompt(btn.dataset.buildPlannedFeaturePrompt || '')));
         qq('[data-copy-planned-feature-prompt]').forEach(btn => btn.addEventListener('click', () => copyPlannedFeaturePrompt(btn.dataset.copyPlannedFeaturePrompt || '')));
+        qq('[data-render-feature-flow-preview]').forEach(btn => btn.addEventListener('click', () => renderFeatureFlowPreview(btn.dataset.renderFeatureFlowPreview || '')));
+        qq('[data-copy-feature-flow-source]').forEach(btn => btn.addEventListener('click', () => copyFeatureFlowPreviewSource(btn.dataset.copyFeatureFlowSource || '')));
         qq('[data-import-planned-feature-handoff]').forEach(btn => btn.addEventListener('click', () => importPlannedFeatureDetailHandoff(btn.dataset.importPlannedFeatureHandoff || '')));
         if ($('plannedFeatureBulkPromptOutput')) $('plannedFeatureBulkPromptOutput').addEventListener('input', e => {
           const projectId = ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '';
@@ -6850,7 +6890,21 @@
         return reviewStatus === 'reviewed' ? 'Review erledigt' : 'Review nötig';
       }
 
-      function renderPlannedFeatureDetailSummary(f) {
+      function renderFeatureFlowPreviewShell(featureId, featureFlow) {
+        if (!String(featureFlow || '').trim()) return '';
+        return `
+          <div class="feature-flow-preview-shell" data-feature-flow-preview-shell="${escapeAttr(featureId)}">
+            <div class="feature-flow-preview-actions">
+              <button class="btn btn-secondary" type="button" data-render-feature-flow-preview="${escapeAttr(featureId)}">Preview anzeigen</button>
+              <button class="btn" type="button" data-copy-feature-flow-source="${escapeAttr(featureId)}">Mermaid-Code kopieren</button>
+              <span class="feature-flow-preview-status" data-feature-flow-preview-status="${escapeAttr(featureId)}">Mermaid wird erst beim Klick geladen.</span>
+            </div>
+            <div class="feature-flow-preview-output" data-feature-flow-preview-output="${escapeAttr(featureId)}"></div>
+          </div>
+        `;
+      }
+
+      function renderPlannedFeatureDetailSummary(f, showPreview = true) {
         const criteria = normalizeAcceptanceCriteria(f.acceptanceCriteria);
         const parts = [
           ['Zweck', f.purpose],
@@ -6860,7 +6914,7 @@
           ['Quellen / Notizen / Handoff', f.sourceContext]
         ].filter(([, value]) => String(value || '').trim());
         if (!parts.length) return '<div class="feature-detail-readonly mini">Noch keine Planned-Feature-Details gepflegt.</div>';
-        return `<div class="feature-detail-readonly">${parts.map(([label, value]) => `<div><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</div>`).join('')}</div>`;
+        return `<div class="feature-detail-readonly">${parts.map(([label, value]) => `<div><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</div>`).join('')}</div>${showPreview ? renderFeatureFlowPreviewShell(f.id, f.featureFlow) : ''}`;
       }
 
       function renderPlannedFeatureEditForm(f) {
@@ -6880,7 +6934,7 @@
               <div class="field"><label>Status</label><select data-edit-feature-status="${escapeAttr(f.id)}">${plannedStatuses.map(status => `<option value="${escapeAttr(status)}" ${status===statusValue?'selected':''}>${escapeHtml(getFeatureStatusLabel(status))}</option>`).join('')}</select></div>
               <div class="field field-wide"><label>Zweck / Warum?</label><textarea data-edit-feature-purpose="${escapeAttr(f.id)}" placeholder="Warum gibt es dieses Feature?">${escapeHtml(f.purpose || '')}</textarea></div>
               <div class="field field-wide"><label>Workflow-Kontext / Problem</label><textarea data-edit-feature-workflow-context="${escapeAttr(f.id)}" placeholder="Welchen alten Workflow oder welches Problem verbessert es?">${escapeHtml(f.workflowContext || '')}</textarea></div>
-              <div class="field field-wide"><label>Feature-Flow / Mermaid-Skizze</label><textarea data-edit-feature-feature-flow="${escapeAttr(f.id)}" placeholder="${escapeAttr(featureFlowPlaceholder)}">${escapeHtml(f.featureFlow || '')}</textarea><div class="muted" style="font-size:12px;margin-top:4px;">Optional: Mermaid-Flowchart, Datenfluss, UI-Ablauf oder Entscheidungslogik. Wird nur als Text gespeichert und in Prompts übernommen.</div></div>
+              <div class="field field-wide"><label>Feature-Flow / Mermaid-Skizze</label><textarea data-edit-feature-feature-flow="${escapeAttr(f.id)}" placeholder="${escapeAttr(featureFlowPlaceholder)}">${escapeHtml(f.featureFlow || '')}</textarea><div class="muted" style="font-size:12px;margin-top:4px;">Optional: Mermaid-Flowchart, Datenfluss, UI-Ablauf oder Entscheidungslogik. Wird nur als Text gespeichert und in Prompts übernommen.</div>${renderFeatureFlowPreviewShell(f.id, f.featureFlow)}</div>
               <div class="field field-wide"><label>Akzeptanzkriterien (eine Zeile pro Kriterium)</label><textarea data-edit-feature-acceptance-criteria="${escapeAttr(f.id)}" placeholder="Kriterium 1\nKriterium 2">${escapeHtml(criteriaText)}</textarea></div>
               <div class="field field-wide"><label>Quellen / Notizen / Handoff-Bezug</label><textarea data-edit-feature-source-context="${escapeAttr(f.id)}" placeholder="Notizen, Handoff-Link, Chat-Bezug ...">${escapeHtml(f.sourceContext || '')}</textarea></div>
             </div>
@@ -6923,7 +6977,7 @@
                 <label class="mini">Pool ändern <select data-pool-feature="${escapeAttr(f.id)}">${FEATURE_POOLS.map(pool => `<option value="${pool}" ${pool===f.pool?'selected':''}>${getFeaturePoolLabel(pool)}</option>`).join('')}</select></label>
                 <label class="mini">Status ändern <select data-status-feature="${escapeAttr(f.id)}">${getFeatureStatusesForPool(f.pool).map(s => `<option value="${s}" ${s===f.status?'selected':''}>${getFeatureStatusLabel(s)}</option>`).join('')}</select></label>
               </div>
-              ${isPlannedFeature(f) ? renderPlannedFeatureDetailSummary(f) : ''}
+              ${isPlannedFeature(f) ? renderPlannedFeatureDetailSummary(f, !isEditingPlannedFeature) : ''}
               <div class="feature-cell-actions">
                 ${isPlannedFeature(f) ? `<button class="btn btn-secondary" data-edit-planned-feature="${escapeAttr(f.id)}">Feature bearbeiten</button>` : ''}
                 <button class="btn" data-sync-feature="${escapeAttr(f.id)}">${f.trello && f.trello.cardId ? 'Trello updaten' : 'Nach Trello'}</button>
@@ -7616,6 +7670,136 @@
           featureFlow: featureFlowField ? normalizeFeatureDetailText(featureFlowField.value) : f.featureFlow,
           sourceContext: sourceContextField ? normalizeFeatureDetailText(sourceContextField.value) : f.sourceContext
         });
+      }
+
+      let featureFlowMermaidPromise = null;
+      let featureFlowMermaidRenderSeq = 0;
+      const FEATURE_FLOW_MERMAID_CDN = 'https://cdn.jsdelivr.net/npm/mermaid@10.9.3/dist/mermaid.min.js';
+
+      // Sprint 38: lazy Mermaid loader for planned feature featureFlow previews.
+      function ensureFeatureFlowMermaidLoaded() {
+        if (typeof window === 'undefined' || typeof document === 'undefined') {
+          return Promise.reject(new Error('Mermaid-Preview ist nur im Browser verfügbar.'));
+        }
+        if (window.mermaid && typeof window.mermaid.render === 'function') {
+          try {
+            window.mermaid.initialize({ startOnLoad: false, securityLevel: 'strict' });
+          } catch (_) {}
+          return Promise.resolve(window.mermaid);
+        }
+        if (featureFlowMermaidPromise) return featureFlowMermaidPromise;
+        featureFlowMermaidPromise = new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = FEATURE_FLOW_MERMAID_CDN;
+          script.async = true;
+          script.onload = () => {
+            if (!window.mermaid || typeof window.mermaid.render !== 'function') {
+              featureFlowMermaidPromise = null;
+              reject(new Error('Mermaid wurde geladen, ist aber nicht verfügbar.'));
+              return;
+            }
+            try {
+              window.mermaid.initialize({ startOnLoad: false, securityLevel: 'strict' });
+              resolve(window.mermaid);
+            } catch (err) {
+              featureFlowMermaidPromise = null;
+              reject(err);
+            }
+          };
+          script.onerror = () => {
+            featureFlowMermaidPromise = null;
+            reject(new Error('Mermaid konnte nicht vom CDN geladen werden. Bitte Netzwerk prüfen oder den Code extern testen.'));
+          };
+          document.head.appendChild(script);
+        });
+        return featureFlowMermaidPromise;
+      }
+
+      function getFeatureFlowPreviewSource(featureId) {
+        const field = getPlannedFeatureEditField(featureId, 'feature-flow');
+        if (field) return String(field.value || '');
+        const feature = S.features.find(x => x.id === featureId);
+        return String((feature && feature.featureFlow) || '');
+      }
+
+      function setFeatureFlowPreviewStatus(featureId, message, isError) {
+        const status = qq('[data-feature-flow-preview-status]').find(el => el.dataset.featureFlowPreviewStatus === featureId);
+        if (!status) return;
+        status.textContent = message || '';
+        status.classList.toggle('is-error', !!isError);
+      }
+
+      function getFeatureFlowPreviewOutput(featureId) {
+        return qq('[data-feature-flow-preview-output]').find(el => el.dataset.featureFlowPreviewOutput === featureId) || null;
+      }
+
+      async function renderFeatureFlowPreview(featureId) {
+        const output = getFeatureFlowPreviewOutput(featureId);
+        if (!output) return;
+        output.innerHTML = '';
+        const source = getFeatureFlowPreviewSource(featureId);
+        if (!String(source || '').trim()) {
+          setFeatureFlowPreviewStatus(featureId, 'Kein Feature-Flow vorhanden.', true);
+          return;
+        }
+        setFeatureFlowPreviewStatus(featureId, 'Preview wird gerendert …', false);
+        try {
+          const mermaid = await ensureFeatureFlowMermaidLoaded();
+          const renderId = `feature-flow-preview-${++featureFlowMermaidRenderSeq}`;
+          const result = await mermaid.render(renderId, source);
+          output.innerHTML = result && result.svg ? result.svg : '';
+          if (result && typeof result.bindFunctions === 'function') result.bindFunctions(output);
+          setFeatureFlowPreviewStatus(featureId, 'Preview gerendert. Der gespeicherte Text wurde nicht verändert.', false);
+        } catch (err) {
+          output.innerHTML = '';
+          const errorBox = document.createElement('div');
+          errorBox.className = 'feature-flow-preview-error';
+          errorBox.textContent = `Mermaid-Preview fehlgeschlagen: ${err && err.message ? err.message : String(err || 'Unbekannter Fehler')}`;
+          output.appendChild(errorBox);
+          setFeatureFlowPreviewStatus(featureId, 'Preview fehlgeschlagen. Der Feature-Flow-Text bleibt unverändert.', true);
+        }
+      }
+
+      function copyFeatureFlowPreviewSource(featureId) {
+        const text = getFeatureFlowPreviewSource(featureId);
+        if (!String(text || '').trim()) return alert('Kein Mermaid-Code vorhanden.');
+        const fallbackCopy = () => {
+          const field = getPlannedFeatureEditField(featureId, 'feature-flow');
+          if (field) {
+            try {
+              field.focus();
+              field.select();
+              const ok = document.execCommand && document.execCommand('copy');
+              alert(ok ? 'Mermaid-Code kopiert.' : 'Kopieren fehlgeschlagen. Bitte manuell kopieren.');
+            } catch (_) {
+              alert('Kopieren fehlgeschlagen. Bitte manuell kopieren.');
+            }
+            return;
+          }
+          const tmp = document.createElement('textarea');
+          tmp.value = text;
+          tmp.setAttribute('readonly', '');
+          tmp.style.position = 'fixed';
+          tmp.style.left = '-9999px';
+          document.body.appendChild(tmp);
+          try {
+            tmp.focus();
+            tmp.select();
+            const ok = document.execCommand && document.execCommand('copy');
+            alert(ok ? 'Mermaid-Code kopiert.' : 'Kopieren fehlgeschlagen. Bitte den Feature-Flow-Text manuell markieren.');
+          } catch (_) {
+            alert('Kopieren fehlgeschlagen. Bitte den Feature-Flow-Text manuell markieren.');
+          } finally {
+            tmp.remove();
+          }
+        };
+        if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text)
+            .then(() => alert('Mermaid-Code kopiert.'))
+            .catch(fallbackCopy);
+          return;
+        }
+        fallbackCopy();
       }
 
       function getProjectNotesContext(projectId, sourceNoteIds) {
