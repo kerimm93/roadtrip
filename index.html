@@ -2012,6 +2012,7 @@
         learningPromptByChatId: {},
         plannedFeatureBulkByProject: {},
         nextSprintMainchatHandoffByProject: {},
+        sprintStartCarryoverByProject: {},
         importFeatureDuplicateReviewsByProject: {},
         sprintQuickPanelByProject: {}
       };
@@ -3086,6 +3087,16 @@
           if (!projectId || projectId === ALL_PROJECTS_KEY) return;
           getNextSprintMainchatHandoffState(projectId).rawJson = e.target.value;
         });
+        if ($('sprintStartCarryoverPromptOutput')) $('sprintStartCarryoverPromptOutput').addEventListener('input', e => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          getSprintStartCarryoverState(projectId).prompt = e.target.value;
+        });
+        if ($('sprintStartCarryoverJsonInput')) $('sprintStartCarryoverJsonInput').addEventListener('input', e => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          getSprintStartCarryoverState(projectId).rawJson = e.target.value;
+        });
         if ($('chatWorkflowPromptOutput')) $('chatWorkflowPromptOutput').addEventListener('input', e => {
           const projectId = ui.activeProjectId || '';
           if (!projectId || projectId === ALL_PROJECTS_KEY) return;
@@ -3158,6 +3169,27 @@
           if (!projectId || projectId === ALL_PROJECTS_KEY) return;
           const st = getNextSprintMainchatHandoffState(projectId);
           importNextSprintMainchatHandoff(projectId, st.rawJson || '');
+        });
+        if ($('btnBuildSprintStartCarryoverPrompt')) $('btnBuildSprintStartCarryoverPrompt').addEventListener('click', () => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          const st = getSprintStartCarryoverState(projectId);
+          st.prompt = buildSprintStartMainchatCarryoverPrompt(projectId);
+          renderView();
+        });
+        if ($('btnCopySprintStartCarryoverPrompt')) $('btnCopySprintStartCarryoverPrompt').addEventListener('click', () => copyPrompt('sprintStartCarryoverPromptOutput'));
+        if ($('btnImportSprintStartCarryover')) $('btnImportSprintStartCarryover').addEventListener('click', () => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          const st = getSprintStartCarryoverState(projectId);
+          importNextSprintMainchatHandoff(projectId, st.rawJson || '', {
+            label: 'Sprintstart-Hauptchat-Mitnahme',
+            applyRecommendedSprint: false,
+            targetState: st,
+            sourceType: 'sprintstart-mainchat-carryover',
+            sourceContextNote: 'Quelle: Sprintstart-Hauptchat-Mitnahme.',
+            duplicateSourceLabel: 'Sprintstart-Hauptchat-Mitnahme'
+          });
         });
         if ($('btnChatWorkflowBuildSprint')) $('btnChatWorkflowBuildSprint').addEventListener('click', () => {
           const projectId = ui.activeProjectId || '';
@@ -3386,6 +3418,8 @@
         const chatWorkflow = getChatWorkflowState(projectId);
         const quick = getSprintQuickPanelState(projectId);
         const nextSprintMainchatHandoff = getNextSprintMainchatHandoffState(projectId);
+        const sprintStartCarryover = getSprintStartCarryoverState(projectId);
+        const keepSprintStartCarryoverDetailsOpen = !!sprintStartCarryover.summary;
         const keepNextSprintMainchatDetailsOpen = !!(nextSprintMainchatHandoff.summary || hasOpenImportedFeatureDuplicateReviews(projectId));
         const quickTitle = quick.mode === 'end' ? 'Sprintende angefordert' : 'Sprintstart angefordert';
         const quickNotice = quick.mode === 'end'
@@ -3457,6 +3491,28 @@
                 </div>
               </details>
             ` : ''}
+            <details style="margin-top:10px;" ${keepSprintStartCarryoverDetailsOpen ? 'open' : ''}>
+              <summary>Kleine Hauptchat-Mitnahme für Feature-Database</summary>
+              <div class="notice notice-info" style="margin-top:8px;">
+                Kompakter Sprintstart-Flow: fragt den project-main Hauptchat nur nach kleinen neuen Feature-Ideen und Detailergänzungen seit der letzten Sprintplanung. Der große Hauptchat-Abgleich bleibt unten separat erhalten.
+              </div>
+              <div class="field" style="margin-top:8px;">
+                <label for="sprintStartCarryoverPromptOutput">Kurzmitnahme-Prompt</label>
+                <textarea id="sprintStartCarryoverPromptOutput" style="min-height:135px;font-family:var(--font-mono);font-size:12px;" placeholder="Kompakter Prompt wird hier erzeugt ...">${escapeHtml(sprintStartCarryover.prompt || '')}</textarea>
+                <div class="stack-row" style="margin-top:6px;">
+                  <button class="btn btn-secondary" type="button" id="btnBuildSprintStartCarryoverPrompt" ${isArchivedProject ? 'disabled' : ''}>Kleine Hauptchat-Mitnahme anfordern</button>
+                  <button class="btn" type="button" id="btnCopySprintStartCarryoverPrompt">Prompt kopieren</button>
+                </div>
+              </div>
+              <div class="field" style="margin-top:8px;">
+                <label for="sprintStartCarryoverJsonInput">Kurzmitnahme-JSON importieren</label>
+                <textarea id="sprintStartCarryoverJsonInput" style="min-height:110px;font-family:var(--font-mono);font-size:12px;" placeholder='{"type":"roadtrip-next-sprint-mainchat-handoff-v1","recommendedSprint":{},"featureUpdates":[],"proposedFeatures":[]}'>${escapeHtml(sprintStartCarryover.rawJson || '')}</textarea>
+                <div class="stack-row" style="margin-top:6px;">
+                  <button class="btn btn-secondary" type="button" id="btnImportSprintStartCarryover" ${isArchivedProject ? 'disabled' : ''}>Kurzmitnahme importieren</button>
+                </div>
+              </div>
+              ${sprintStartCarryover.summary ? `<div class="notice notice-info" style="margin-top:8px;white-space:pre-wrap;">${escapeHtml(sprintStartCarryover.summary)}</div>` : ''}
+            </details>
             <details style="margin-top:10px;" ${keepNextSprintMainchatDetailsOpen ? 'open' : ''}>
               <summary>Optional · Hauptchat vor Sprintstart abgleichen</summary>
               <div class="field" style="margin-top:8px;">
@@ -3815,6 +3871,20 @@
         if (typeof state.rawJson !== 'string') state.rawJson = '';
         if (typeof state.summary !== 'string') state.summary = '';
         ui.nextSprintMainchatHandoffByProject[projectId] = state;
+        return state;
+      }
+
+
+      function getSprintStartCarryoverState(projectId) {
+        if (!projectId || projectId === ALL_PROJECTS_KEY) return { projectId: projectId || '', prompt: '', rawJson: '', summary: '' };
+        if (!ui.sprintStartCarryoverByProject || typeof ui.sprintStartCarryoverByProject !== 'object') ui.sprintStartCarryoverByProject = {};
+        const existing = ui.sprintStartCarryoverByProject[projectId];
+        const state = (existing && typeof existing === 'object') ? existing : { projectId, prompt: '', rawJson: '', summary: '' };
+        state.projectId = projectId;
+        if (typeof state.prompt !== 'string') state.prompt = '';
+        if (typeof state.rawJson !== 'string') state.rawJson = '';
+        if (typeof state.summary !== 'string') state.summary = '';
+        ui.sprintStartCarryoverByProject[projectId] = state;
         return state;
       }
 
@@ -5131,6 +5201,72 @@
             recommendedSprint: { title: '...', goal: '...', reason: '...', selectedFeatureIds: ['...'], notes: ['...'] },
             featureUpdates: [{ featureId: '...', title: '...', description: '...', purpose: '...', workflowContext: '...', acceptanceCriteria: ['...'], featureFlow: '...', sourceContext: '...', priority: 'hoch', status: 'planned', openQuestions: ['...'] }],
             proposedFeatures: [{ title: '...', description: '...', purpose: '...', workflowContext: '...', acceptanceCriteria: ['...'], featureFlow: '...', sourceContext: '...', category: 'Workflow', priority: 'mittel', status: 'planned' }],
+            openQuestions: ['...'],
+            deferredIdeas: ['...']
+          }, null, 2)
+        ].join('\n');
+      }
+
+      function buildSprintStartMainchatCarryoverPrompt(projectId) {
+        const project = S.projects.find(p => p && p.id === projectId);
+        if (!project) return '';
+        const mainChat = getProjectMainChat(projectId);
+        const features = getVisibleFeatures(S.features).filter(f => f && f.projectId === projectId);
+        const selectedIds = getSelectedSprintFeatureIds(projectId);
+        const selectedSet = new Set(selectedIds);
+        const selectedFeatures = selectedIds.map(id => features.find(f => f.id === id)).filter(f => f && isPlannedFeature(f)).slice(0, 5);
+        const relevantOpenFeatures = features
+          .filter(f => isPlannedFeature(f) && !selectedSet.has(f.id))
+          .sort((a, b) => getFeaturePriorityRank(a.priority) - getFeaturePriorityRank(b.priority) || String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
+          .slice(0, 6);
+        const handoffLines = getRecentNextSprintHandoffContextLines(projectId, 2);
+        return [
+          'Bitte erstelle für Roadtrip eine kleine Sprintstart-Hauptchat-Mitnahme für die Feature-Database.',
+          '',
+          'Wichtig: Gib ausschließlich gültiges JSON zurück. Keine Markdown-Codefences, keine Einleitung, keine Kommentare.',
+          `Der JSON-type muss exakt "${NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE}" sein.`,
+          'Dies ist NICHT der große Hauptchat-Abgleich: kein vollständiger Hauptchat-Audit, kein Migration Bundle, keine Roadmap-Neusortierung.',
+          'Berücksichtige nur kleine neue Informationen seit der letzten Sprintplanung.',
+          'recommendedSprint muss leer bleiben: "recommendedSprint": {}. Überschreibe keinen Projektfokus und keinen nächsten Projektschritt.',
+          'Aktualisiere keine implemented Features. Verwende featureUpdates nur für bestehende planned Feature-IDs aus Roadtrip.',
+          'Neue kleine Ideen gehören nach proposedFeatures und bleiben planned/idea, niemals implemented.',
+          '',
+          '## Projektkontext (aus Roadtrip)',
+          `- Projekttitel: ${project.title || '—'}`,
+          `- Projektsummary: ${project.summary || '—'}`,
+          `- Aktueller Fokus: ${project.currentFocus || '—'}`,
+          `- Nächster Projektschritt: ${project.nextStep || '—'}`,
+          `- project-main Chat-Titel: ${(mainChat && mainChat.title) || 'OFFEN – kein interner Hauptchat-Kontext gefunden'}`,
+          `- project-main Chat-URL: ${(mainChat && mainChat.url) || project.mainChatUrl || 'OFFEN – in Roadtrip nachtragen'}`,
+          `- project-main Summary: ${(mainChat && mainChat.summary) || '—'}`,
+          `- project-main Next Step: ${(mainChat && mainChat.nextStep) || '—'}`,
+          '',
+          '## Ausgewählte planned Features (maximal 5)',
+          ...(selectedFeatures.length ? selectedFeatures.map(f => formatPlannedFeatureDetailsForPrompt(f, { maxTextChars: 260, maxCriteria: 5 })) : ['- Keine planned Features explizit als „Für Sprint ausgewählt“ markiert.']),
+          '',
+          '## Weitere relevante planned Features (maximal 6)',
+          ...(relevantOpenFeatures.length ? relevantOpenFeatures.map(f => `- [${f.id}] ${f.title || 'Ohne Titel'} (${getFeatureStatusLabel(f.status)} · ${f.priority || 'prio-offen'}) — ${compactPromptText(f.description || f.purpose || '—', 180)}`) : ['- Keine weiteren offenen planned Features gefunden.']),
+          '',
+          '## Letzte Sprint-/Handoff-Kontexte (kompakt)',
+          ...(handoffLines.length ? handoffLines : ['- Keine verwertbaren Sprint-/Handoff-Zusammenfassungen in Roadtrip gefunden.']),
+          '',
+          '## Kleine Mitnahme-Fragen',
+          '- Welche kleinen neuen Feature-Ideen wurden seit der letzten Sprintplanung besprochen?',
+          '- Welche bestehenden planned Features brauchen kleine Detailergänzungen?',
+          '- Gibt es neue offene Fragen zu Features?',
+          '- Gibt es kleine sourceContext-/workflowContext-Hinweise?',
+          '- Gibt es kleine Akzeptanzkriterien-Ergänzungen?',
+          '- Gibt es featureFlow-/Mermaid-Ergänzungen?',
+          '',
+          '## Erlaubte Update-Felder',
+          '- description, purpose, workflowContext, acceptanceCriteria, sourceContext, featureFlow, openQuestions, priority, status',
+          '',
+          '## Erwartetes JSON-Schema',
+          JSON.stringify({
+            type: NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE,
+            recommendedSprint: {},
+            featureUpdates: [{ featureId: '...', description: '...', purpose: '...', workflowContext: '...', acceptanceCriteria: ['...'], sourceContext: '...', featureFlow: '...', openQuestions: ['...'], priority: 'mittel', status: 'planned' }],
+            proposedFeatures: [{ title: '...', description: '...', purpose: '...', workflowContext: '...', acceptanceCriteria: ['...'], sourceContext: '...', featureFlow: '...', openQuestions: ['...'], category: 'Workflow', priority: 'mittel', status: 'planned' }],
             openQuestions: ['...'],
             deferredIdeas: ['...']
           }, null, 2)
@@ -8000,7 +8136,7 @@ Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, ke
         return changed;
       }
 
-      function normalizeNextSprintProposedFeature(item) {
+      function normalizeNextSprintProposedFeature(item, options = {}) {
         if (!item || typeof item !== 'object') return null;
         const title = normalizeFeatureDetailText(item.title);
         if (!title) return null;
@@ -8009,13 +8145,15 @@ Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, ke
         const rawStatus = normalizeFeatureDetailText(item.status);
         const status = ['idea', 'planned'].includes(rawStatus) ? rawStatus : 'idea';
         const source = normalizeFeatureDetailText(item.sourceContext);
+        const defaultSourceContext = options.sourceContextPrefix || 'Quelle: Next-Sprint-/Hauptchat-Handoff.';
+        const defaultDescription = options.defaultDescription || 'Aus Next-Sprint-/Hauptchat-Handoff vorgeschlagen.';
         return {
           title,
-          description: normalizeFeatureDetailText(item.description) || 'Aus Next-Sprint-/Hauptchat-Handoff vorgeschlagen.',
+          description: normalizeFeatureDetailText(item.description) || defaultDescription,
           purpose: normalizeFeatureDetailText(item.purpose),
           workflowContext: normalizeFeatureDetailText(item.workflowContext),
           acceptanceCriteria: normalizeAcceptanceCriteria(item.acceptanceCriteria),
-          sourceContext: appendUniqueText('Quelle: Next-Sprint-/Hauptchat-Handoff.', source),
+          sourceContext: appendUniqueText(defaultSourceContext, source),
           featureFlow: normalizeFeatureDetailText(item.featureFlow),
           openQuestions: normalizeAcceptanceCriteria(item.openQuestions),
           category,
@@ -8396,37 +8534,42 @@ ${previousSourceContext}`);
         ].filter(Boolean).join('\n');
       }
 
-      function formatNextSprintMainchatHandoffImportSummary(report) {
+      function formatNextSprintMainchatHandoffImportSummary(report, label = 'Next-Sprint-Handoff Import') {
         const createdCount = Array.isArray(report.created) ? report.created.length : (report.created || 0);
         const updatedCount = Array.isArray(report.updated) ? report.updated.length : (report.updated || 0);
         const duplicateCount = Array.isArray(report.skippedDuplicates) ? report.skippedDuplicates.length : 0;
         const skippedCount = Array.isArray(report.skipped) ? report.skipped.length : (report.skipped || 0);
         const errorCount = Array.isArray(report.errors) ? report.errors.length : (report.errors || 0);
         const lines = [
-          `Next-Sprint-Handoff Import: neu angelegt: ${createdCount}, aktualisiert: ${updatedCount}, übersprungen wegen möglicher Dublette: ${duplicateCount}, sonst übersprungen: ${skippedCount}, Fehler: ${errorCount}`,
+          `${label}: neu angelegt: ${createdCount}, aktualisiert: ${updatedCount}, übersprungen wegen möglicher Dublette: ${duplicateCount}, sonst übersprungen: ${skippedCount}, Fehler: ${errorCount}`,
           report.recommendedSprintSummary ? `\n${report.recommendedSprintSummary}` : '',
           (report.reasons || []).length ? '\nHinweise:\n' + report.reasons.slice(0, 12).map(reason => `- ${reason}`).join('\n') : ''
         ];
         return lines.filter(Boolean).join('\n');
       }
 
-      function importNextSprintMainchatHandoff(projectId, rawJson) {
-        const state = getNextSprintMainchatHandoffState(projectId);
+      function importNextSprintMainchatHandoff(projectId, rawJson, options = {}) {
+        const state = options.targetState || getNextSprintMainchatHandoffState(projectId);
+        const importLabel = options.label || 'Next-Sprint-Handoff Import';
+        const applyRecommendedSprint = options.applyRecommendedSprint !== false;
+        const duplicateSourceLabel = options.duplicateSourceLabel || 'Next-Sprint-/Hauptchat-Handoff';
+        const sourceType = options.sourceType || 'next-sprint-mainchat-handoff';
+        const sourceContextNote = options.sourceContextNote || 'Quelle: Next-Sprint-/Hauptchat-Handoff.';
         const report = createFeatureImportReport();
         getImportFeatureDuplicateReviewState(projectId).items = [];
         const project = S.projects.find(p => p && p.id === projectId);
         if (!project || projectId === ALL_PROJECTS_KEY) {
           report.errors.push('kein konkretes Projekt gewählt');
           report.reasons.push('kein konkretes Projekt gewählt');
-          state.summary = formatNextSprintMainchatHandoffImportSummary(report);
+          state.summary = formatNextSprintMainchatHandoffImportSummary(report, importLabel);
           alert(state.summary);
           renderView();
           return report;
         }
         if (project.status === 'archiviert') {
-          report.errors.push('archiviertes Projekt kann kein Next-Sprint-Handoff importieren');
-          report.reasons.push('archiviertes Projekt kann kein Next-Sprint-Handoff importieren');
-          state.summary = formatNextSprintMainchatHandoffImportSummary(report);
+          report.errors.push(`archiviertes Projekt kann ${importLabel} nicht importieren`);
+          report.reasons.push(`archiviertes Projekt kann ${importLabel} nicht importieren`);
+          state.summary = formatNextSprintMainchatHandoffImportSummary(report, importLabel);
           alert(state.summary);
           renderView();
           return report;
@@ -8437,7 +8580,7 @@ ${previousSourceContext}`);
           const reason = err && err.message === 'invalid-type' ? `falscher type; erwartet ${NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE}` : 'ungültiges JSON: ' + (err && err.message ? err.message : err);
           report.errors.push(reason);
           report.reasons.push(reason);
-          state.summary = formatNextSprintMainchatHandoffImportSummary(report);
+          state.summary = formatNextSprintMainchatHandoffImportSummary(report, importLabel);
           alert(state.summary);
           renderView();
           return report;
@@ -8493,7 +8636,7 @@ ${previousSourceContext}`);
         const proposed = Array.isArray(payload.proposedFeatures) ? payload.proposedFeatures : [];
         const now = new Date().toISOString();
         proposed.forEach((item, index) => {
-          const normalized = normalizeNextSprintProposedFeature(item);
+          const normalized = normalizeNextSprintProposedFeature(item, { sourceContextPrefix: sourceContextNote, defaultDescription: `Aus ${duplicateSourceLabel} vorgeschlagen.` });
           if (!normalized) {
             report.skipped.push(`proposedFeatures ${index + 1}: Titel fehlt`);
             report.reasons.push(`proposedFeatures ${index + 1}: Titel fehlt`);
@@ -8503,13 +8646,13 @@ ${previousSourceContext}`);
           const duplicate = findImportedFeatureDuplicate(projectId, normalized);
           if (duplicate || existingByTitle.has(titleKey)) {
             const match = duplicate || { feature: getVisibleFeatures(S.features).find(f => f && f.projectId === projectId && normalizeText(f.title) === titleKey), reason: 'gleicher Titel' };
-            recordImportedFeatureDuplicate(projectId, report, normalized, match.feature, match.reason, 'Next-Sprint-/Hauptchat-Handoff');
+            recordImportedFeatureDuplicate(projectId, report, normalized, match.feature, match.reason, duplicateSourceLabel);
             return;
           }
           addImportedPlannedFeature(projectId, normalized, report, {
             now,
-            sourceType: 'next-sprint-mainchat-handoff',
-            sourceContextNote: 'Quelle: Next-Sprint-/Hauptchat-Handoff.'
+            sourceType,
+            sourceContextNote
           });
           existingByTitle.add(titleKey);
         });
@@ -8518,14 +8661,14 @@ ${previousSourceContext}`);
         const recommended = (payload.recommendedSprint && typeof payload.recommendedSprint === 'object') ? payload.recommendedSprint : {};
         const sprintTitle = normalizeFeatureDetailText(recommended.title);
         const sprintGoal = normalizeFeatureDetailText(recommended.goal);
-        if (sprintTitle || sprintGoal) {
+        if (applyRecommendedSprint && (sprintTitle || sprintGoal)) {
           project.currentFocus = compactPromptText([sprintTitle, sprintGoal].filter(Boolean).join(' — '), 180);
           project.nextStep = 'Sprint vorbereiten: ' + (sprintTitle || sprintGoal);
           project.updatedAt = now;
         }
         state.rawJson = result.extractedJson;
-        state.summary = formatNextSprintMainchatHandoffImportSummary(report);
-        if (report.updated.length || report.created.length || sprintTitle || sprintGoal) save();
+        state.summary = formatNextSprintMainchatHandoffImportSummary(report, importLabel);
+        if (report.updated.length || report.created.length || (applyRecommendedSprint && (sprintTitle || sprintGoal))) save();
         alert(state.summary);
         renderView();
         return report;
@@ -10266,6 +10409,10 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         else if (textareaId === 'nextSprintMainchatPromptOutput') {
           const projectId = ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '';
           if (projectId) getNextSprintMainchatHandoffState(projectId).prompt = text;
+        }
+        else if (textareaId === 'sprintStartCarryoverPromptOutput') {
+          const projectId = ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '';
+          if (projectId) getSprintStartCarryoverState(projectId).prompt = text;
         }
         else if (textareaId === 'dailyLogProjectPromptOutput') {
           if (!ui.dailyLogQuery) ui.dailyLogQuery = { prompt: '' };
