@@ -2012,6 +2012,7 @@
         learningPromptByChatId: {},
         plannedFeatureBulkByProject: {},
         nextSprintMainchatHandoffByProject: {},
+        importFeatureDuplicateReviewsByProject: {},
         sprintQuickPanelByProject: {}
       };
 
@@ -2902,6 +2903,10 @@
         qq('[data-cleanup-accept-new]').forEach(btn => btn.addEventListener('click', () => acceptCleanupProposalAsNew(+btn.dataset.cleanupAcceptNew)));
         qq('[data-cleanup-review-only]').forEach(btn => btn.addEventListener('click', () => markCleanupProposalAsReviewed(+btn.dataset.cleanupReviewOnly)));
         qq('[data-cleanup-mark-duplicate]').forEach(btn => btn.addEventListener('click', () => markCleanupProposalAsDuplicate(+btn.dataset.cleanupMarkDuplicate)));
+        qq('[data-import-dup-ignore]').forEach(btn => btn.addEventListener('click', () => ignoreImportedFeatureDuplicate(btn.dataset.importDupIgnore || '')));
+        qq('[data-import-dup-fill]').forEach(btn => btn.addEventListener('click', () => fillImportedFeatureDuplicateEmptyFields(btn.dataset.importDupFill || '')));
+        qq('[data-import-dup-create]').forEach(btn => btn.addEventListener('click', () => createImportedFeatureDuplicateAsNew(btn.dataset.importDupCreate || '', 'Als neues planned Feature angelegt')));
+        qq('[data-import-dup-later]').forEach(btn => btn.addEventListener('click', () => createImportedFeatureDuplicateAsNew(btn.dataset.importDupLater || '', 'Später prüfen')));
         qq('[data-cleanup-ignore]').forEach(btn => btn.addEventListener('click', () => ignoreCleanupProposal(+btn.dataset.cleanupIgnore)));
         qq('[data-restore-feature]').forEach(btn => btn.addEventListener('click', () => restoreFeatureFromTrash(btn.dataset.restoreFeature)));
 
@@ -3425,6 +3430,7 @@
                 </div>
               </div>
               ${quick.summary ? `<div class="notice" style="margin-top:8px;white-space:pre-wrap;">${escapeHtml(quick.summary)}</div>` : ''}
+              ${renderImportedFeatureDuplicateReviewList(projectId)}
               ${quick.returnPrompt ? `
                 <div class="notice notice-info" style="margin-top:10px;">
                   <strong>Rückführung in den Hauptchat</strong>
@@ -3468,6 +3474,7 @@
                 </div>
               </div>
               ${nextSprintMainchatHandoff.summary ? `<div class="notice notice-info" style="margin-top:8px;white-space:pre-wrap;">${escapeHtml(nextSprintMainchatHandoff.summary)}</div>` : ''}
+              ${renderImportedFeatureDuplicateReviewList(projectId)}
             </details>
           </div>
         `;
@@ -4149,18 +4156,9 @@
         let proposedFeatures = [];
         if (parsed.proposedFeatures != null) {
           if (!Array.isArray(parsed.proposedFeatures)) throw new Error('handoff-proposed-features');
-          proposedFeatures = parsed.proposedFeatures.map(item => {
-            if (!item || typeof item !== 'object') return null;
-            const title = String(item.title || '').trim();
-            if (!title) return null;
-            return {
-              title,
-              description: String(item.description || '').trim(),
-              category: mapHandoffFeatureCategory(item.category),
-              priority: mapHandoffFeaturePriority(item.priority),
-              status: 'planned'
-            };
-          }).filter(Boolean);
+          proposedFeatures = parsed.proposedFeatures
+            .map(item => normalizeImportedFeatureCandidate(item, 'Aus Sprint-Handoff vorgeschlagen.'))
+            .filter(Boolean);
         }
         const sourceChatTitle = String(parsed.sourceChatTitle || parsed.chatTitle || '').trim();
         const sourceChatUrl = String(parsed.sourceChatUrl || parsed.chatUrl || parsed.url || '').trim();
@@ -4389,7 +4387,8 @@
         markProjectNeedsCodeAnalysisAfterSprint(project, now);
 
         const sourceChatTitle = sourceChat.title || normalized.sourceChatTitle || normalized.chatTitle || 'Sprint';
-        let createdFeatures = 0;
+        const report = createFeatureImportReport();
+        getImportFeatureDuplicateReviewState(projectId).items = [];
         const existingByTitle = new Set(
           getVisibleFeatures(S.features)
             .filter(f => f.projectId === projectId)
@@ -4399,32 +4398,26 @@
 
         normalized.proposedFeatures.forEach(item => {
           const normalizedTitle = normalizeText(item.title);
-          if (!normalizedTitle || existingByTitle.has(normalizedTitle)) return;
-          const cleanDescription = String(item.description || '').trim();
+          if (!normalizedTitle) return;
+          const duplicate = findImportedFeatureDuplicate(projectId, item);
+          if (duplicate || existingByTitle.has(normalizedTitle)) {
+            const match = duplicate || { feature: getVisibleFeatures(S.features).find(f => f && f.projectId === projectId && normalizeText(f.title) === normalizedTitle), reason: 'gleicher Titel' };
+            recordImportedFeatureDuplicate(projectId, report, item, match.feature, match.reason, 'Sprintabschluss-Handoff');
+            return;
+          }
           const originPrefix = `Aus Sprint: ${sourceChatTitle}`;
-          const description = cleanDescription
-            ? `${originPrefix}\n\n${cleanDescription}`
-            : originPrefix;
-          const created = ensureFeatureDefaults({
-            id: uid('f'),
-            projectId,
-            title: item.title,
-            description,
-            category: item.category,
-            priority: item.priority,
-            status: 'planned',
-            pool: 'planned',
-            reviewStatus: 'needs-review',
+          const candidate = Object.assign({}, item, {
+            description: appendUniqueText(originPrefix, item.description),
+            sourceContext: appendUniqueText(item.sourceContext, originPrefix)
+          });
+          addImportedPlannedFeature(projectId, candidate, report, {
+            now,
             sourceType: 'chat-handoff',
             sourceChatId: sourceChat.id,
             sourceChatTitle,
-            sourceNoteIds: [],
-            createdAt: now,
-            updatedAt: now
+            sourceContextNote: originPrefix
           });
-          S.features.push(created);
           existingByTitle.add(normalizedTitle);
-          createdFeatures++;
         });
 
         const st = getChatWorkflowState(projectId);
@@ -4434,10 +4427,14 @@
         const handoff = getChatWorkflowHandoffState(projectId);
         handoff.rawJson = extractedJson;
         handoff.sourceChatId = sourceChat.id;
+        const summary = `Sprint-Bericht importiert. Projekt und Hauptchat-Kontext aktualisiert. Neu angelegt: ${report.created.length}, aktualisiert: 0, übersprungen wegen möglicher Dublette: ${report.skippedDuplicates.length}, Fehler: ${report.errors.length}.`;
+        handoff.summary = summary;
+        const quick = getSprintQuickPanelState(projectId);
+        if (quick && quick.mode === 'end') quick.summary = summary;
         save();
         renderView();
-        alert('Sprint-Bericht importiert. Projekt und Hauptchat-Kontext aktualisiert. Neue geplante Features: ' + createdFeatures + '.');
-        return { sourceChatId: sourceChat.id, createdFeatures };
+        alert(summary);
+        return { sourceChatId: sourceChat.id, createdFeatures: report.created.length, report };
       }
 
       function importSprintStartJsonFromMainChat(projectId, rawJson) {
@@ -4757,18 +4754,9 @@
         let proposedFeatures = [];
         if (parsed.proposedFeatures != null) {
           if (!Array.isArray(parsed.proposedFeatures)) throw new Error('mainchat-bootstrap-proposed-features');
-          proposedFeatures = parsed.proposedFeatures.map(item => {
-            if (!item || typeof item !== 'object') return null;
-            const title = String(item.title || '').trim();
-            if (!title) return null;
-            return {
-              title,
-              description: String(item.description || '').trim(),
-              category: mapHandoffFeatureCategory(item.category),
-              priority: mapHandoffFeaturePriority(item.priority),
-              status: 'planned'
-            };
-          }).filter(Boolean);
+          proposedFeatures = parsed.proposedFeatures
+            .map(item => normalizeImportedFeatureCandidate(item, 'Aus Legacy-Hauptchat-Bootstrap vorgeschlagen.'))
+            .filter(Boolean);
         }
         return {
           parsed,
@@ -4850,7 +4838,8 @@
         if (normalized.nextStep) project.nextStep = normalized.nextStep;
         project.updatedAt = now;
 
-        let createdFeatures = 0;
+        const report = createFeatureImportReport();
+        getImportFeatureDuplicateReviewState(projectId).items = [];
         const existingByTitle = new Set(
           getVisibleFeatures(S.features)
             .filter(f => f.projectId === projectId)
@@ -4859,25 +4848,20 @@
         );
         normalized.proposedFeatures.forEach(item => {
           const normalizedTitle = normalizeText(item.title);
-          if (!normalizedTitle || existingByTitle.has(normalizedTitle)) return;
-          S.features.push(ensureFeatureDefaults({
-            id: uid('f'),
-            projectId,
-            title: item.title,
-            description: item.description || 'Aus Legacy-Hauptchat-Bootstrap abgeleitet.',
-            category: item.category,
-            priority: item.priority,
-            status: 'planned',
-            pool: 'planned',
-            reviewStatus: 'needs-review',
+          if (!normalizedTitle) return;
+          const duplicate = findImportedFeatureDuplicate(projectId, item);
+          if (duplicate || existingByTitle.has(normalizedTitle)) {
+            const match = duplicate || { feature: getVisibleFeatures(S.features).find(f => f && f.projectId === projectId && normalizeText(f.title) === normalizedTitle), reason: 'gleicher Titel' };
+            recordImportedFeatureDuplicate(projectId, report, item, match.feature, match.reason, 'Hauptchat-Bootstrap');
+            return;
+          }
+          addImportedPlannedFeature(projectId, item, report, {
+            now,
             sourceType: 'mainchat-bootstrap',
             sourceChatId: mainChat.id,
-            sourceNoteIds: [],
-            createdAt: now,
-            updatedAt: now
-          }));
+            sourceContextNote: 'Quelle: Legacy-Hauptchat-Bootstrap.'
+          });
           existingByTitle.add(normalizedTitle);
-          createdFeatures++;
         });
 
         const st = getChatWorkflowState(projectId);
@@ -4885,9 +4869,11 @@
         st.mode = 'legacy-mainchat-bootstrap-import';
         st.mainChatBootstrapJson = result.extractedJson;
         st.prompt = normalized.mainChatPrompt || st.prompt || '';
+        st.summary = `Hauptchat-Bootstrap importiert. project-main Chat aktualisiert. Neu angelegt: ${report.created.length}, aktualisiert: 0, übersprungen wegen möglicher Dublette: ${report.skippedDuplicates.length}, Fehler: ${report.errors.length}.`;
         save();
         renderView();
-        alert('Hauptchat-Bootstrap importiert. project-main Chat aktualisiert. Neue geplante Features: ' + createdFeatures + '.');
+        alert(st.summary);
+        return { mainChatId: mainChat.id, createdFeatures: report.created.length, report };
       }
 
       function getSprintExecutionMode(projectId) {
@@ -6424,6 +6410,7 @@
                     </div>
                   </div>
                 </div>
+                ${renderImportedFeatureDuplicateReviewList(p.id)}
               </details>
               <details class="sprint-advanced-zone">
                 <summary>Advanced · Hauptchat-Werkzeuge</summary>
@@ -6442,6 +6429,8 @@
                     <button class="btn btn-secondary" id="btnImportMainChatBootstrapJson" ${isArchivedProject ? 'disabled' : ''}>Hauptchat-Bootstrap importieren</button>
                   </div>
                 </div>
+                ${chatWorkflow.summary ? `<div class="notice notice-info" style="margin-top:8px;white-space:pre-wrap;">${escapeHtml(chatWorkflow.summary)}</div>` : ''}
+                ${renderImportedFeatureDuplicateReviewList(p.id)}
               </details>
               <details class="sprint-advanced-zone">
                 <summary>Legacy · alte Sprint-Werkzeuge</summary>
@@ -8026,10 +8015,271 @@ Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, ke
           acceptanceCriteria: normalizeAcceptanceCriteria(item.acceptanceCriteria),
           sourceContext: appendUniqueText('Quelle: Next-Sprint-/Hauptchat-Handoff.', source),
           featureFlow: normalizeFeatureDetailText(item.featureFlow),
+          openQuestions: normalizeAcceptanceCriteria(item.openQuestions),
           category,
           priority,
           status
         };
+      }
+
+      function normalizeImportedFeatureCandidate(item, fallbackDescription) {
+        if (!item || typeof item !== 'object') return null;
+        const title = normalizeFeatureDetailText(item.title);
+        if (!title) return null;
+        const rawStatus = normalizeFeatureDetailText(item.status);
+        return {
+          title,
+          description: normalizeFeatureDetailText(item.description) || normalizeFeatureDetailText(fallbackDescription),
+          purpose: normalizeFeatureDetailText(item.purpose),
+          workflowContext: normalizeFeatureDetailText(item.workflowContext),
+          acceptanceCriteria: normalizeAcceptanceCriteria(item.acceptanceCriteria),
+          sourceContext: normalizeFeatureDetailText(item.sourceContext),
+          featureFlow: normalizeFeatureDetailText(item.featureFlow),
+          openQuestions: normalizeAcceptanceCriteria(item.openQuestions),
+          category: mapHandoffFeatureCategory(item.category),
+          priority: mapHandoffFeaturePriority(item.priority),
+          status: FEATURE_STATUS_BY_POOL.planned.includes(rawStatus) ? rawStatus : 'idea',
+          pool: 'planned',
+          reviewStatus: 'needs-review'
+        };
+      }
+
+      function createFeatureImportReport() {
+        return { created: [], updated: [], skippedDuplicates: [], skipped: [], errors: [], reasons: [], recommendedSprintSummary: '' };
+      }
+
+      function getImportFeatureDuplicateReviewState(projectId) {
+        if (!ui.importFeatureDuplicateReviewsByProject || typeof ui.importFeatureDuplicateReviewsByProject !== 'object') ui.importFeatureDuplicateReviewsByProject = {};
+        if (!projectId || projectId === ALL_PROJECTS_KEY) return { projectId: projectId || '', items: [] };
+        const existing = ui.importFeatureDuplicateReviewsByProject[projectId];
+        const state = existing && typeof existing === 'object' ? existing : { projectId, items: [] };
+        state.projectId = projectId;
+        if (!Array.isArray(state.items)) state.items = [];
+        ui.importFeatureDuplicateReviewsByProject[projectId] = state;
+        return state;
+      }
+
+      function isImportEmptyValue(value) {
+        if (value == null) return true;
+        if (Array.isArray(value)) return normalizeAcceptanceCriteria(value).length === 0;
+        return String(value).trim() === '';
+      }
+
+      function getFeatureImportReviewSnapshot(feature) {
+        const f = ensureFeatureDefaults(Object.assign({}, feature || {}));
+        return {
+          id: f.id || '',
+          title: f.title || '',
+          description: f.description || '',
+          purpose: f.purpose || '',
+          workflowContext: f.workflowContext || '',
+          acceptanceCriteria: normalizeAcceptanceCriteria(f.acceptanceCriteria),
+          sourceContext: f.sourceContext || '',
+          featureFlow: f.featureFlow || '',
+          openQuestions: normalizeAcceptanceCriteria(f.openQuestions),
+          category: f.category || '',
+          priority: f.priority || '',
+          status: f.status || '',
+          pool: f.pool || '',
+          reviewStatus: f.reviewStatus || ''
+        };
+      }
+
+      function findImportedFeatureDuplicate(projectId, candidate) {
+        const titleKey = normalizeText((candidate || {}).title);
+        if (!projectId || !titleKey) return null;
+        const features = getVisibleFeatures(S.features).filter(f => f && f.projectId === projectId && normalizeText(f.title));
+        const exact = features.find(f => normalizeText(f.title) === titleKey);
+        if (exact) return { feature: exact, reason: 'gleicher Titel' };
+        const similar = features.find(f => {
+          const existingKey = normalizeText(f.title);
+          return existingKey.length >= 8 && titleKey.length >= 8 && (existingKey.includes(titleKey) || titleKey.includes(existingKey));
+        });
+        return similar ? { feature: similar, reason: 'ähnlicher Titel' } : null;
+      }
+
+      function recordImportedFeatureDuplicate(projectId, report, candidate, existingFeature, reason, importSource) {
+        const state = getImportFeatureDuplicateReviewState(projectId);
+        const item = {
+          id: uid('ifr'),
+          projectId,
+          importSource: importSource || 'Import',
+          reason: reason || 'mögliche Dublette',
+          status: 'open',
+          candidate: getFeatureImportReviewSnapshot(Object.assign({ pool: 'planned', reviewStatus: 'needs-review' }, candidate || {})),
+          existing: getFeatureImportReviewSnapshot(existingFeature || {}),
+          existingFeatureId: existingFeature && existingFeature.id || '',
+          existingPool: normalizeFeaturePool(existingFeature && existingFeature.pool)
+        };
+        state.items.push(item);
+        if (report && Array.isArray(report.skippedDuplicates)) report.skippedDuplicates.push(item);
+        if (report && Array.isArray(report.reasons)) report.reasons.push(`${item.candidate.title}: mögliche Dublette (${item.reason}) mit ${item.existing.title || item.existingFeatureId}`);
+        return item;
+      }
+
+      function buildImportedPlannedFeature(projectId, candidate, options = {}) {
+        const safeCandidate = candidate || {};
+        const now = options.now || new Date().toISOString();
+        const sourceLines = [
+          normalizeFeatureDetailText(safeCandidate.sourceContext),
+          options.sourceContextNote || '',
+          (safeCandidate.openQuestions || []).length ? `Offene Fragen aus Import:\n${normalizeAcceptanceCriteria(safeCandidate.openQuestions).map(x => `- ${x}`).join('\n')}` : ''
+        ].filter(Boolean).join('\n\n');
+        return ensureFeatureDefaults(Object.assign({}, safeCandidate, {
+          id: uid('f'),
+          projectId,
+          pool: 'planned',
+          reviewStatus: 'needs-review',
+          status: FEATURE_STATUS_BY_POOL.planned.includes(safeCandidate.status) ? safeCandidate.status : 'idea',
+          sourceContext: sourceLines,
+          sourceType: options.sourceType || 'feature-import-review',
+          sourceChatId: options.sourceChatId || '',
+          sourceChatTitle: options.sourceChatTitle || '',
+          sourceNoteIds: [],
+          createdAt: now,
+          updatedAt: now
+        }));
+      }
+
+      function addImportedPlannedFeature(projectId, candidate, report, options = {}) {
+        const feature = buildImportedPlannedFeature(projectId, candidate, options);
+        S.features.push(feature);
+        if (report && Array.isArray(report.created)) report.created.push({ id: feature.id, title: feature.title });
+        return feature;
+      }
+
+      function getImportReviewItem(reviewId) {
+        const stores = ui.importFeatureDuplicateReviewsByProject || {};
+        for (const projectId of Object.keys(stores)) {
+          const state = stores[projectId];
+          const item = state && Array.isArray(state.items) ? state.items.find(x => x && x.id === reviewId) : null;
+          if (item) return item;
+        }
+        return null;
+      }
+
+      function ignoreImportedFeatureDuplicate(reviewId) {
+        const item = getImportReviewItem(reviewId);
+        if (!item) return;
+        item.status = 'ignored';
+        renderView();
+      }
+
+      function fillImportedFeatureDuplicateEmptyFields(reviewId) {
+        const item = getImportReviewItem(reviewId);
+        if (!item) return;
+        const feature = S.features.find(f => f && f.id === item.existingFeatureId && f.projectId === item.projectId);
+        if (!feature) return alert('Bestehendes Feature wurde nicht gefunden.');
+        applyFeatureDefaults(feature);
+        if (!isPlannedFeature(feature)) return alert('Dieses Match ist implemented. Roadtrip ändert implemented Features beim Import-Review nicht.');
+        const candidate = item.candidate || {};
+        let changed = false;
+        const setIfEmpty = (field) => {
+          const incoming = field === 'acceptanceCriteria' ? normalizeAcceptanceCriteria(candidate[field]) : normalizeFeatureDetailText(candidate[field]);
+          if (!isImportEmptyValue(feature[field]) || isImportEmptyValue(incoming)) return;
+          feature[field] = incoming;
+          changed = true;
+        };
+        ['description', 'purpose', 'workflowContext', 'featureFlow'].forEach(setIfEmpty);
+        const existingCriteria = normalizeAcceptanceCriteria(feature.acceptanceCriteria);
+        const seenCriteria = new Set(existingCriteria.map(normalizeText));
+        const mergedCriteria = existingCriteria.slice();
+        normalizeAcceptanceCriteria(candidate.acceptanceCriteria).forEach(criterion => {
+          const key = normalizeText(criterion);
+          if (!key || seenCriteria.has(key)) return;
+          seenCriteria.add(key);
+          mergedCriteria.push(criterion);
+        });
+        if (mergedCriteria.length !== existingCriteria.length) {
+          feature.acceptanceCriteria = mergedCriteria;
+          changed = true;
+        }
+        const sourceParts = [
+          normalizeFeatureDetailText(candidate.sourceContext),
+          `Import-Review ${new Date().toISOString()}: Leere Felder defensiv aus möglicher Dublette „${candidate.title || 'ohne Titel'}“ ergänzt.`,
+        ];
+        let sourceContext = normalizeFeatureDetailText(feature.sourceContext);
+        sourceParts.filter(Boolean).forEach(part => { sourceContext = appendUniqueText(sourceContext, part); });
+        const openQuestions = normalizeAcceptanceCriteria(candidate.openQuestions);
+        if (openQuestions.length) sourceContext = appendUniqueSection(sourceContext, 'Offene Fragen aus Import-Kandidat:', openQuestions);
+        if (sourceContext !== normalizeFeatureDetailText(feature.sourceContext)) {
+          feature.sourceContext = sourceContext;
+          changed = true;
+        }
+        if (changed) {
+          feature.updatedAt = new Date().toISOString();
+          markFeatureDirtyRoadtrip(feature);
+          item.status = 'merged-empty-fields';
+          save();
+        } else {
+          item.status = 'reviewed-no-change';
+        }
+        renderView();
+      }
+
+      function createImportedFeatureDuplicateAsNew(reviewId, modeLabel) {
+        const item = getImportReviewItem(reviewId);
+        if (!item) return;
+        const candidate = item.candidate || {};
+        const existingLabel = item.existing && (item.existing.title || item.existing.id) || item.existingFeatureId || 'unbekanntes Feature';
+        const note = [
+          `Import-Review ${new Date().toISOString()}: ${modeLabel || 'Als neues planned Feature angelegt'}.`,
+          `Quelle: ${item.importSource || 'Import'}.`,
+          `Möglicher Dubletten-/Merge-Kandidat zu „${existingLabel}“${item.existingFeatureId ? ` (${item.existingFeatureId})` : ''}.`,
+          item.reason ? `Match-Grund: ${item.reason}.` : ''
+        ].filter(Boolean).join('\n');
+        const feature = addImportedPlannedFeature(item.projectId, candidate, null, { sourceType: 'feature-import-review', sourceContextNote: note });
+        item.status = modeLabel === 'Später prüfen' ? 'saved-for-later' : 'created-new';
+        item.createdFeatureId = feature.id;
+        save();
+        renderView();
+      }
+
+      function renderImportReviewField(label, value) {
+        const display = Array.isArray(value) ? normalizeAcceptanceCriteria(value).join('\n- ') : normalizeFeatureDetailText(value);
+        if (!display) return '';
+        const text = Array.isArray(value) ? `- ${display}` : display;
+        return `<div class="mini"><strong>${escapeHtml(label)}:</strong> <span style="white-space:pre-wrap;">${escapeHtml(text)}</span></div>`;
+      }
+
+      function renderImportReviewFeatureColumn(title, feature) {
+        const f = feature || {};
+        return `<div class="item" style="flex:1 1 280px;background:var(--surface);">
+          <div class="row-top"><strong>${escapeHtml(title)}</strong><span class="pill">${escapeHtml(f.pool || 'planned')}</span></div>
+          ${['title','description','purpose','workflowContext','acceptanceCriteria','sourceContext','featureFlow','openQuestions','category','priority','status','reviewStatus'].map(field => renderImportReviewField(field, f[field])).join('') || '<div class="mini">—</div>'}
+        </div>`;
+      }
+
+      function renderImportedFeatureDuplicateReviewList(projectId) {
+        const state = getImportFeatureDuplicateReviewState(projectId);
+        const items = (state.items || []).filter(item => item && item.status !== 'ignored');
+        if (!items.length) return '';
+        return `<div class="cleanup-review-shell">
+          <div class="cleanup-review-summary"><span>Import-Review: übersprungene Feature-Kandidaten</span><span class="pill">${items.length}</span></div>
+          <div class="cleanup-review-list list">
+            ${items.map(item => {
+              const isDone = item.status && item.status !== 'open';
+              const implemented = item.existingPool === 'implemented';
+              return `<div class="item cleanup-review-card ${isDone ? 'is-done' : ''}">
+                <div class="row-top">
+                  <div><strong>Mögliche Dublette</strong><div class="mini">${escapeHtml(item.importSource || 'Import')} · ${escapeHtml(item.reason || 'mögliche Dublette')} · Status: ${escapeHtml(item.status || 'open')}</div></div>
+                  <span class="pill">${escapeHtml(item.existingPool || 'planned')}</span>
+                </div>
+                ${implemented ? '<div class="notice notice-info" style="margin-top:8px;">Match ist implemented: leere Felder ergänzen ist gesperrt; implemented Feature bleibt unverändert.</div>' : ''}
+                <div class="stack-row" style="align-items:stretch;margin-top:10px;">
+                  ${renderImportReviewFeatureColumn('Bestehendes Feature', item.existing)}
+                  ${renderImportReviewFeatureColumn('Import-Kandidat', item.candidate)}
+                </div>
+                <div class="cleanup-review-actions stack-row" style="margin-top:10px;">
+                  <button class="btn" data-import-dup-ignore="${escapeAttr(item.id)}">Ignorieren</button>
+                  <button class="btn btn-secondary" data-import-dup-fill="${escapeAttr(item.id)}" ${implemented || isDone ? 'disabled' : ''}>Leere Felder ergänzen</button>
+                  <button class="btn btn-secondary" data-import-dup-create="${escapeAttr(item.id)}" ${isDone ? 'disabled' : ''}>Als neues planned Feature anlegen</button>
+                  <button class="btn btn-secondary" data-import-dup-later="${escapeAttr(item.id)}" ${isDone ? 'disabled' : ''}>Später prüfen</button>
+                </div>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>`;
       }
 
       function formatNextSprintRecommendedSprintSummary(recommendedSprint, payload) {
@@ -8048,8 +8298,13 @@ Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, ke
       }
 
       function formatNextSprintMainchatHandoffImportSummary(report) {
+        const createdCount = Array.isArray(report.created) ? report.created.length : (report.created || 0);
+        const updatedCount = Array.isArray(report.updated) ? report.updated.length : (report.updated || 0);
+        const duplicateCount = Array.isArray(report.skippedDuplicates) ? report.skippedDuplicates.length : 0;
+        const skippedCount = Array.isArray(report.skipped) ? report.skipped.length : (report.skipped || 0);
+        const errorCount = Array.isArray(report.errors) ? report.errors.length : (report.errors || 0);
         const lines = [
-          `Next-Sprint-Handoff Import: aktualisierte Features: ${report.updated || 0}, neu vorgeschlagene Features: ${report.created || 0}, übersprungen: ${report.skipped || 0}, Fehler: ${report.errors || 0}`,
+          `Next-Sprint-Handoff Import: neu angelegt: ${createdCount}, aktualisiert: ${updatedCount}, übersprungen wegen möglicher Dublette: ${duplicateCount}, sonst übersprungen: ${skippedCount}, Fehler: ${errorCount}`,
           report.recommendedSprintSummary ? `\n${report.recommendedSprintSummary}` : '',
           (report.reasons || []).length ? '\nHinweise:\n' + report.reasons.slice(0, 12).map(reason => `- ${reason}`).join('\n') : ''
         ];
@@ -8058,10 +8313,11 @@ Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, ke
 
       function importNextSprintMainchatHandoff(projectId, rawJson) {
         const state = getNextSprintMainchatHandoffState(projectId);
-        const report = { updated: 0, created: 0, skipped: 0, errors: 0, reasons: [], recommendedSprintSummary: '' };
+        const report = createFeatureImportReport();
+        getImportFeatureDuplicateReviewState(projectId).items = [];
         const project = S.projects.find(p => p && p.id === projectId);
         if (!project || projectId === ALL_PROJECTS_KEY) {
-          report.errors += 1;
+          report.errors.push('kein konkretes Projekt gewählt');
           report.reasons.push('kein konkretes Projekt gewählt');
           state.summary = formatNextSprintMainchatHandoffImportSummary(report);
           alert(state.summary);
@@ -8069,7 +8325,7 @@ Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, ke
           return report;
         }
         if (project.status === 'archiviert') {
-          report.errors += 1;
+          report.errors.push('archiviertes Projekt kann kein Next-Sprint-Handoff importieren');
           report.reasons.push('archiviertes Projekt kann kein Next-Sprint-Handoff importieren');
           state.summary = formatNextSprintMainchatHandoffImportSummary(report);
           alert(state.summary);
@@ -8079,8 +8335,9 @@ Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, ke
         let result;
         try { result = parseNextSprintMainchatHandoffJson(rawJson); }
         catch (err) {
-          report.errors += 1;
-          report.reasons.push(err && err.message === 'invalid-type' ? `falscher type; erwartet ${NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE}` : 'ungültiges JSON: ' + (err && err.message ? err.message : err));
+          const reason = err && err.message === 'invalid-type' ? `falscher type; erwartet ${NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE}` : 'ungültiges JSON: ' + (err && err.message ? err.message : err);
+          report.errors.push(reason);
+          report.reasons.push(reason);
           state.summary = formatNextSprintMainchatHandoffImportSummary(report);
           alert(state.summary);
           renderView();
@@ -8091,42 +8348,44 @@ Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, ke
         const updates = Array.isArray(payload.featureUpdates) ? payload.featureUpdates : [];
         updates.forEach((update, index) => {
           if (!update || typeof update !== 'object') {
-            report.errors += 1;
-            report.reasons.push(`featureUpdates ${index + 1}: kein Objekt`);
+            const reason = `featureUpdates ${index + 1}: kein Objekt`;
+            report.errors.push(reason);
+            report.reasons.push(reason);
             return;
           }
           const featureId = normalizeFeatureDetailText(update.featureId);
           if (!featureId) {
-            report.errors += 1;
-            report.reasons.push(`featureUpdates ${index + 1}: featureId fehlt`);
+            const reason = `featureUpdates ${index + 1}: featureId fehlt`;
+            report.errors.push(reason);
+            report.reasons.push(reason);
             return;
           }
           if (seenUpdates.has(featureId)) {
-            report.skipped += 1;
+            report.skipped.push(`${featureId}: doppelte featureId im Handoff`);
             report.reasons.push(`${featureId}: doppelte featureId im Handoff`);
             return;
           }
           seenUpdates.add(featureId);
           const feature = (S.features || []).find(f => f && f.id === featureId);
           if (!feature) {
-            report.errors += 1;
+            report.errors.push(`${featureId}: unbekannte featureId`);
             report.reasons.push(`${featureId}: unbekannte featureId`);
             return;
           }
           applyFeatureDefaults(feature);
           if (feature.projectId !== projectId) {
-            report.skipped += 1;
+            report.skipped.push(`${featureId}: anderes Projekt`);
             report.reasons.push(`${featureId}: anderes Projekt`);
             return;
           }
           if (!isPlannedFeature(feature)) {
-            report.skipped += 1;
+            report.skipped.push(`${featureId}: nicht planned/implemented geschützt`);
             report.reasons.push(`${featureId}: nicht planned/implemented geschützt`);
             return;
           }
-          if (mergeNextSprintMainchatFeatureUpdate(feature, update)) report.updated += 1;
+          if (mergeNextSprintMainchatFeatureUpdate(feature, update)) report.updated.push({ id: feature.id, title: feature.title });
           else {
-            report.skipped += 1;
+            report.skipped.push(`${featureId}: keine verwertbare Änderung`);
             report.reasons.push(`${featureId}: keine verwertbare Änderung`);
           }
         });
@@ -8137,28 +8396,23 @@ Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, ke
         proposed.forEach((item, index) => {
           const normalized = normalizeNextSprintProposedFeature(item);
           if (!normalized) {
-            report.skipped += 1;
+            report.skipped.push(`proposedFeatures ${index + 1}: Titel fehlt`);
             report.reasons.push(`proposedFeatures ${index + 1}: Titel fehlt`);
             return;
           }
           const titleKey = normalizeText(normalized.title);
-          if (existingByTitle.has(titleKey)) {
-            report.skipped += 1;
-            report.reasons.push(`${normalized.title}: vorgeschlagenes Feature existiert bereits`);
+          const duplicate = findImportedFeatureDuplicate(projectId, normalized);
+          if (duplicate || existingByTitle.has(titleKey)) {
+            const match = duplicate || { feature: getVisibleFeatures(S.features).find(f => f && f.projectId === projectId && normalizeText(f.title) === titleKey), reason: 'gleicher Titel' };
+            recordImportedFeatureDuplicate(projectId, report, normalized, match.feature, match.reason, 'Next-Sprint-/Hauptchat-Handoff');
             return;
           }
-          S.features.push(ensureFeatureDefaults(Object.assign({
-            id: uid('f'),
-            projectId,
-            pool: 'planned',
-            reviewStatus: 'needs-review',
+          addImportedPlannedFeature(projectId, normalized, report, {
+            now,
             sourceType: 'next-sprint-mainchat-handoff',
-            sourceNoteIds: [],
-            createdAt: now,
-            updatedAt: now
-          }, normalized)));
+            sourceContextNote: 'Quelle: Next-Sprint-/Hauptchat-Handoff.'
+          });
           existingByTitle.add(titleKey);
-          report.created += 1;
         });
 
         report.recommendedSprintSummary = formatNextSprintRecommendedSprintSummary(payload.recommendedSprint, payload);
@@ -8172,7 +8426,7 @@ Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, ke
         }
         state.rawJson = result.extractedJson;
         state.summary = formatNextSprintMainchatHandoffImportSummary(report);
-        if (report.updated || report.created || sprintTitle || sprintGoal) save();
+        if (report.updated.length || report.created.length || sprintTitle || sprintGoal) save();
         alert(state.summary);
         renderView();
         return report;
