@@ -3351,15 +3351,24 @@
         const promptCopyLabel = quick.mode === 'end' ? 'Sprintabschluss-Prompt erneut kopieren' : 'Sprintstart-Prompt erneut kopieren';
         return `
           <div class="panel" style="padding:10px 12px;margin-bottom:14px;">
-            <div class="row-top" style="align-items:flex-start;gap:10px;">
-              <div>
+            <div class="row-top" style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+              <div style="min-width:240px;flex:1 1 260px;">
                 <div class="eyebrow">Sprint-Aktionen</div>
                 <strong>Start / Ende direkt aus dem Projektkopf steuern</strong>
                 <div class="mini" style="margin-top:4px;">Prompt wird automatisch kopiert. Füge die Antwort aus dem Hauptchat direkt hier ein.</div>
               </div>
-              <div class="stack-row" style="justify-content:flex-end;">
-                <button class="btn btn-primary" id="btnSprintCycleBuildMainChatStart" ${isArchivedProject || options.disableStart ? 'disabled' : ''}>Sprintstart anfordern</button>
-                <button class="btn btn-secondary" id="btnSprintQuickRequestEnd" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Sprintende anfordern</button>
+              <div style="display:flex;flex-direction:column;gap:8px;min-width:260px;max-width:100%;flex:0 1 340px;">
+                <div class="field" style="margin-bottom:0;width:100%;">
+                  <label for="sprintExecutionModeSelect">Arbeitsmodus</label>
+                  <select id="sprintExecutionModeSelect" style="width:100%;">
+                    <option value="${SPRINT_EXECUTION_MODES.codexControl}" ${isCodexControlMode(projectId) ? 'selected' : ''}>Codex-Steuerung</option>
+                    <option value="${SPRINT_EXECUTION_MODES.direct}" ${getSprintExecutionMode(projectId) === SPRINT_EXECUTION_MODES.direct ? 'selected' : ''}>Direkte Umsetzung</option>
+                  </select>
+                </div>
+                <div class="stack-row" style="justify-content:flex-end;">
+                  <button class="btn btn-primary" id="btnSprintCycleBuildMainChatStart" ${isArchivedProject || options.disableStart ? 'disabled' : ''}>Sprintstart anfordern</button>
+                  <button class="btn btn-secondary" id="btnSprintQuickRequestEnd" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Sprintende anfordern</button>
+                </div>
               </div>
             </div>
             ${quick.mode ? `
@@ -6301,13 +6310,8 @@
                       <label for="sprintCycleSprintGoal">Sprintziel / Anliegen</label>
                       <textarea id="sprintCycleSprintGoal" style="min-height:70px;" placeholder="z.B. Checkout-Flow stabilisieren und offene Fehler beheben">${escapeHtml(chatWorkflow.sprintGoal || '')}</textarea>
                     </div>
-                    <div class="field">
-                      <label for="sprintExecutionModeSelect">Arbeitsmodus</label>
-                      <select id="sprintExecutionModeSelect">
-                        <option value="${SPRINT_EXECUTION_MODES.codexControl}" ${isCodexControlMode(p.id) ? 'selected' : ''}>Codex-Steuerung</option>
-                        <option value="${SPRINT_EXECUTION_MODES.direct}" ${getSprintExecutionMode(p.id) === SPRINT_EXECUTION_MODES.direct ? 'selected' : ''}>Direkte Umsetzung</option>
-                      </select>
-                      <div class="mini" style="margin-top:4px;">Standard: Sprintchat bearbeitet nicht selbst, sondern erzeugt Codex-Auftrag.</div>
+                    <div class="notice notice-info" style="margin-top:8px;">
+                      Arbeitsmodus wird oben im Sprint-Aktionen-Dock gewählt.
                     </div>
                     <div class="field">
                       <label>Features mit Status „Für Sprint ausgewählt“</label>
