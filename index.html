@@ -3131,6 +3131,7 @@
         if ($('btnSprintQuickImportStart')) $('btnSprintQuickImportStart').addEventListener('click', () => importSprintQuickStartJson(ui.activeProjectId || ''));
         if ($('btnSprintQuickImportEnd')) $('btnSprintQuickImportEnd').addEventListener('click', () => importSprintQuickHandoff(ui.activeProjectId || ''));
         if ($('btnSprintQuickCopyPrompt')) $('btnSprintQuickCopyPrompt').addEventListener('click', () => copySprintQuickPrompt(ui.activeProjectId || ''));
+        if ($('btnSprintQuickCopyReturnPrompt')) $('btnSprintQuickCopyReturnPrompt').addEventListener('click', () => copySprintQuickReturnPrompt(ui.activeProjectId || ''));
         if ($('btnSprintCycleImportStartJson')) $('btnSprintCycleImportStartJson').addEventListener('click', () => {
           const projectId = ui.activeProjectId || '';
           if (!projectId || projectId === ALL_PROJECTS_KEY) return;
@@ -3375,6 +3376,20 @@
                 </div>
               </div>
               ${quick.summary ? `<div class="notice" style="margin-top:8px;white-space:pre-wrap;">${escapeHtml(quick.summary)}</div>` : ''}
+              ${quick.returnPrompt ? `
+                <div class="notice notice-info" style="margin-top:10px;">
+                  <strong>Rückführung in den Hauptchat</strong>
+                  <div class="mini" style="margin-top:4px;">Kopiere diesen Prompt in den Projekt-Hauptchat, damit der Hauptchat den abgeschlossenen Sprintkontext übernimmt.</div>
+                </div>
+                <div class="field" style="margin-top:8px;">
+                  <label for="sprintQuickReturnPromptOutput">Rückführungs-/Hauptchat-Prompt</label>
+                  <textarea id="sprintQuickReturnPromptOutput" style="min-height:180px;font-family:var(--font-mono);font-size:12px;" readonly>${escapeHtml(quick.returnPrompt || '')}</textarea>
+                  <div class="stack-row" style="margin-top:6px;">
+                    <button class="btn btn-primary" type="button" id="btnSprintQuickCopyReturnPrompt">Rückführungs-Prompt kopieren</button>
+                    ${quick.returnCopyState ? `<span class="mini">${escapeHtml(quick.returnCopyState)}</span>` : ''}
+                  </div>
+                </div>
+              ` : ''}
               <details style="margin-top:8px;">
                 <summary>Prompt anzeigen</summary>
                 <div class="field" style="margin-top:8px;">
@@ -3747,16 +3762,18 @@
 
 
       function getSprintQuickPanelState(projectId) {
-        if (!projectId || projectId === ALL_PROJECTS_KEY) return { projectId: projectId || '', mode: '', prompt: '', rawJson: '', summary: '', copyState: '' };
+        if (!projectId || projectId === ALL_PROJECTS_KEY) return { projectId: projectId || '', mode: '', prompt: '', rawJson: '', summary: '', copyState: '', returnPrompt: '', returnCopyState: '' };
         if (!ui.sprintQuickPanelByProject || typeof ui.sprintQuickPanelByProject !== 'object') ui.sprintQuickPanelByProject = {};
         const existing = ui.sprintQuickPanelByProject[projectId];
-        const state = (existing && typeof existing === 'object') ? existing : { projectId, mode: '', prompt: '', rawJson: '', summary: '', copyState: '' };
+        const state = (existing && typeof existing === 'object') ? existing : { projectId, mode: '', prompt: '', rawJson: '', summary: '', copyState: '', returnPrompt: '', returnCopyState: '' };
         state.projectId = projectId;
         if (!['start', 'end'].includes(state.mode)) state.mode = '';
         if (typeof state.prompt !== 'string') state.prompt = '';
         if (typeof state.rawJson !== 'string') state.rawJson = '';
         if (typeof state.summary !== 'string') state.summary = '';
         if (typeof state.copyState !== 'string') state.copyState = '';
+        if (typeof state.returnPrompt !== 'string') state.returnPrompt = '';
+        if (typeof state.returnCopyState !== 'string') state.returnCopyState = '';
         ui.sprintQuickPanelByProject[projectId] = state;
         return state;
       }
@@ -4371,6 +4388,7 @@
         save();
         renderView();
         alert('Sprint-Bericht importiert. Projekt und Hauptchat-Kontext aktualisiert. Neue geplante Features: ' + createdFeatures + '.');
+        return { sourceChatId: sourceChat.id, createdFeatures };
       }
 
       function importSprintStartJsonFromMainChat(projectId, rawJson) {
@@ -4922,6 +4940,8 @@
         quick.prompt = st.sprintStartPrompt;
         quick.rawJson = st.sprintStartJson || '';
         quick.summary = '';
+        quick.returnPrompt = '';
+        quick.returnCopyState = '';
         quick.copyState = 'Prompt wird automatisch kopiert …';
         renderView();
         copyTextToClipboard(quick.prompt, 'Sprintstart-Prompt').then(ok => {
@@ -4943,6 +4963,8 @@
         quick.prompt = st.sprintHandoffPrompt;
         quick.rawJson = getChatWorkflowHandoffState(projectId).rawJson || '';
         quick.summary = '';
+        quick.returnPrompt = '';
+        quick.returnCopyState = '';
         quick.copyState = 'Abschluss-Prompt wird automatisch kopiert …';
         renderView();
         copyTextToClipboard(quick.prompt, 'Sprintabschluss-Prompt').then(ok => {
@@ -4957,6 +4979,14 @@
         const quick = getSprintQuickPanelState(projectId);
         copyTextToClipboard(quick.prompt, quick.mode === 'end' ? 'Sprintabschluss-Prompt' : 'Sprintstart-Prompt').then(ok => {
           quick.copyState = ok ? 'Prompt wurde erneut kopiert.' : 'Prompt konnte nicht automatisch kopiert werden. Bitte manuell kopieren.';
+          renderView();
+        });
+      }
+
+      function copySprintQuickReturnPrompt(projectId) {
+        const quick = getSprintQuickPanelState(projectId);
+        copyTextToClipboard(quick.returnPrompt, 'Rückführungs-Prompt').then(ok => {
+          quick.returnCopyState = ok ? 'Rückführungs-Prompt wurde kopiert.' : 'Rückführungs-Prompt konnte nicht automatisch kopiert werden. Bitte manuell kopieren.';
           renderView();
         });
       }
@@ -4976,8 +5006,20 @@
         const handoff = getChatWorkflowHandoffState(projectId);
         handoff.rawJson = quick.rawJson || '';
         handoff.sourceChatId = st.sourceChatId || handoff.sourceChatId || '';
-        importSprintHandoffFromJson(projectId, handoff.sourceChatId || '', quick.rawJson || '');
-        getSprintQuickPanelState(projectId).summary = 'Sprint-Handoff-Import ausgeführt. Details siehe Alert und aktualisierte Projekt-/Chatdaten.';
+        const result = importSprintHandoffFromJson(projectId, handoff.sourceChatId || '', quick.rawJson || '');
+        const current = getSprintQuickPanelState(projectId);
+        if (!result || !result.sourceChatId) {
+          current.summary = 'Sprint-Handoff-Import wurde nicht abgeschlossen. Bitte JSON und Ausgangschat prüfen.';
+          renderView();
+          return;
+        }
+        const returnPrompt = buildReturnToMainChatPrompt(projectId, result.sourceChatId);
+        current.mode = 'end';
+        current.returnPrompt = returnPrompt || '';
+        current.returnCopyState = '';
+        current.summary = returnPrompt
+          ? 'Sprint-Handoff importiert. Rückführungs-Prompt für den Projekt-Hauptchat ist bereit.'
+          : 'Sprint-Handoff importiert. Rückführungs-Prompt konnte nicht erzeugt werden; bitte Hauptchat und Ausgangschat prüfen.';
         renderView();
       }
 
@@ -6249,8 +6291,9 @@
                 </select>
                 ${chatWorkflowSource && chatWorkflowSource.url ? `<div class="mini" style="margin-top:4px;">Ausgewählt: <a href="${escapeAttr(chatWorkflowSource.url)}" target="_blank" rel="noopener">${escapeHtml(chatWorkflowSource.url)}</a></div>` : ''}
               </div>
-              <div class="panel" style="padding:10px 12px;margin-bottom:10px;">
-                <div class="panel-title"><h3>Sprint-Zyklus</h3></div>
+              <details class="panel sprint-advanced-zone" style="padding:10px 12px;margin-bottom:10px;">
+                <summary><strong>Manual / Legacy Sprint-Zyklus</strong></summary>
+                <div class="mini" style="margin-top:8px;">Der primäre Sprintflow läuft oben im Sprint-Aktionen-Dock. Dieser Bereich bleibt als manuelle Referenz und Fallback erhalten.</div>
                 <div class="flow-steps">
                   <div class="flow-step">
                     <div class="flow-step-head"><span class="flow-step-kicker">Schritt 1</span><span class="flow-step-title">Start</span></div>
@@ -6326,7 +6369,7 @@
                     </div>
                   </div>
                 </div>
-              </div>
+              </details>
               <details class="sprint-advanced-zone">
                 <summary>Advanced · Hauptchat-Werkzeuge</summary>
                 <div class="stack-row" style="margin-top:8px;">
@@ -6355,7 +6398,7 @@
               </details>
               <div class="field">
                 <label for="chatWorkflowPromptOutput">Advanced / Legacy Workflow-Prompt</label>
-                <div class="mini" style="margin-bottom:6px;">Dieses Feld ist für Advanced- und Legacy-Aktionen. Sprintstart- und Sprintabschluss-Prompts erscheinen direkt im Sprint-Zyklus.</div>
+                <div class="mini" style="margin-bottom:6px;">Dieses Feld ist für Advanced- und Legacy-Aktionen. Sprintstart-, Sprintabschluss- und Rückführungs-Prompts erscheinen primär im Sprint-Aktionen-Dock.</div>
                 <textarea id="chatWorkflowPromptOutput" style="min-height:220px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(chatWorkflow.prompt || '')}</textarea>
                 <div class="stack-row" style="margin-top:6px;">
                   <button class="btn" id="btnCopyChatWorkflowPrompt">Advanced-Prompt kopieren</button>
