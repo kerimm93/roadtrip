@@ -1993,6 +1993,7 @@
         showAllProjects: false,
         projectEditMode: false,
         importDraft: { html: '', prompt: '', analysisPrompt: '', cleanupPrompt: '', projectId: '' },
+        codeAnalysisPromptPrep: { scope: '', repoBranch: '', outputPrompt: '', mode: '' },
         chatWorkflow: { projectId: '', sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', sprintStartJson: '', mainChatBootstrapJson: '', prompt: '', mode: '', sprintExecutionMode: SPRINT_EXECUTION_MODES.codexControl },
         chatWorkflowByProject: {},
         chatWorkflowHandoff: { projectId: '', sourceChatId: '', rawJson: '' },
@@ -2884,11 +2885,17 @@
         qq('[data-review-ignore]').forEach(btn => btn.addEventListener('click', () => ignoreNoteProposal(+btn.dataset.reviewIgnore)));
         if ($('htmlFileInput')) $('htmlFileInput').addEventListener('change', onHtmlFilePicked);
         if ($('htmlTextarea')) $('htmlTextarea').addEventListener('input', e => { ui.importDraft.html = e.target.value; });
+        if ($('codeAnalysisScope')) $('codeAnalysisScope').addEventListener('input', e => { getCodeAnalysisPromptPrepState().scope = e.target.value; });
+        if ($('codeAnalysisRepoBranch')) $('codeAnalysisRepoBranch').addEventListener('input', e => { getCodeAnalysisPromptPrepState().repoBranch = e.target.value; });
+        if ($('codeAnalysisPromptOutput')) $('codeAnalysisPromptOutput').addEventListener('input', e => { getCodeAnalysisPromptPrepState().outputPrompt = e.target.value; });
         if ($('analysisPromptOutput')) $('analysisPromptOutput').addEventListener('input', e => { ui.importDraft.analysisPrompt = e.target.value; });
         if ($('promptOutput')) $('promptOutput').addEventListener('input', e => { ui.importDraft.prompt = e.target.value; });
         if ($('cleanupPromptOutput')) $('cleanupPromptOutput').addEventListener('input', e => { ui.importDraft.cleanupPrompt = e.target.value; });
         if ($('htmlProjectSelect')) $('htmlProjectSelect').addEventListener('change', e => { ui.importDraft.projectId = e.target.value; });
         if ($('btnAnalyzeHtml')) $('btnAnalyzeHtml').addEventListener('click', analyzeHtmlLocal);
+        if ($('btnBuildCodeAnalysisFallbackPrompt')) $('btnBuildCodeAnalysisFallbackPrompt').addEventListener('click', () => generateCodeAnalysisPrepPrompt('fallback'));
+        if ($('btnBuildCodeAnalysisCloudPrompt')) $('btnBuildCodeAnalysisCloudPrompt').addEventListener('click', () => generateCodeAnalysisPrepPrompt('cloud'));
+        if ($('btnCopyCodeAnalysisPrompt')) $('btnCopyCodeAnalysisPrompt').addEventListener('click', () => copyPrompt('codeAnalysisPromptOutput'));
         if ($('btnBuildHtmlPrompt')) $('btnBuildHtmlPrompt').addEventListener('click', buildHtmlPrompt);
         if ($('btnBuildProjectSummaryOnlyPrompt')) $('btnBuildProjectSummaryOnlyPrompt').addEventListener('click', buildProjectSummaryOnlyPrompt);
         if ($('btnImportJsonResult')) $('btnImportJsonResult').addEventListener('click', startImportCleanupFromPrompt);
@@ -6650,6 +6657,151 @@
         `;
       }
 
+      function getCodeAnalysisPromptPrepState() {
+        if (!ui.codeAnalysisPromptPrep || typeof ui.codeAnalysisPromptPrep !== 'object') {
+          ui.codeAnalysisPromptPrep = { scope: '', repoBranch: '', outputPrompt: '', mode: '' };
+        }
+        return ui.codeAnalysisPromptPrep;
+      }
+
+      function buildRoadtripAnalysisJsonContract() {
+        return [
+          'Gib genau ein JSON-Objekt mit diesen kanonischen Top-Level-Feldern aus:',
+          '{',
+          '  "appType": "Daily Log|Braindump|Review|Tracker|Writing|Learning|Meta-App|Sonstiges",',
+          '  "projectSummary": "Kurze Beschreibung des erkannten Code-Iststands",',
+          '  "features": [',
+          '    {',
+          '      "title": "Eindeutiger Featuretitel",',
+          '      "description": "Konkreter Codebefund ohne Spekulation",',
+          '      "category": "UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges",',
+          '      "status": "umgesetzt|teilweise umgesetzt|vorbereitet"',
+          '    }',
+          '  ],',
+          '  "views": ["Erkannte Ansicht oder Bedienoberfläche"],',
+          '  "technicalNotes": ["Technischer Befund"],',
+          '  "unclearPoints": ["Offene Frage oder prüfpflichtiger Befund"]',
+          '}',
+          '',
+          'Vertragsregeln:',
+          '- Das Top-Level muss ein Objekt sein, kein Array.',
+          '- Verwende für neue Ergebnisse den kanonischen Key "features". Die bestehende Eingabe kennt zusätzlich "featureCandidates" und "detectedFeatures" als Altformat-Aliase.',
+          '- "features" muss für den Cleanup-/Codeanalyse-Import ein nicht-leeres Array verwertbarer Objekte sein.',
+          '- Jedes Feature braucht mindestens einen nicht-leeren title; description, category und status sollen gesetzt sein.',
+          '- "umgesetzt" wird als bestätigt, "teilweise umgesetzt" und "vorbereitet" werden defensiv als erkannt behandelt.',
+          '- Roadtrip ordnet Analysebefunde dem implemented-Pool zu und führt sie reviewpflichtig durch den bestehenden Cleanup-Review. Gib keine planned-Pool-Einträge aus.',
+          '- Unklare oder nicht sicher belegte Punkte gehören in unclearPoints statt als bestätigte Implementierung in features.',
+          '- Optionale zusätzliche Felder an Featureobjekten werden vom bestehenden Import nicht benötigt.',
+          '- Falls featureFlow dennoch vorkommt: leer lassen oder ausschließlich gültigen Mermaid-Code ohne Markdown-Codefences, Prosa, Pseudocode oder JSON verwenden; bevorzugt beginnend mit "flowchart TD".'
+        ].join('\n');
+      }
+
+      function getCodeAnalysisProjectContext(projectId) {
+        const project = S.projects.find(x => x.id === projectId);
+        if (!project) return 'Kein Roadtrip-Projekt ausgewählt.';
+        return [
+          'Projekt: ' + (project.title || 'Ohne Titel'),
+          'Typ: ' + (project.type || '—'),
+          'Kurzbeschreibung: ' + (project.summary || '—'),
+          'Aktueller Fokus: ' + (project.currentFocus || '—'),
+          'Nächster Schritt: ' + (project.nextStep || '—')
+        ].join('\n');
+      }
+
+      function buildRoadtripCodeAnalysisFallbackPrompt() {
+        const state = getCodeAnalysisPromptPrepState();
+        const projectId = getImportTargetProjectId() || (ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '');
+        return [
+          '# Roadtrip Codeanalyse · Fallback-Prompt',
+          '',
+          'Du analysierst bereitgestellten App-Code, Dateien oder Repo-Kontext für Roadtrip.',
+          '',
+          '## Aufgabe',
+          'Analysiere ausschließlich den bereitgestellten Code-Iststand und gib ein Roadtrip-kompatibles Analyse-JSON aus.',
+          'Ändere keinen Code. Erzeuge keine Roadtrip-Daten oder Features direkt. Rufe keine externen Dienste auf.',
+          'Gib nur das JSON aus, das anschließend in Roadtrips bestehende Analyse-JSON-Eingabe kopiert wird.',
+          '',
+          '## Projektkontext',
+          getCodeAnalysisProjectContext(projectId),
+          '',
+          '## Analyse-Scope / Fragestellung',
+          String(state.scope || '').trim() || 'Analysiere den sichtbaren Code-Iststand und erkenne nur belegbare Features.',
+          '',
+          '## Wichtige Regeln',
+          '- Markiere nur Features als umgesetzt oder erkannt, die im Code tatsächlich sichtbar sind.',
+          '- Erfinde keine Implementierungen und leite keine bloßen Roadmap-Ideen als Codebefund ab.',
+          '- Nutze "umgesetzt" nur bei klar vollständiger Implementierung; nutze "teilweise umgesetzt" oder "vorbereitet" für belegbare, aber unvollständige Befunde.',
+          '- Unklare Kandidaten und fehlende Informationen gehören defensiv in unclearPoints.',
+          '- Antworte ohne Markdown-Codefences, Einleitung, Nachsatz oder Prosa außerhalb des JSON-Objekts.',
+          '',
+          '## Roadtrip-Analyse-JSON-Vertrag',
+          buildRoadtripAnalysisJsonContract(),
+          '',
+          '## Ergebnis',
+          'Gib ausschließlich das gültige JSON-Objekt zurück.'
+        ].join('\n');
+      }
+
+      function buildRoadtripCodexCloudAnalysisPrompt() {
+        const state = getCodeAnalysisPromptPrepState();
+        const projectId = getImportTargetProjectId() || (ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '');
+        const artifactDate = new Date().toISOString().slice(0, 10);
+        return [
+          '# Roadtrip Codex-Cloud-Codeanalyse',
+          '',
+          'Du arbeitest in Codex Cloud auf einem GitHub-Repo oder Branch.',
+          '',
+          '## Ziel',
+          'Analysiere den aktuellen Code-Iststand und erzeuge ausschließlich ein Roadtrip-kompatibles Analyseartefakt als JSON-Datei.',
+          '',
+          '## Strikte Regeln',
+          '- Ändere keine App-Code-Dateien, insbesondere keine index.html.',
+          '- Ändere keine Produktlogik, führe keine Refactorings durch und baue keine Features.',
+          '- Erzeuge nur das Analyseartefakt; der Branch oder PR ist ausschließlich dessen Übergabeweg.',
+          '- Der Analyse-PR muss nicht gemergt werden, nachdem die JSON-Datei kopiert oder heruntergeladen wurde.',
+          '- Rufe Roadtrip nicht automatisch auf und baue keine Import-, GitHub-API- oder Sync-Integration.',
+          '',
+          '## Roadtrip-Projektkontext',
+          getCodeAnalysisProjectContext(projectId),
+          '',
+          '## Repo-/Branch-Hinweis',
+          String(state.repoBranch || '').trim() || 'Analysiere das aktuell ausgecheckte Repo und den aktuellen Branch.',
+          '',
+          '## Analyse-Scope / Fragestellung',
+          String(state.scope || '').trim() || 'Analysiere den aktuellen Code-Iststand und erkenne nur belegbare Features.',
+          '',
+          '## Ausgabe',
+          'Schreibe genau eine JSON-Datei nach:',
+          'docs/analysis/' + artifactDate + '-code-analysis.json',
+          'Wenn docs/analysis/ nicht existiert, darfst du diesen Ordner für das Analyseartefakt anlegen.',
+          'Die Datei muss direkt kopier- oder herunterladbar und für Roadtrips bestehende Analyse-JSON-Eingabe geeignet sein.',
+          'Schreibe keine Markdown-Codefences und keine Prosa in oder neben die JSON-Datei.',
+          '',
+          '## Roadtrip-Analyse-JSON-Vertrag',
+          buildRoadtripAnalysisJsonContract(),
+          '',
+          '## Regeln für Befunde',
+          '- Markiere nur tatsächlich im Code sichtbare Features als umgesetzt oder erkannt.',
+          '- Erfinde keine Implementierungen und behandle Roadmap-, Kommentar- oder Dokumentationswünsche nicht automatisch als umgesetzt.',
+          '- Unklare Befunde und fehlende Informationen gehören in unclearPoints.',
+          '',
+          '## Abschlussbericht für Commit / PR',
+          'Berichte knapp, welche Dateien oder Bereiche analysiert wurden, wo die Analyse-Datei liegt und dass keine App-Code-Dateien geändert wurden.',
+          'Halte ausdrücklich fest, dass der PR nicht gemergt werden muss, sobald das Analyseartefakt übernommen wurde.'
+        ].join('\n');
+      }
+
+      function generateCodeAnalysisPrepPrompt(mode) {
+        const state = getCodeAnalysisPromptPrepState();
+        state.scope = $('codeAnalysisScope') ? $('codeAnalysisScope').value : state.scope;
+        state.repoBranch = $('codeAnalysisRepoBranch') ? $('codeAnalysisRepoBranch').value : state.repoBranch;
+        state.mode = mode === 'cloud' ? 'cloud' : 'fallback';
+        state.outputPrompt = state.mode === 'cloud'
+          ? buildRoadtripCodexCloudAnalysisPrompt()
+          : buildRoadtripCodeAnalysisFallbackPrompt();
+        if ($('codeAnalysisPromptOutput')) $('codeAnalysisPromptOutput').value = state.outputPrompt;
+      }
+
       function renderImportWorkspace() {
         // Auto-sync import project to active project when a concrete project is selected
         const contextProjectId = ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : (ui.importDraft.projectId || '');
@@ -6667,6 +6819,30 @@
               <button class="btn" id="btnStartNewProjectImport">Neues Projekt</button>
             </div>
           </div>
+          <details class="item" style="margin-bottom:12px;">
+            <summary style="font-weight:700;cursor:pointer;">Codex-Codeanalyse vorbereiten</summary>
+            <div class="mini" style="margin:8px 0 10px;">Erzeugt nur einen Analyseprompt. Roadtrip analysiert keinen Code automatisch und der bestehende Importflow bleibt unverändert.</div>
+            <div class="field">
+              <label for="codeAnalysisScope">Analyse-Scope / Fragestellung</label>
+              <textarea id="codeAnalysisScope" style="min-height:90px;" placeholder="Welche Teile oder Fragen soll die Codeanalyse prüfen?">${escapeHtml(getCodeAnalysisPromptPrepState().scope || '')}</textarea>
+            </div>
+            <div class="field">
+              <label for="codeAnalysisRepoBranch">Repo-/Branch-Hinweis für Codex Cloud</label>
+              <input id="codeAnalysisRepoBranch" value="${escapeAttr(getCodeAnalysisPromptPrepState().repoBranch || '')}" placeholder="z. B. owner/repo · branch sprint-43" />
+            </div>
+            <div class="stack-row">
+              <button class="btn" id="btnBuildCodeAnalysisFallbackPrompt">Fallback-Prompt erzeugen</button>
+              <button class="btn" id="btnBuildCodeAnalysisCloudPrompt">Codex-Cloud-Prompt erzeugen</button>
+            </div>
+            <div class="field" style="margin-top:12px;">
+              <label for="codeAnalysisPromptOutput">Codeanalyse-Prompt Ausgabe</label>
+              <textarea id="codeAnalysisPromptOutput" style="min-height:240px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(getCodeAnalysisPromptPrepState().outputPrompt || '')}</textarea>
+              <div class="stack-row" style="margin-top:6px;">
+                <button class="btn" id="btnCopyCodeAnalysisPrompt">Copy</button>
+              </div>
+            </div>
+            <div class="notice">Ergebnis-JSON anschließend unten in die bestehende Analyse-JSON-Eingabe einfügen und den vorhandenen Cleanup-/Codeanalyse-Import verwenden.</div>
+          </details>
           <div class="field"><label for="htmlFileInput">Code-Datei / Projektdatei Upload</label><input id="htmlFileInput" type="file" accept=".html,.htm,.js,.ts,.jsx,.tsx,.css,.json,.md,.txt,text/*" /></div>
           <div class="field"><label for="htmlTextarea">Code / Repository-Auszug Paste</label><textarea id="htmlTextarea" style="min-height:170px">${escapeHtml(ui.importDraft.html || '')}</textarea></div>
           <div class="stack-row">
@@ -10344,6 +10520,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         if (!text.trim()) return;
         if (textareaId === 'analysisPromptOutput') ui.importDraft.analysisPrompt = text;
         else if (textareaId === 'cleanupPromptOutput') ui.importDraft.cleanupPrompt = text;
+        else if (textareaId === 'codeAnalysisPromptOutput') getCodeAnalysisPromptPrepState().outputPrompt = text;
         else if (textareaId === 'projectMomentumPromptOutput') {
           const projectId = ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '';
           if (projectId) getProjectMomentumPromptState(projectId).prompt = text;
