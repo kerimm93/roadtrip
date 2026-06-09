@@ -11315,7 +11315,9 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           outcome: result.outcome || (result.ok === true ? 'success' : 'failed'),
           message: result.message || '',
           cause: result.cause || null,
-          recoveryHint: result.recoveryHint || ''
+          recoveryHint: result.recoveryHint || '',
+          verified: result.verified === true,
+          confidence: result.confidence || (result.ok === true ? 'confirmed' : 'unknown')
         };
       }
 
@@ -11359,7 +11361,16 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         }
         const body = await response.json().catch(() => null);
         if (!body || !body.files || !body.files[fileName]) {
-          return makeGistErrorResult(action, 'verify', 'PATCH-Antwort ohne erwartete Gist-Datei.', null, 'unknown');
+          return makeGistResult({
+            ok: false,
+            status: 'unknown',
+            phase: 'verify',
+            action,
+            outcome: 'write-unverified',
+            message: 'PATCH war erfolgreich, aber die Antwort enthielt die erwartete Gist-Datei nicht.',
+            recoveryHint: 'Status unsicher: keinen weiteren riskanten Sync/Overwrite ausführen; zuerst ZIP-Backup oder JSON-Export sichern und den Remote-Status prüfen.',
+            confidence: 'unknown'
+          });
         }
         return makeGistResult({ ok: true, phase: 'write', action, outcome: 'written', message: 'Gist-Datei erfolgreich geschrieben.' });
       }
@@ -11568,6 +11579,73 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         }
       }
 
+      async function verifyGistWriteReadback(gistId, token, passphrase, expectedPayload, expectedState, action) {
+        const verifyError = (message, cause) => makeGistResult({
+          ok: false,
+          status: 'unknown',
+          phase: 'verify',
+          action,
+          outcome: 'write-unverified',
+          message,
+          cause: cause || null,
+          recoveryHint: 'Status unsicher: keinen weiteren riskanten Sync/Overwrite ausführen; zuerst ZIP-Backup oder JSON-Export sichern und den Sync-Status mit einem Remote-Test-Gist prüfen.',
+          confidence: 'unknown'
+        });
+        let response;
+        try {
+          response = await fetch('https://api.github.com/gists/' + gistId, {
+            headers: githubHeaders(token, false)
+          });
+        } catch (cause) {
+          return verifyError(cause && cause.message ? 'Remote-Readback fehlgeschlagen: ' + cause.message : 'Remote-Readback fehlgeschlagen.', cause);
+        }
+        if (!response.ok) return verifyError('Remote-Readback fehlgeschlagen: HTTP ' + response.status + '.');
+
+        let gist;
+        let remoteEnvelope;
+        try {
+          gist = await response.json();
+          if (!gist || !gist.files || !gist.files[GIST_FILE]) return verifyError('Remote-Readback enthält die erwartete Roadtrip-Gist-Datei nicht.');
+          remoteEnvelope = await readGistFileJson(gist, GIST_FILE);
+        } catch (cause) {
+          return verifyError(cause && cause.message ? 'Remote-Readback konnte nicht ausgewertet werden: ' + cause.message : 'Remote-Readback konnte nicht ausgewertet werden.', cause);
+        }
+        if (!isRoadtripEncryptedGistPayload(remoteEnvelope)) {
+          return verifyError('Remote-Readback lieferte kein gültiges verschlüsseltes Roadtrip-Gist-Format.');
+        }
+
+        let remotePayload;
+        try {
+          remotePayload = await decryptRoadtripGistPayload(remoteEnvelope, passphrase);
+        } catch (cause) {
+          return verifyError('Remote-Readback konnte nicht entschlüsselt werden.', cause);
+        }
+        const remoteState = getGistPayloadState(remotePayload);
+        if (!remoteState || !hasRoadtripStateShape(remoteState)) {
+          return verifyError('Remote-Readback enthält keinen strukturell gültigen Roadtrip-State.');
+        }
+        if (!areStatesSyncEquivalent(expectedState, remoteState)) {
+          return verifyError('Remote-Readback stimmt inhaltlich nicht mit dem erwarteten geschriebenen Stand überein.');
+        }
+        const expectedExported = expectedPayload && expectedPayload.exported;
+        if (!expectedExported || remotePayload.exported !== expectedExported) {
+          return verifyError('Remote-Readback enthält nicht den erwarteten Sync-Zeitstempel.');
+        }
+        if ((expectedState && expectedState._lastExported) !== remoteState._lastExported
+          || (expectedState && expectedState._lastGistPushAt) !== remoteState._lastGistPushAt) {
+          return verifyError('Remote-Readback enthält nicht die erwarteten lokalen Push-Marker.');
+        }
+        return makeGistResult({
+          ok: true,
+          phase: 'verify',
+          action,
+          outcome: 'write-verified',
+          message: 'Remote-Write wurde per Readback verifiziert.',
+          verified: true,
+          confidence: 'confirmed'
+        });
+      }
+
       async function gistPush() {
         const action = 'gist-push';
         if (!C.gistId || !C.gistToken) {
@@ -11580,6 +11658,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const prevLastExported = S._lastExported || '';
         const prevLastGistPushAt = S._lastGistPushAt || '';
         const prevGistLastPush = _gistStatus.lastPush || '';
+        let activePhase = 'write';
         try {
           const passphrase = getRoadtripGistPassphrase();
           if (!passphrase) {
@@ -11595,31 +11674,46 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           const envelope = await encryptRoadtripGistPayload(payload, passphrase);
           const writeResult = await writeGistFile(C.gistId, C.gistToken, GIST_FILE, JSON.stringify(envelope, null, 2), action);
           if (!writeResult.ok) {
-            S._lastExported = prevLastExported;
-            S._lastGistPushAt = prevLastGistPushAt;
+            if (writeResult.phase === 'write') {
+              S._lastExported = prevLastExported;
+              S._lastGistPushAt = prevLastGistPushAt;
+              ensureDefaults();
+            }
             _gistStatus.lastPush = prevGistLastPush;
-            ensureDefaults();
             _gistStatus.lastError = formatGistResultMessage(writeResult).slice(0, 120);
             updateGistStatusUI();
-            alert('Gist-Push fehlgeschlagen in Phase ' + writeResult.phase + ': ' + writeResult.message + ' ' + writeResult.recoveryHint);
+            if (writeResult.phase === 'verify') alert('Gist-Write wurde ausgeführt, aber die Antwort konnte nicht verifiziert werden. Status unsicher. ' + writeResult.recoveryHint);
+            else alert('Gist-Push fehlgeschlagen in Phase ' + writeResult.phase + ': ' + writeResult.message + ' ' + writeResult.recoveryHint);
             return writeResult;
+          }
+          activePhase = 'verify';
+          const verifyResult = await verifyGistWriteReadback(C.gistId, C.gistToken, passphrase, payload, S, action);
+          if (!verifyResult.ok) {
+            _gistStatus.lastPush = prevGistLastPush;
+            _gistStatus.lastError = formatGistResultMessage(verifyResult).slice(0, 120);
+            updateGistStatusUI();
+            alert('Gist wurde geschrieben, aber Remote-Readback/Verify ist fehlgeschlagen. Status unsicher; bitte keinen weiteren riskanten Sync/Overwrite ausführen, bevor du geprüft oder exportiert hast. ' + verifyResult.recoveryHint);
+            return verifyResult;
           }
           _gistStatus.lastPush = syncTs;
           _gistStatus.lastError = '';
           rememberSuccessfulGistSyncFingerprint(S);
           save();
           updateGistStatusUI();
-          alert('Remote-Gist wurde verschlüsselt mit lokalem Stand überschrieben: ' + formatDateTime(syncTs));
-          return makeGistResult({ ok: true, phase: 'write', action, outcome: 'remote-overwritten', message: 'Remote-Gist wurde mit lokalem Stand überschrieben.' });
+          alert('Remote-Gist wurde verschlüsselt geschrieben und per Readback verifiziert: ' + formatDateTime(syncTs));
+          return makeGistResult({ ok: true, phase: 'verify', action, outcome: 'remote-overwritten', message: 'Remote-Write wurde per Readback verifiziert.', verified: true, confidence: 'confirmed' });
         } catch (cause) {
-          S._lastExported = prevLastExported;
-          S._lastGistPushAt = prevLastGistPushAt;
+          if (activePhase === 'write') {
+            S._lastExported = prevLastExported;
+            S._lastGistPushAt = prevLastGistPushAt;
+            ensureDefaults();
+          }
           _gistStatus.lastPush = prevGistLastPush;
-          ensureDefaults();
-          const result = makeGistErrorResult(action, 'write', cause && cause.message ? cause.message : 'Gist-Push fehlgeschlagen.', cause, 'unknown');
+          const result = makeGistErrorResult(action, activePhase, cause && cause.message ? cause.message : 'Gist-Push fehlgeschlagen.', cause, 'unknown');
           _gistStatus.lastError = formatGistResultMessage(result).slice(0, 120);
           updateGistStatusUI();
-          alert('Gist-Push fehlgeschlagen in Phase write: ' + result.message + ' ' + result.recoveryHint);
+          if (activePhase === 'verify') alert('Gist wurde möglicherweise geschrieben, aber Remote-Readback/Verify ist fehlgeschlagen. Status unsicher. ' + result.recoveryHint);
+          else alert('Gist-Push fehlgeschlagen in Phase write: ' + result.message + ' ' + result.recoveryHint);
           return result;
         }
       }
@@ -11727,6 +11821,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           _gistStatus.lastPull = pullTs;
           _gistStatus.lastError = '';
 
+          let writeVerified = false;
           if (needsPush) {
             activePhase = 'write';
             const syncTs = new Date().toISOString();
@@ -11737,19 +11832,32 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
             const envelope = await encryptRoadtripGistPayload(payload, passphrase);
             const writeResult = await writeGistFile(C.gistId, C.gistToken, GIST_FILE, JSON.stringify(envelope, null, 2), action);
             if (!writeResult.ok) {
-              S = Object.assign(defaultState(), JSON.parse(JSON.stringify(prevStateSnapshot || {})));
-              ensureDefaults();
-              S._lastExported = prevLastExported;
-              S._lastGistPushAt = prevLastGistPushAt;
-              S._lastGistPullAt = prevLastGistPullAt;
+              if (writeResult.phase === 'write') {
+                S = Object.assign(defaultState(), JSON.parse(JSON.stringify(prevStateSnapshot || {})));
+                ensureDefaults();
+                S._lastExported = prevLastExported;
+                S._lastGistPushAt = prevLastGistPushAt;
+                S._lastGistPullAt = prevLastGistPullAt;
+                _gistStatus.lastPull = prevGistStatus.lastPull || '';
+              }
               _gistStatus.lastPush = prevGistStatus.lastPush || '';
-              _gistStatus.lastPull = prevGistStatus.lastPull || '';
               _gistStatus.lastError = formatGistResultMessage(writeResult).slice(0, 120);
               updateGistStatusUI();
-              alert('Cloud-Schreibfehler in Phase ' + writeResult.phase + ': Runtime-State wurde zurückgesetzt. ' + writeResult.recoveryHint);
+              if (writeResult.phase === 'verify') alert('Gist-Write wurde ausgeführt, aber die Antwort konnte nicht verifiziert werden. Status unsicher. ' + writeResult.recoveryHint);
+              else alert('Cloud-Schreibfehler in Phase ' + writeResult.phase + ': Runtime-State wurde zurückgesetzt. ' + writeResult.recoveryHint);
               return writeResult;
             }
+            activePhase = 'verify';
+            const verifyResult = await verifyGistWriteReadback(C.gistId, C.gistToken, passphrase, payload, S, action);
+            if (!verifyResult.ok) {
+              _gistStatus.lastPush = prevGistStatus.lastPush || '';
+              _gistStatus.lastError = formatGistResultMessage(verifyResult).slice(0, 120);
+              updateGistStatusUI();
+              alert('Gist-Write wurde ausgeführt, aber die Remote-Verifikation ist fehlgeschlagen. Status unsicher; bitte keinen weiteren riskanten Sync/Overwrite ausführen, bevor du geprüft oder exportiert hast. ' + verifyResult.recoveryHint);
+              return verifyResult;
+            }
             _gistStatus.lastPush = syncTs;
+            writeVerified = true;
           }
 
           activePhase = 'persist';
@@ -11760,24 +11868,35 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           if (syncOutcome === 'already-synced') alert('Gist und lokaler Stand sind bereits synchron.');
           else if (syncOutcome === 'initial-remote-adopted') alert('Erster Sync auf diesem Gerät abgeschlossen. Remote-Stand wurde lokal übernommen.');
           else if (syncOutcome === 'remote-adopted') alert('Remote-Stand wurde lokal übernommen.');
-          else if (syncOutcome === 'local-pushed') alert('Lokaler Stand war neuer und wurde verschlüsselt in den Gist synchronisiert.');
-          else if (syncOutcome === 'legacy-migrated') alert('Legacy-Klartext-Gist wurde übernommen und verschlüsselt migriert.');
-          else alert('Lokale und Remote-Änderungen wurden gemergt und verschlüsselt synchronisiert.');
-          return makeGistResult({ ok: true, phase: 'persist', action, outcome: syncOutcome, message: 'Gist-Sync erfolgreich abgeschlossen.' });
+          else if (syncOutcome === 'local-pushed') alert('Lokaler Stand war neuer, wurde verschlüsselt geschrieben und per Readback verifiziert.');
+          else if (syncOutcome === 'legacy-migrated') alert('Legacy-Klartext-Gist wurde übernommen, verschlüsselt migriert und per Readback verifiziert.');
+          else alert('Lokale und Remote-Änderungen wurden gemergt, verschlüsselt geschrieben und per Readback verifiziert.');
+          return makeGistResult({
+            ok: true,
+            phase: writeVerified ? 'verify' : 'persist',
+            action,
+            outcome: syncOutcome,
+            message: writeVerified ? 'Gist-Sync und Remote-Write wurden per Readback verifiziert.' : 'Gist-Sync erfolgreich abgeschlossen.',
+            verified: writeVerified,
+            confidence: 'confirmed'
+          });
         } catch (cause) {
-          const result = makeGistErrorResult(action, activePhase, cause && cause.message ? cause.message : 'Gist-Sync fehlgeschlagen.', cause, activePhase === 'write' ? 'unknown' : 'error');
-          if (isGistWritePhaseError(result)) {
+          const result = makeGistErrorResult(action, activePhase, cause && cause.message ? cause.message : 'Gist-Sync fehlgeschlagen.', cause, activePhase === 'write' || activePhase === 'verify' ? 'unknown' : 'error');
+          if (result.phase === 'write') {
             S = Object.assign(defaultState(), JSON.parse(JSON.stringify(prevStateSnapshot || {})));
             ensureDefaults();
             _gistStatus.lastPush = prevGistStatus.lastPush || '';
             _gistStatus.lastPull = prevGistStatus.lastPull || '';
           }
-          S._lastExported = prevLastExported;
-          S._lastGistPushAt = prevLastGistPushAt;
-          S._lastGistPullAt = prevLastGistPullAt;
+          if (result.phase !== 'verify') {
+            S._lastExported = prevLastExported;
+            S._lastGistPushAt = prevLastGistPushAt;
+            S._lastGistPullAt = prevLastGistPullAt;
+          }
           _gistStatus.lastError = formatGistResultMessage(result).slice(0, 120);
           updateGistStatusUI();
-          if (isGistWritePhaseError(result)) alert('Cloud-Schreibfehler: Runtime-State wurde zurückgesetzt. ' + result.recoveryHint);
+          if (result.phase === 'write') alert('Cloud-Schreibfehler: Runtime-State wurde zurückgesetzt. ' + result.recoveryHint);
+          else if (result.phase === 'verify') alert('Gist-Write wurde möglicherweise ausgeführt, aber die Remote-Verifikation ist fehlgeschlagen. Status unsicher. ' + result.recoveryHint);
           else alert('Sync fehlgeschlagen in Phase ' + result.phase + ': ' + result.message);
           return result;
         }
