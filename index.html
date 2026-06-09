@@ -1993,7 +1993,7 @@
         showAllProjects: false,
         projectEditMode: false,
         importDraft: { html: '', prompt: '', analysisPrompt: '', cleanupPrompt: '', projectId: '' },
-        codeAnalysisPromptPrep: { scope: '', repoBranch: '', outputPrompt: '', mode: '', analysisMode: 'planned-feature-check' },
+        codeAnalysisPromptPrep: { scope: '', repoBranch: '', outputPrompt: '', mode: '', analysisMode: 'planned-feature-check', includeDescription: false, includePurposeWorkflow: false, includeCriteriaQuestions: false, includeSourceContext: false, includeFeatureFlow: false },
         chatWorkflow: { projectId: '', sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', sprintStartJson: '', mainChatBootstrapJson: '', prompt: '', mode: '', sprintExecutionMode: SPRINT_EXECUTION_MODES.codexControl },
         chatWorkflowByProject: {},
         chatWorkflowHandoff: { projectId: '', sourceChatId: '', rawJson: '' },
@@ -2888,6 +2888,10 @@
         if ($('codeAnalysisScope')) $('codeAnalysisScope').addEventListener('input', e => { getCodeAnalysisPromptPrepState().scope = e.target.value; });
         if ($('codeAnalysisRepoBranch')) $('codeAnalysisRepoBranch').addEventListener('input', e => { getCodeAnalysisPromptPrepState().repoBranch = e.target.value; });
         if ($('codeAnalysisMode')) $('codeAnalysisMode').addEventListener('change', e => { getCodeAnalysisPromptPrepState().analysisMode = e.target.value; });
+        qq('[data-code-analysis-disclosure]').forEach(input => input.addEventListener('change', e => {
+          const key = e.target.dataset.codeAnalysisDisclosure || '';
+          if (key) getCodeAnalysisPromptPrepState()[key] = e.target.checked === true;
+        }));
         if ($('codeAnalysisPromptOutput')) $('codeAnalysisPromptOutput').addEventListener('input', e => { getCodeAnalysisPromptPrepState().outputPrompt = e.target.value; });
         if ($('analysisPromptOutput')) $('analysisPromptOutput').addEventListener('input', e => { ui.importDraft.analysisPrompt = e.target.value; });
         if ($('promptOutput')) $('promptOutput').addEventListener('input', e => { ui.importDraft.prompt = e.target.value; });
@@ -6660,10 +6664,12 @@
 
       function getCodeAnalysisPromptPrepState() {
         if (!ui.codeAnalysisPromptPrep || typeof ui.codeAnalysisPromptPrep !== 'object') {
-          ui.codeAnalysisPromptPrep = { scope: '', repoBranch: '', outputPrompt: '', mode: '', analysisMode: 'planned-feature-check' };
+          ui.codeAnalysisPromptPrep = { scope: '', repoBranch: '', outputPrompt: '', mode: '', analysisMode: 'planned-feature-check', includeDescription: false, includePurposeWorkflow: false, includeCriteriaQuestions: false, includeSourceContext: false, includeFeatureFlow: false };
         }
         const allowedModes = ['full-scan', 'planned-feature-check', 'implemented-feature-dedupe', 'planned-vs-implemented-match', 'sprint-delta'];
         if (!allowedModes.includes(ui.codeAnalysisPromptPrep.analysisMode)) ui.codeAnalysisPromptPrep.analysisMode = 'planned-feature-check';
+        ['includeDescription', 'includePurposeWorkflow', 'includeCriteriaQuestions', 'includeSourceContext', 'includeFeatureFlow']
+          .forEach(key => { ui.codeAnalysisPromptPrep[key] = ui.codeAnalysisPromptPrep[key] === true; });
         return ui.codeAnalysisPromptPrep;
       }
 
@@ -6699,9 +6705,44 @@
         ].join('\n');
       }
 
-      function getCodeAnalysisProjectContext(projectId) {
+      function getCodeAnalysisFeatureDisclosureOptions() {
+        const state = getCodeAnalysisPromptPrepState();
+        const options = {
+          includeDescription: state.includeDescription === true,
+          includePurposeWorkflow: state.includePurposeWorkflow === true,
+          includeCriteriaQuestions: state.includeCriteriaQuestions === true,
+          includeSourceContext: state.includeSourceContext === true,
+          includeFeatureFlow: state.includeFeatureFlow === true
+        };
+        options.includePrivateFeatureDetails = Object.values(options).some(Boolean);
+        return options;
+      }
+
+      function getCodeAnalysisFeatureDisclosureNotice(options) {
+        const opts = options && typeof options === 'object' ? options : {};
+        const released = [];
+        if (opts.includeDescription === true) released.push('Beschreibungen');
+        if (opts.includePurposeWorkflow === true) released.push('Zweck & Workflow-Kontext');
+        if (opts.includeCriteriaQuestions === true) released.push('Akzeptanzkriterien & offene Fragen');
+        if (opts.includeSourceContext === true) released.push('Source Context');
+        if (opts.includeFeatureFlow === true) released.push('FeatureFlow / Mermaid');
+        return [
+          'Private Feature-Detailfelder wurden redaktiert, sofern sie im Kontext nicht ausdrücklich enthalten sind.',
+          released.length ? 'Bewusst freigegebene Feldgruppen: ' + released.join(', ') + '.' : 'Bewusst freigegebene Feldgruppen: keine.',
+          'Triff keine Annahmen über fehlende oder redaktierte Detailfelder.'
+        ].join('\n');
+      }
+
+      function getCodeAnalysisProjectContext(projectId, options = {}) {
         const project = S.projects.find(x => x.id === projectId);
         if (!project) return JSON.stringify({ projectId: projectId || '', error: 'Kein Roadtrip-Projekt ausgewählt.' }, null, 2);
+        const opts = options && typeof options === 'object' ? options : {};
+        const includePrivateFeatureDetails = opts.includePrivateFeatureDetails === true;
+        const includeDescription = includePrivateFeatureDetails && opts.includeDescription === true;
+        const includePurposeWorkflow = includePrivateFeatureDetails && opts.includePurposeWorkflow === true;
+        const includeCriteriaQuestions = includePrivateFeatureDetails && opts.includeCriteriaQuestions === true;
+        const includeSourceContext = includePrivateFeatureDetails && opts.includeSourceContext === true;
+        const includeFeatureFlow = includePrivateFeatureDetails && opts.includeFeatureFlow === true;
         const compactProject = {
           projectId: project.id || '',
           title: project.title || '',
@@ -6714,29 +6755,32 @@
           const item = {
             id: feature.id || '',
             title: feature.title || '',
-            description: feature.description || '',
             category: feature.category || '',
             priority: feature.priority || '',
-            status: feature.status || '',
-            purpose: feature.purpose || '',
-            workflowContext: feature.workflowContext || '',
-            acceptanceCriteria: normalizeAcceptanceCriteria(feature.acceptanceCriteria),
-            sourceContext: feature.sourceContext || '',
-            openQuestions: normalizeAcceptanceCriteria(feature.openQuestions)
+            status: feature.status || ''
           };
-          if (String(feature.featureFlow || '').trim()) item.featureFlow = String(feature.featureFlow).trim();
+          if (includeDescription) item.description = feature.description || '';
+          if (includePurposeWorkflow) {
+            item.purpose = feature.purpose || '';
+            item.workflowContext = feature.workflowContext || '';
+          }
+          if (includeCriteriaQuestions) {
+            item.acceptanceCriteria = normalizeAcceptanceCriteria(feature.acceptanceCriteria);
+            item.openQuestions = normalizeAcceptanceCriteria(feature.openQuestions);
+          }
+          if (includeSourceContext) item.sourceContext = feature.sourceContext || '';
+          if (includeFeatureFlow && String(feature.featureFlow || '').trim()) item.featureFlow = String(feature.featureFlow).trim();
           return item;
         });
         const implementedFeatures = compactFeatures.filter(isImplementedFeature).map(feature => {
           const item = {
             id: feature.id || '',
             title: feature.title || '',
-            description: feature.description || '',
             category: feature.category || '',
             status: feature.status || ''
           };
-          if (String(feature.confidence || '').trim()) item.confidence = String(feature.confidence).trim();
-          if (String(feature.sourceContext || '').trim()) item.sourceContext = String(feature.sourceContext).trim();
+          if (includeDescription) item.description = feature.description || '';
+          if (includeSourceContext) item.sourceContext = feature.sourceContext || '';
           return item;
         });
         return JSON.stringify({ project: compactProject, plannedFeatures, implementedFeatures }, null, 2);
@@ -6841,6 +6885,7 @@
         const state = getCodeAnalysisPromptPrepState();
         const projectId = getImportTargetProjectId() || (ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '');
         const analysisMode = state.analysisMode || 'planned-feature-check';
+        const disclosureOptions = getCodeAnalysisFeatureDisclosureOptions();
         return [
           '# Roadtrip Codeanalyse-Delta · Fallback-Prompt',
           '',
@@ -6853,8 +6898,11 @@
           '## Modus und Sicherheitsregeln',
           buildRoadtripCodeAnalysisDeltaInstructions(analysisMode),
           '',
+          '## Datenschutz / Feature-Details',
+          getCodeAnalysisFeatureDisclosureNotice(disclosureOptions),
+          '',
           '## Kompakter Projekt- und Featurekontext',
-          getCodeAnalysisProjectContext(projectId),
+          getCodeAnalysisProjectContext(projectId, disclosureOptions),
           '',
           '## Exakter Zielvertrag',
           buildRoadtripCodeAnalysisDeltaJsonContract(analysisMode),
@@ -6869,6 +6917,7 @@
         const projectId = getImportTargetProjectId() || (ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '');
         const artifactDate = new Date().toISOString().slice(0, 10);
         const analysisMode = state.analysisMode || 'planned-feature-check';
+        const disclosureOptions = getCodeAnalysisFeatureDisclosureOptions();
         return [
           '# Roadtrip Codex-Cloud-Codeanalyse-Delta',
           '',
@@ -6884,9 +6933,12 @@
           '## Modus und Sicherheitsregeln',
           buildRoadtripCodeAnalysisDeltaInstructions(analysisMode),
           '',
+          '## Datenschutz / Feature-Details',
+          getCodeAnalysisFeatureDisclosureNotice(disclosureOptions),
+          '',
           '## Kompakter Roadtrip-Projekt- und Featurekontext',
           'Der Kontext enthält bewusst keine vollständigen Notes, Chats, Historien, Analysen, ZIP-/Sync-/Trello- oder Gist-Daten.',
-          getCodeAnalysisProjectContext(projectId),
+          getCodeAnalysisProjectContext(projectId, disclosureOptions),
           '',
           '## Ausgabe',
           'Schreibe genau eine JSON-Datei nach docs/analysis/' + artifactDate + '-code-analysis-delta.json.',
@@ -6953,6 +7005,17 @@
               <label for="codeAnalysisRepoBranch">Repo-/Branch-Hinweis für Codex Cloud</label>
               <input id="codeAnalysisRepoBranch" value="${escapeAttr(getCodeAnalysisPromptPrepState().repoBranch || '')}" placeholder="z. B. owner/repo · branch sprint-43" />
             </div>
+            <details class="item" style="margin-bottom:12px;">
+              <summary style="font-weight:700;cursor:pointer;">Private Feature-Details im Analyseprompt freigeben</summary>
+              <div class="notice notice-info" style="margin:8px 0;">Diese Felder können private Projektinformationen enthalten. Standardmäßig bleiben sie aus Codex-Cloud- und Fallback-Prompts entfernt.</div>
+              ${[
+                ['includeDescription', 'Beschreibungen einbeziehen'],
+                ['includePurposeWorkflow', 'Zweck & Workflow-Kontext einbeziehen'],
+                ['includeCriteriaQuestions', 'Akzeptanzkriterien & offene Fragen einbeziehen'],
+                ['includeSourceContext', 'Source Context einbeziehen'],
+                ['includeFeatureFlow', 'FeatureFlow / Mermaid einbeziehen']
+              ].map(([key, label]) => `<label class="pill" style="margin:3px;"><input type="checkbox" data-code-analysis-disclosure="${key}" ${getCodeAnalysisPromptPrepState()[key] === true ? 'checked' : ''}/> ${label}</label>`).join('')}
+            </details>
             <div class="stack-row">
               <button class="btn" id="btnBuildCodeAnalysisFallbackPrompt">Fallback-Prompt erzeugen</button>
               <button class="btn" id="btnBuildCodeAnalysisCloudPrompt">Codex-Cloud-Prompt erzeugen</button>
