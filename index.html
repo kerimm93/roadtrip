@@ -11362,13 +11362,11 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const body = await response.json().catch(() => null);
         if (!body || !body.files || !body.files[fileName]) {
           return makeGistResult({
-            ok: false,
-            status: 'unknown',
-            phase: 'verify',
+            ok: true,
+            phase: 'write',
             action,
-            outcome: 'write-unverified',
-            message: 'PATCH war erfolgreich, aber die Antwort enthielt die erwartete Gist-Datei nicht.',
-            recoveryHint: 'Status unsicher: keinen weiteren riskanten Sync/Overwrite ausführen; zuerst ZIP-Backup oder JSON-Export sichern und den Remote-Status prüfen.',
+            outcome: 'written-response-unconfirmed',
+            message: 'PATCH war erfolgreich; die Antwort war nicht beweiskräftig und wird per Remote-Readback verifiziert.',
             confidence: 'unknown'
           });
         }
