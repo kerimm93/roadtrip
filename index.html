@@ -6918,16 +6918,63 @@
       }
 
       function buildRoadtripAnalysisResultSchema(projectId, analysisMode) {
-        return {
-          type: 'roadtrip-code-analysis-delta-v1',
-          analysisMode: analysisMode || 'planned-feature-check',
-          projectId: projectId || '',
-          plannedFeatureResults: [],
-          implementedFeatureCandidates: [],
-          duplicateReview: [],
-          openQuestions: [],
-          humanReviewRequired: true
-        };
+        try {
+          const contract = JSON.parse(buildRoadtripCodeAnalysisDeltaJsonContract(analysisMode));
+          contract.projectId = projectId || contract.projectId || '';
+          contract.analysisMode = analysisMode || contract.analysisMode || 'planned-feature-check';
+          contract.humanReviewRequired = true;
+          return contract;
+        } catch (err) {
+          console.warn('[analysis bundle] Failed to build canonical delta contract:', err);
+          return {
+            type: 'roadtrip-code-analysis-delta-v1',
+            projectId: projectId || '',
+            analysisMode: analysisMode || 'planned-feature-check',
+            summary: '',
+            plannedFeatureResults: [{
+              featureId: '',
+              title: '',
+              classification: 'implemented',
+              confidence: 'high',
+              evidence: [],
+              files: [],
+              recommendedStatus: 'confirmed',
+              safeUpdates: {
+                sourceContextAppend: '',
+                openQuestionsAppend: [],
+                acceptanceCriteriaAppend: []
+              },
+              unsafeUpdates: { reason: '' }
+            }],
+            implementedFeatureCandidates: [{
+              title: '',
+              description: '',
+              category: 'Workflow',
+              status: 'detected',
+              confidence: 'medium',
+              evidence: [],
+              files: [],
+              possibleDuplicates: []
+            }],
+            duplicateReview: [{
+              kind: 'planned-planned',
+              sourceFeatureId: '',
+              targetFeatureId: '',
+              confidence: 'medium',
+              reason: '',
+              fieldMergeSuggestion: {
+                purpose: 'keep-existing',
+                workflowContext: 'keep-existing',
+                acceptanceCriteria: 'dedupe-append',
+                sourceContext: 'append',
+                openQuestions: 'dedupe-append',
+                featureFlow: 'keep-existing'
+              }
+            }],
+            openQuestions: [],
+            humanReviewRequired: true
+          };
+        }
       }
 
       function buildRoadtripAnalysisBundleFallbackPrompt(projectId) {
