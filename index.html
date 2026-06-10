@@ -2891,8 +2891,17 @@
         qq('[data-code-analysis-disclosure]').forEach(input => input.addEventListener('change', e => {
           const key = e.target.dataset.codeAnalysisDisclosure || '';
           if (key) getCodeAnalysisPromptPrepState()[key] = e.target.checked === true;
+          if (!getCodeAnalysisFeatureDisclosureOptions().includePrivateFeatureDetails) {
+            setRoadtripAnalysisBundleField('analysisBundlePrivateJson', 'bundlePrivateJson', '');
+            if ($('analysisBundlePrivateWrap')) $('analysisBundlePrivateWrap').hidden = true;
+          }
         }));
         if ($('codeAnalysisPromptOutput')) $('codeAnalysisPromptOutput').addEventListener('input', e => { getCodeAnalysisPromptPrepState().outputPrompt = e.target.value; });
+        if ($('analysisBundleSafeJson')) $('analysisBundleSafeJson').addEventListener('input', e => { getCodeAnalysisPromptPrepState().bundleSafeJson = e.target.value; });
+        if ($('analysisBundlePrivateJson')) $('analysisBundlePrivateJson').addEventListener('input', e => { getCodeAnalysisPromptPrepState().bundlePrivateJson = e.target.value; });
+        if ($('analysisBundleInstructions')) $('analysisBundleInstructions').addEventListener('input', e => { getCodeAnalysisPromptPrepState().bundleInstructions = e.target.value; });
+        if ($('analysisBundleResultSchema')) $('analysisBundleResultSchema').addEventListener('input', e => { getCodeAnalysisPromptPrepState().bundleResultSchema = e.target.value; });
+        if ($('analysisBundleFallbackPrompt')) $('analysisBundleFallbackPrompt').addEventListener('input', e => { getCodeAnalysisPromptPrepState().bundleFallbackPrompt = e.target.value; });
         if ($('analysisPromptOutput')) $('analysisPromptOutput').addEventListener('input', e => { ui.importDraft.analysisPrompt = e.target.value; });
         if ($('promptOutput')) $('promptOutput').addEventListener('input', e => { ui.importDraft.prompt = e.target.value; });
         if ($('cleanupPromptOutput')) $('cleanupPromptOutput').addEventListener('input', e => { ui.importDraft.cleanupPrompt = e.target.value; });
@@ -2901,6 +2910,11 @@
         if ($('btnBuildCodeAnalysisFallbackPrompt')) $('btnBuildCodeAnalysisFallbackPrompt').addEventListener('click', () => generateCodeAnalysisPrepPrompt('fallback'));
         if ($('btnBuildCodeAnalysisCloudPrompt')) $('btnBuildCodeAnalysisCloudPrompt').addEventListener('click', () => generateCodeAnalysisPrepPrompt('cloud'));
         if ($('btnCopyCodeAnalysisPrompt')) $('btnCopyCodeAnalysisPrompt').addEventListener('click', () => copyPrompt('codeAnalysisPromptOutput'));
+        if ($('btnBuildAnalysisBundleSafe')) $('btnBuildAnalysisBundleSafe').addEventListener('click', () => generateRoadtripAnalysisBundle('safe'));
+        if ($('btnBuildAnalysisBundleInstructions')) $('btnBuildAnalysisBundleInstructions').addEventListener('click', () => generateRoadtripAnalysisBundle('instructions'));
+        if ($('btnBuildAnalysisBundleFallback')) $('btnBuildAnalysisBundleFallback').addEventListener('click', () => generateRoadtripAnalysisBundle('fallback'));
+        if ($('btnBuildAnalysisBundleAll')) $('btnBuildAnalysisBundleAll').addEventListener('click', () => generateRoadtripAnalysisBundle('all'));
+        qq('[data-copy-analysis-bundle]').forEach(btn => btn.addEventListener('click', () => copyPrompt(btn.dataset.copyAnalysisBundle || '')));
         if ($('btnBuildHtmlPrompt')) $('btnBuildHtmlPrompt').addEventListener('click', buildHtmlPrompt);
         if ($('btnBuildProjectSummaryOnlyPrompt')) $('btnBuildProjectSummaryOnlyPrompt').addEventListener('click', buildProjectSummaryOnlyPrompt);
         if ($('btnImportJsonResult')) $('btnImportJsonResult').addEventListener('click', startImportCleanupFromPrompt);
@@ -6664,7 +6678,7 @@
 
       function getCodeAnalysisPromptPrepState() {
         if (!ui.codeAnalysisPromptPrep || typeof ui.codeAnalysisPromptPrep !== 'object') {
-          ui.codeAnalysisPromptPrep = { scope: '', repoBranch: '', outputPrompt: '', mode: '', analysisMode: 'planned-feature-check', includeDescription: false, includePurposeWorkflow: false, includeCriteriaQuestions: false, includeSourceContext: false, includeFeatureFlow: false };
+          ui.codeAnalysisPromptPrep = { scope: '', repoBranch: '', outputPrompt: '', mode: '', analysisMode: 'planned-feature-check', includeDescription: false, includePurposeWorkflow: false, includeCriteriaQuestions: false, includeSourceContext: false, includeFeatureFlow: false, bundleSafeJson: '', bundlePrivateJson: '', bundleInstructions: '', bundleResultSchema: '', bundleFallbackPrompt: '' };
         }
         const allowedModes = ['full-scan', 'planned-feature-check', 'implemented-feature-dedupe', 'planned-vs-implemented-match', 'sprint-delta'];
         if (!allowedModes.includes(ui.codeAnalysisPromptPrep.analysisMode)) ui.codeAnalysisPromptPrep.analysisMode = 'planned-feature-check';
@@ -6784,6 +6798,198 @@
           return item;
         });
         return JSON.stringify({ project: compactProject, plannedFeatures, implementedFeatures }, null, 2);
+      }
+
+      function getRoadtripAnalysisBundleProjectId() {
+        return getImportTargetProjectId() || (ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '');
+      }
+
+      function getRoadtripAnalysisBundleFeatureDetails(feature, options) {
+        const opts = options && typeof options === 'object' ? options : {};
+        const details = { id: feature.id || '', title: feature.title || '' };
+        if (opts.includeDescription === true) details.description = feature.description || '';
+        if (opts.includePurposeWorkflow === true) {
+          details.purpose = feature.purpose || '';
+          details.workflowContext = feature.workflowContext || '';
+        }
+        if (opts.includeCriteriaQuestions === true) {
+          details.acceptanceCriteria = normalizeAcceptanceCriteria(feature.acceptanceCriteria);
+          details.openQuestions = normalizeAcceptanceCriteria(feature.openQuestions);
+        }
+        if (opts.includeSourceContext === true) details.sourceContext = feature.sourceContext || '';
+        if (opts.includeFeatureFlow === true) details.featureFlow = String(feature.featureFlow || '').trim();
+        return details;
+      }
+
+      function buildRoadtripAnalysisContextSafeJson(projectId, disclosureOptions) {
+        const state = getCodeAnalysisPromptPrepState();
+        const options = disclosureOptions && typeof disclosureOptions === 'object' ? disclosureOptions : getCodeAnalysisFeatureDisclosureOptions();
+        const project = S.projects.find(item => item.id === projectId);
+        const features = project ? getVisibleFeatures(S.features).filter(feature => feature.projectId === projectId) : [];
+        const compactFeature = feature => ({
+          id: feature.id || '',
+          title: feature.title || '',
+          status: feature.status || '',
+          category: feature.category || '',
+          priority: feature.priority || ''
+        });
+        const plannedFeatures = features.filter(isPlannedFeature).map(compactFeature);
+        const implementedFeatureSummaries = features.filter(isImplementedFeature).map(compactFeature);
+        return {
+          type: 'roadtrip-analysis-context-safe-v1',
+          createdAt: new Date().toISOString(),
+          projectId: project ? project.id || '' : projectId || '',
+          projectTitle: project ? project.title || '' : '',
+          projectSummary: project ? project.summary || '' : '',
+          analysisMode: state.analysisMode || 'planned-feature-check',
+          analysisScope: String(state.scope || '').trim(),
+          repoHint: String(state.repoBranch || '').trim(),
+          branchHint: String(state.repoBranch || '').trim(),
+          selectedPlannedFeatureIds: plannedFeatures.map(feature => feature.id).filter(Boolean),
+          plannedFeatures,
+          implementedFeatureSummaries,
+          recentSprintContext: [],
+          expectedResultType: 'roadtrip-code-analysis-delta-v1',
+          privacy: {
+            safeContextOnly: true,
+            privateDetailsIncluded: options.includePrivateFeatureDetails === true,
+            privateArtifactName: 'context.private.json'
+          },
+          notice: project ? '' : 'Kein Roadtrip-Projekt ausgewählt; der Kontext enthält deshalb keine Projekt- oder Featuredaten.'
+        };
+      }
+
+      function buildRoadtripAnalysisContextPrivateJson(projectId, disclosureOptions) {
+        const options = disclosureOptions && typeof disclosureOptions === 'object' ? disclosureOptions : getCodeAnalysisFeatureDisclosureOptions();
+        if (options.includePrivateFeatureDetails !== true) return null;
+        const project = S.projects.find(item => item.id === projectId);
+        const features = project ? getVisibleFeatures(S.features).filter(feature => feature.projectId === projectId) : [];
+        const includedDetailGroups = [];
+        if (options.includeDescription === true) includedDetailGroups.push('description');
+        if (options.includePurposeWorkflow === true) includedDetailGroups.push('purpose', 'workflowContext');
+        if (options.includeCriteriaQuestions === true) includedDetailGroups.push('acceptanceCriteria', 'openQuestions');
+        if (options.includeSourceContext === true) includedDetailGroups.push('sourceContext');
+        if (options.includeFeatureFlow === true) includedDetailGroups.push('featureFlow');
+        return {
+          type: 'roadtrip-analysis-context-private-v1',
+          createdAt: new Date().toISOString(),
+          projectId: project ? project.id || '' : projectId || '',
+          projectTitle: project ? project.title || '' : '',
+          warning: 'Private Analyseartefakte lokal halten und nicht in öffentliche Repositories oder PRs committen.',
+          recommendedLocalFolder: '.roadtrip-analysis/',
+          includedDetailGroups,
+          plannedFeatureDetails: features.filter(isPlannedFeature).map(feature => getRoadtripAnalysisBundleFeatureDetails(feature, options)),
+          implementedFeatureDetails: features.filter(isImplementedFeature).map(feature => getRoadtripAnalysisBundleFeatureDetails(feature, options))
+        };
+      }
+
+      function buildRoadtripAnalysisBundleInstructions(projectId, analysisMode, hasPrivateContext) {
+        return [
+          '# Roadtrip Analyse-Kontextbundle',
+          '',
+          'Du führst eine Codeanalyse durch. Du änderst keine App-Dateien.',
+          '',
+          '## Eingaben',
+          '- Nutze `context.safe.json` als datensparsamen Roadtrip-Kontext.',
+          hasPrivateContext ? '- Nutze `context.private.json` ausschließlich lokal als ergänzenden, ausdrücklich freigegebenen Kontext.' : '- `context.private.json` ist nicht vorhanden; leite keine redaktierten privaten Details her.',
+          '- Analysemodus: `' + (analysisMode || 'planned-feature-check') + '`.',
+          '- Projekt-ID: `' + (projectId || '') + '`.',
+          '',
+          '## Ausgabe',
+          '- Gib ausschließlich gültiges JSON als `result.json` oder als direkt kopierbaren JSON-Inhalt zurück.',
+          '- Der Ergebnisvertrag ist `roadtrip-code-analysis-delta-v1`.',
+          '- Halte `plannedFeatureResults`, `implementedFeatureCandidates` und `duplicateReview` strikt getrennt.',
+          '- `duplicateReview.kind` darf nur `planned-planned`, `implemented-implemented` oder `planned-implemented` sein.',
+          '- Belege Befunde mit Datei-, Symbol- oder Funktionshinweisen in `evidence` und `files`.',
+          '- Markiere Unklarheiten als `needs-review` oder in `openQuestions`.',
+          '',
+          '## Schutzregeln',
+          '- Keine automatische Feature-Zusammenführung und keine neuen planned Features aus der Codeanalyse.',
+          '- Implemented Candidates nur mit konkreter Code-Evidenz.',
+          '- Keine Löschungen, keine ID-Änderungen und kein stilles Überschreiben bestehender Details oder Arrays.',
+          '- Das Delta bleibt ein Review-Artefakt und darf nicht automatisch angewendet werden.',
+          '- Keine Repo-/PR-Artefakte mit privaten Details committen.',
+          '- Falls `context.private.json` vorhanden ist: nur lokal verwenden und nicht veröffentlichen.',
+          '',
+          '## Lokaler Ordner',
+          '- Empfohlen: `.roadtrip-analysis/`.',
+          '- Optionale manuelle `.gitignore`-Empfehlung: `.roadtrip-analysis/`.',
+          '- Verändere `.gitignore` oder andere Repo-Dateien nicht automatisch.'
+        ].join('\n');
+      }
+
+      function buildRoadtripAnalysisResultSchema(projectId, analysisMode) {
+        return {
+          type: 'roadtrip-code-analysis-delta-v1',
+          analysisMode: analysisMode || 'planned-feature-check',
+          projectId: projectId || '',
+          plannedFeatureResults: [],
+          implementedFeatureCandidates: [],
+          duplicateReview: [],
+          openQuestions: [],
+          humanReviewRequired: true
+        };
+      }
+
+      function buildRoadtripAnalysisBundleFallbackPrompt(projectId) {
+        const state = getCodeAnalysisPromptPrepState();
+        const options = getCodeAnalysisFeatureDisclosureOptions();
+        const safeContext = buildRoadtripAnalysisContextSafeJson(projectId, options);
+        const privateContext = buildRoadtripAnalysisContextPrivateJson(projectId, options);
+        const resultSchema = buildRoadtripAnalysisResultSchema(projectId, state.analysisMode);
+        return [
+          '# Roadtrip Codeanalyse · GPT-/Browser-Fallback',
+          '',
+          'Dieser Auftrag funktioniert ohne CLI, Shell oder Terminal. Analysiere den vom Nutzer bereitgestellten Code, aber ändere keine Dateien.',
+          'Führe keine automatische Feature-Zusammenführung durch und lege keine neuen planned Features aus der Codeanalyse an.',
+          '',
+          buildRoadtripAnalysisBundleInstructions(projectId, state.analysisMode, Boolean(privateContext)),
+          '',
+          '## context.safe.json',
+          JSON.stringify(safeContext, null, 2),
+          privateContext ? '\n## context.private.json (privat, nur lokal verwenden)\n' + JSON.stringify(privateContext, null, 2) : '',
+          '',
+          '## result.json Vertrag',
+          JSON.stringify(resultSchema, null, 2),
+          '',
+          'Gib das Ergebnis ausschließlich als `result.json` oder als direkt kopierbares JSON ohne Markdown-Codefences zurück.'
+        ].filter(Boolean).join('\n');
+      }
+
+      function syncRoadtripAnalysisBundleInputs() {
+        const state = getCodeAnalysisPromptPrepState();
+        state.scope = $('codeAnalysisScope') ? $('codeAnalysisScope').value : state.scope;
+        state.repoBranch = $('codeAnalysisRepoBranch') ? $('codeAnalysisRepoBranch').value : state.repoBranch;
+        state.analysisMode = $('codeAnalysisMode') ? $('codeAnalysisMode').value : state.analysisMode;
+        return state;
+      }
+
+      function setRoadtripAnalysisBundleField(fieldId, stateKey, value) {
+        const state = getCodeAnalysisPromptPrepState();
+        state[stateKey] = value || '';
+        if ($(fieldId)) $(fieldId).value = state[stateKey];
+      }
+
+      function generateRoadtripAnalysisBundle(artifact) {
+        const state = syncRoadtripAnalysisBundleInputs();
+        const projectId = getRoadtripAnalysisBundleProjectId();
+        const options = getCodeAnalysisFeatureDisclosureOptions();
+        const privateContext = buildRoadtripAnalysisContextPrivateJson(projectId, options);
+        if (artifact === 'safe' || artifact === 'all') {
+          setRoadtripAnalysisBundleField('analysisBundleSafeJson', 'bundleSafeJson', JSON.stringify(buildRoadtripAnalysisContextSafeJson(projectId, options), null, 2));
+          setRoadtripAnalysisBundleField('analysisBundlePrivateJson', 'bundlePrivateJson', privateContext ? JSON.stringify(privateContext, null, 2) : '');
+        }
+        if (artifact === 'instructions' || artifact === 'all') {
+          setRoadtripAnalysisBundleField('analysisBundleInstructions', 'bundleInstructions', buildRoadtripAnalysisBundleInstructions(projectId, state.analysisMode, Boolean(privateContext)));
+          setRoadtripAnalysisBundleField('analysisBundleResultSchema', 'bundleResultSchema', JSON.stringify(buildRoadtripAnalysisResultSchema(projectId, state.analysisMode), null, 2));
+        }
+        if (artifact === 'fallback' || artifact === 'all') {
+          setRoadtripAnalysisBundleField('analysisBundleFallbackPrompt', 'bundleFallbackPrompt', buildRoadtripAnalysisBundleFallbackPrompt(projectId));
+        }
+        const privateWrap = $('analysisBundlePrivateWrap');
+        if (privateWrap) privateWrap.hidden = !privateContext;
+        const selectionNotice = $('analysisBundleProjectNotice');
+        if (selectionNotice) selectionNotice.textContent = projectId ? '' : 'Kein Projekt gewählt: Die Artefakte werden ohne Projekt- und Featuredaten erzeugt.';
       }
 
       function buildRoadtripCodeAnalysisDeltaJsonContract(analysisMode) {
@@ -7028,6 +7234,44 @@
               </div>
             </div>
             <div class="notice">Das neue Delta-JSON ist bewusst review-only: Roadtrip führt daraus keine automatischen Feature-Merges, Löschungen oder planned-Neuanlagen aus.</div>
+            <details class="item" style="margin-top:12px;">
+              <summary style="font-weight:700;cursor:pointer;">Analyse-Kontextbundle</summary>
+              <div class="mini" style="margin:8px 0 10px;">Erzeugt copyfähige Artefakte für Codex CLI, GPT oder Browser-Workflows. CLI, Shell und Terminal sind nicht erforderlich.</div>
+              <div class="notice notice-info" style="margin-bottom:10px;">Private Analyseartefakte lokal halten. Nicht in öffentliche Repositories oder PRs committen. Empfohlener lokaler Ordner: <code>.roadtrip-analysis/</code></div>
+              <div id="analysisBundleProjectNotice" class="mini" style="margin-bottom:8px;">${getRoadtripAnalysisBundleProjectId() ? '' : 'Kein Projekt gewählt: Die Artefakte werden ohne Projekt- und Featuredaten erzeugt.'}</div>
+              <div class="stack-row">
+                <button class="btn" id="btnBuildAnalysisBundleSafe">Safe-Kontext erzeugen</button>
+                <button class="btn" id="btnBuildAnalysisBundleInstructions">Instructions erzeugen</button>
+                <button class="btn" id="btnBuildAnalysisBundleFallback">GPT-Fallback-Prompt erzeugen</button>
+                <button class="btn btn-primary" id="btnBuildAnalysisBundleAll">Alle Bundle-Artefakte erzeugen</button>
+              </div>
+              <div class="field" style="margin-top:12px;">
+                <label for="analysisBundleSafeJson">context.safe.json</label>
+                <textarea id="analysisBundleSafeJson" style="min-height:190px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(getCodeAnalysisPromptPrepState().bundleSafeJson || '')}</textarea>
+                <button class="btn" data-copy-analysis-bundle="analysisBundleSafeJson">Safe-Kontext kopieren</button>
+              </div>
+              <div id="analysisBundlePrivateWrap" class="field" ${getCodeAnalysisFeatureDisclosureOptions().includePrivateFeatureDetails && getCodeAnalysisPromptPrepState().bundlePrivateJson ? '' : 'hidden'}>
+                <label for="analysisBundlePrivateJson">context.private.json · privat, nur lokal</label>
+                <textarea id="analysisBundlePrivateJson" style="min-height:190px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(getCodeAnalysisPromptPrepState().bundlePrivateJson || '')}</textarea>
+                <button class="btn" data-copy-analysis-bundle="analysisBundlePrivateJson">Private-Kontext kopieren</button>
+              </div>
+              <div class="field">
+                <label for="analysisBundleInstructions">instructions.md</label>
+                <textarea id="analysisBundleInstructions" style="min-height:220px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(getCodeAnalysisPromptPrepState().bundleInstructions || '')}</textarea>
+                <button class="btn" data-copy-analysis-bundle="analysisBundleInstructions">Instructions kopieren</button>
+              </div>
+              <div class="field">
+                <label for="analysisBundleResultSchema">result.schema.json / result.json Beispiel</label>
+                <textarea id="analysisBundleResultSchema" style="min-height:180px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(getCodeAnalysisPromptPrepState().bundleResultSchema || JSON.stringify(buildRoadtripAnalysisResultSchema(getRoadtripAnalysisBundleProjectId(), getCodeAnalysisPromptPrepState().analysisMode), null, 2))}</textarea>
+                <button class="btn" data-copy-analysis-bundle="analysisBundleResultSchema">Result-Vertrag kopieren</button>
+              </div>
+              <div class="field">
+                <label for="analysisBundleFallbackPrompt">GPT-/Browser-Fallback-Prompt</label>
+                <textarea id="analysisBundleFallbackPrompt" style="min-height:240px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(getCodeAnalysisPromptPrepState().bundleFallbackPrompt || '')}</textarea>
+                <button class="btn" data-copy-analysis-bundle="analysisBundleFallbackPrompt">Fallback-Prompt kopieren</button>
+              </div>
+              <div class="notice">Keine Bundle-Ausgabe wird automatisch importiert oder angewendet. <code>roadtrip-code-analysis-delta-v1</code> bleibt ein menschlich zu prüfendes Review-Artefakt.</div>
+            </details>
           </details>
           <div class="field"><label for="htmlFileInput">Code-Datei / Projektdatei Upload</label><input id="htmlFileInput" type="file" accept=".html,.htm,.js,.ts,.jsx,.tsx,.css,.json,.md,.txt,text/*" /></div>
           <div class="field"><label for="htmlTextarea">Code / Repository-Auszug Paste</label><textarea id="htmlTextarea" style="min-height:170px">${escapeHtml(ui.importDraft.html || '')}</textarea></div>
