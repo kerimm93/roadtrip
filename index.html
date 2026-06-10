@@ -2887,7 +2887,10 @@
         if ($('htmlTextarea')) $('htmlTextarea').addEventListener('input', e => { ui.importDraft.html = e.target.value; });
         if ($('codeAnalysisScope')) $('codeAnalysisScope').addEventListener('input', e => { getCodeAnalysisPromptPrepState().scope = e.target.value; });
         if ($('codeAnalysisRepoBranch')) $('codeAnalysisRepoBranch').addEventListener('input', e => { getCodeAnalysisPromptPrepState().repoBranch = e.target.value; });
-        if ($('codeAnalysisMode')) $('codeAnalysisMode').addEventListener('change', e => { getCodeAnalysisPromptPrepState().analysisMode = e.target.value; });
+        if ($('codeAnalysisMode')) $('codeAnalysisMode').addEventListener('change', e => {
+          getCodeAnalysisPromptPrepState().analysisMode = e.target.value;
+          if ($('codeAnalysisModeHelp')) $('codeAnalysisModeHelp').textContent = getCodeAnalysisModeHelp(e.target.value);
+        });
         qq('[data-code-analysis-disclosure]').forEach(input => input.addEventListener('change', e => {
           const key = e.target.dataset.codeAnalysisDisclosure || '';
           if (key) getCodeAnalysisPromptPrepState()[key] = e.target.checked === true;
@@ -2913,6 +2916,7 @@
         if ($('btnBuildAnalysisBundleInstructions')) $('btnBuildAnalysisBundleInstructions').addEventListener('click', () => generateRoadtripAnalysisBundle('instructions'));
         if ($('btnBuildAnalysisBundleFallback')) $('btnBuildAnalysisBundleFallback').addEventListener('click', () => generateRoadtripAnalysisBundle('fallback'));
         if ($('btnBuildAnalysisBundleAll')) $('btnBuildAnalysisBundleAll').addEventListener('click', () => generateRoadtripAnalysisBundle('all'));
+        if ($('btnDownloadAnalysisBundle')) $('btnDownloadAnalysisBundle').addEventListener('click', downloadRoadtripAnalysisBundle);
         qq('[data-copy-analysis-bundle]').forEach(btn => btn.addEventListener('click', () => copyPrompt(btn.dataset.copyAnalysisBundle || '')));
         if ($('btnBuildHtmlPrompt')) $('btnBuildHtmlPrompt').addEventListener('click', buildHtmlPrompt);
         if ($('btnBuildProjectSummaryOnlyPrompt')) $('btnBuildProjectSummaryOnlyPrompt').addEventListener('click', buildProjectSummaryOnlyPrompt);
@@ -6686,6 +6690,18 @@
         return ui.codeAnalysisPromptPrep;
       }
 
+      const CODE_ANALYSIS_MODE_HELP = {
+        'full-scan': 'Wähle das, wenn du den Code zum ersten Mal vollständig analysierst oder einen komplett neuen Projektstand erfassen willst.',
+        'planned-feature-check': 'Wähle das, wenn du prüfen willst, welche geplanten Features im Code bereits umgesetzt, teilweise umgesetzt oder noch offen sind.',
+        'implemented-feature-dedupe': 'Wähle das, wenn du bereits erkannte Ist-Features auf Dubletten, Überschneidungen oder mehrfach erfasste Funktionen prüfen willst.',
+        'planned-vs-implemented-match': 'Wähle das, wenn du geplante Features und erkannte implementierte Features gegeneinander abgleichen willst, ohne sie automatisch zu verschmelzen.',
+        'sprint-delta': 'Wähle das, wenn du nur Änderungen seit der letzten sauberen Codeanalyse oder seit einem bestimmten Sprint prüfen willst.'
+      };
+
+      function getCodeAnalysisModeHelp(mode) {
+        return CODE_ANALYSIS_MODE_HELP[mode] || CODE_ANALYSIS_MODE_HELP['planned-feature-check'];
+      }
+
       function buildRoadtripAnalysisJsonContract() {
         return [
           'Gib genau ein JSON-Objekt mit diesen kanonischen Top-Level-Feldern aus:',
@@ -7038,6 +7054,34 @@
         if (selectionNotice) selectionNotice.textContent = projectId ? '' : 'Kein Projekt gewählt: Die Artefakte werden ohne Projekt- und Featuredaten erzeugt.';
       }
 
+      async function downloadRoadtripAnalysisBundle() {
+        try {
+          generateRoadtripAnalysisBundle('all');
+          const state = getCodeAnalysisPromptPrepState();
+          const projectId = getRoadtripAnalysisBundleProjectId();
+          const options = getCodeAnalysisFeatureDisclosureOptions();
+          const privateContext = buildRoadtripAnalysisContextPrivateJson(projectId, options);
+          const JSZip = await ensureJSZipLoaded();
+          const zip = new JSZip();
+          const folder = zip.folder('.roadtrip-analysis');
+          folder.file('context.safe.json', state.bundleSafeJson);
+          folder.file('instructions.md', state.bundleInstructions);
+          folder.file('result.schema.json', state.bundleResultSchema);
+          if (options.includePrivateFeatureDetails === true && privateContext && state.bundlePrivateJson) {
+            folder.file('context.private.json', state.bundlePrivateJson);
+          }
+          const blob = await zip.generateAsync({ type: 'blob' });
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = `roadtrip-analysis-bundle-${dateStamp()}.zip`;
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+        } catch (err) {
+          alert(err && err.message ? err.message : 'Analyse-Bundle-Download fehlgeschlagen.');
+        }
+      }
+
       function buildRoadtripCodeAnalysisDeltaJsonContract(analysisMode) {
         return JSON.stringify({
           type: 'roadtrip-code-analysis-delta-v1',
@@ -7239,7 +7283,7 @@
             <div class="mini" style="margin:8px 0 10px;">Erzeugt einen kompakten Soll-/Ist-Analyseprompt. Das Delta-JSON bleibt Review-Artefakt und wird nicht automatisch auf Features angewendet.</div>
             <div class="field">
               <label for="codeAnalysisMode">Analysemodus</label>
-              <select id="codeAnalysisMode">
+              <select id="codeAnalysisMode" aria-describedby="codeAnalysisModeHelp">
                 ${[
                   ['full-scan', 'Full Scan (vorbereitet)'],
                   ['planned-feature-check', 'Planned Feature Check (MVP)'],
@@ -7248,6 +7292,7 @@
                   ['sprint-delta', 'Sprint Delta (vorbereitet)']
                 ].map(([value, label]) => `<option value="${value}" ${getCodeAnalysisPromptPrepState().analysisMode === value ? 'selected' : ''}>${label}</option>`).join('')}
               </select>
+              <div id="codeAnalysisModeHelp" class="mini">${escapeHtml(getCodeAnalysisModeHelp(getCodeAnalysisPromptPrepState().analysisMode))}</div>
             </div>
             <div class="field">
               <label for="codeAnalysisScope">Analyse-Scope / Fragestellung</label>
@@ -7290,6 +7335,7 @@
                 <button class="btn" id="btnBuildAnalysisBundleInstructions">Instructions erzeugen</button>
                 <button class="btn" id="btnBuildAnalysisBundleFallback">GPT-Fallback-Prompt erzeugen</button>
                 <button class="btn btn-primary" id="btnBuildAnalysisBundleAll">Alle Bundle-Artefakte erzeugen</button>
+                <button class="btn" id="btnDownloadAnalysisBundle">Analyse-Bundle herunterladen</button>
               </div>
               <div class="field" style="margin-top:12px;">
                 <label for="analysisBundleSafeJson">context.safe.json</label>
