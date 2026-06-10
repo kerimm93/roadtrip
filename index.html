@@ -2891,10 +2891,9 @@
         qq('[data-code-analysis-disclosure]').forEach(input => input.addEventListener('change', e => {
           const key = e.target.dataset.codeAnalysisDisclosure || '';
           if (key) getCodeAnalysisPromptPrepState()[key] = e.target.checked === true;
-          if (!getCodeAnalysisFeatureDisclosureOptions().includePrivateFeatureDetails) {
-            setRoadtripAnalysisBundleField('analysisBundlePrivateJson', 'bundlePrivateJson', '');
-            if ($('analysisBundlePrivateWrap')) $('analysisBundlePrivateWrap').hidden = true;
-          }
+          setRoadtripAnalysisBundleField('analysisBundlePrivateJson', 'bundlePrivateJson', '');
+          setRoadtripAnalysisBundleField('analysisBundleFallbackPrompt', 'bundleFallbackPrompt', '');
+          if ($('analysisBundlePrivateWrap')) $('analysisBundlePrivateWrap').hidden = true;
         }));
         if ($('codeAnalysisPromptOutput')) $('codeAnalysisPromptOutput').addEventListener('input', e => { getCodeAnalysisPromptPrepState().outputPrompt = e.target.value; });
         if ($('analysisBundleSafeJson')) $('analysisBundleSafeJson').addEventListener('input', e => { getCodeAnalysisPromptPrepState().bundleSafeJson = e.target.value; });
