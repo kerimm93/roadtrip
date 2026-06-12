@@ -6019,7 +6019,7 @@
       }
 
       function escapeProjectSprintKanbanWikiTitle(value) {
-        return compactProjectSprintKanbanValue(value, 'Ohne Titel').replace(/\[\[/g, '［［').replace(/\]\]/g, '］］');
+        return compactProjectSprintKanbanValue(value, 'Ohne Titel').replace(/\[\[/g, '［［').replace(/\]\]/g, '］］').replace(/\|/g, '｜');
       }
 
       function renderProjectSprintKanbanCard(item) {
