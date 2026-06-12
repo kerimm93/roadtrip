@@ -2738,6 +2738,10 @@
           });
         }
 
+        if ($('btnBuildObsidianKanban')) $('btnBuildObsidianKanban').addEventListener('click', refreshProjectSprintKanbanMarkdown);
+        if ($('btnCopyObsidianKanban')) $('btnCopyObsidianKanban').addEventListener('click', copyProjectSprintKanbanMarkdown);
+        if ($('btnDownloadObsidianKanban')) $('btnDownloadObsidianKanban').addEventListener('click', downloadProjectSprintKanbanMarkdown);
+
         if ($('themeSelect')) $('themeSelect').addEventListener('change', e => { C.theme = normalizeThemeValue(e.target.value); applyTheme(); save(); });
         if ($('fontSelect')) $('fontSelect').addEventListener('change', e => { C.font = e.target.value; applyTheme(); save(); });
         if ($('gistId')) $('gistId').addEventListener('input', e => { C.gistId = e.target.value; save(); });
@@ -5896,6 +5900,208 @@
         `;
       }
 
+      function compactProjectSprintKanbanValue(value, fallback = '—') {
+        let text = '';
+        if (Array.isArray(value)) text = value.map(item => compactProjectSprintKanbanValue(item, '')).filter(Boolean).join(' · ');
+        else if (value && typeof value === 'object') text = value.title || value.name || value.label || value.summary || '';
+        else text = value == null ? '' : String(value);
+        text = text.replace(/\s+/g, ' ').trim();
+        return text || fallback;
+      }
+
+      function getProjectSprintKanbanValue(sources, keys, fallback = '—') {
+        for (const source of sources || []) {
+          if (!source || typeof source !== 'object') continue;
+          for (const key of keys || []) {
+            const value = compactProjectSprintKanbanValue(source[key], '');
+            if (value) return value;
+          }
+        }
+        return fallback;
+      }
+
+      function getProjectSprintKanbanDeliveryMeta(sources) {
+        const expanded = [];
+        (sources || []).filter(Boolean).forEach(source => {
+          expanded.push(source);
+          ['rawHandoffText', 'rawReportText'].forEach(key => {
+            const raw = source && source[key];
+            if (typeof raw !== 'string' || !raw.trim().startsWith('{')) return;
+            try {
+              const parsed = JSON.parse(raw);
+              if (parsed && typeof parsed === 'object') expanded.push(parsed);
+            } catch (_) {}
+          });
+          if (Array.isArray(source && source.handoffHistory)) expanded.push(...source.handoffHistory.filter(Boolean));
+        });
+        const branch = getProjectSprintKanbanValue(expanded, ['branch', 'branchName', 'gitBranch', 'repoBranch'], '');
+        const pr = getProjectSprintKanbanValue(expanded, ['pr', 'prNumber', 'pullRequest', 'pullRequestNumber', 'prUrl', 'pullRequestUrl'], '');
+        const merge = getProjectSprintKanbanValue(expanded, ['mergeStatus', 'mergeState', 'merged'], '');
+        const text = expanded.map(source => typeof source === 'string' ? source : [source.rawHandoffText, source.rawReportText, source.summary].filter(Boolean).join(' ')).join(' ');
+        const textPr = !pr && text.match(/(?:PR|Pull Request)\s*(?:#|Nr\.?\s*)?(\d+)/i);
+        const textBranch = !branch && text.match(/(?:Branch|Git-Branch)\s*[:=]\s*([^\s,;]+)/i);
+        const parts = [];
+        if (pr || textPr) parts.push(String(pr || `#${textPr[1]}`).replace(/^([0-9]+)$/, '#$1'));
+        if (branch || textBranch) parts.push(branch || textBranch[1]);
+        if (merge && merge !== '—') parts.push(`Merge: ${merge}`);
+        return parts.length ? parts.join(' / ') : '—';
+      }
+
+      function buildProjectSprintKanbanItems() {
+        const projects = Array.isArray(S.projects) ? S.projects : [];
+        const chats = Array.isArray(S.chats) ? S.chats : [];
+        const features = Array.isArray(S.features) ? S.features : [];
+        return projects.filter(Boolean).map(project => {
+          const projectChats = chats
+            .filter(chat => chat && chat.projectId === project.id)
+            .slice()
+            .sort((a, b) => String(b.updatedAt || b.completedAt || b.startedAt || '').localeCompare(String(a.updatedAt || a.completedAt || a.startedAt || '')));
+          const sprintChats = projectChats.filter(chat => (chat.type || chat.chatType) === 'sprint');
+          const activeSprint = sprintChats.find(chat => chat.status === 'aktiv') || null;
+          const completedSprint = sprintChats.find(chat => chat.status === 'abgeschlossen' || chat.completedAt) || null;
+          const latestSprint = sprintChats[0] || null;
+          const mainChat = (project.mainChatId && projectChats.find(chat => chat.id === project.mainChatId))
+            || projectChats.find(chat => (chat.type || chat.chatType) === 'project-main')
+            || null;
+          const projectFeatures = features.filter(feature => feature && feature.projectId === project.id && normalizeFeaturePool(feature.pool) === 'planned');
+          const blockedFeatures = projectFeatures.filter(feature => feature.status === 'blocked');
+          const sprintCandidates = projectFeatures
+            .filter(feature => ['selected-for-sprint', 'in-progress', 'planned'].includes(feature.status))
+            .map(feature => compactProjectSprintKanbanValue(feature.title, ''))
+            .filter(Boolean);
+          const currentSprint = getProjectSprintKanbanValue([activeSprint], ['title'], getProjectSprintKanbanValue([project], ['currentSprint', 'activeSprint'], '—'));
+          const lastCompletedSprint = getProjectSprintKanbanValue([completedSprint], ['title'], getProjectSprintKanbanValue([project], ['lastCompletedSprint', 'completedSprint'], '—'));
+          const nextSprint = getProjectSprintKanbanValue([project, activeSprint, completedSprint, latestSprint], ['nextStep', 'recommendedSprint', 'nextSprint'], '—');
+          const furtherCandidates = sprintCandidates.filter(title => title !== nextSprint && title !== currentSprint).slice(0, 3);
+          const openQuestions = projectChats.flatMap(chat => Array.isArray(chat.openQuestions) ? chat.openQuestions : []);
+          const blocker = getProjectSprintKanbanValue(
+            [project, activeSprint, latestSprint],
+            ['blocker', 'blockers', 'openQuestion', 'openQuestions'],
+            compactProjectSprintKanbanValue(openQuestions.length ? openQuestions : blockedFeatures.map(feature => feature.title), '—')
+          );
+          const mainChatUrl = getProjectSprintKanbanValue([project, mainChat], ['mainChatUrl', 'url'], '—');
+          const sprintChatUrl = getProjectSprintKanbanValue([activeSprint, latestSprint], ['url', 'sprintChatUrl'], '—');
+          const hasSprintOrHandoffLogic = sprintChats.length > 0 || projectChats.some(chat =>
+            !!(chat && (chat.handoffImportedAt || chat.rawHandoffText || (Array.isArray(chat.handoffHistory) && chat.handoffHistory.length)))
+          ) || ['currentSprint', 'activeSprint', 'lastCompletedSprint', 'completedSprint', 'nextSprint', 'recommendedSprint'].some(key =>
+            !!compactProjectSprintKanbanValue(project[key], '')
+          );
+          const isUnlinked = !(compactProjectSprintKanbanValue(project.mainChatUrl, '') || mainChat || sprintChats.length || hasSprintOrHandoffLogic);
+          const deliverySources = [activeSprint, completedSprint, latestSprint, mainChat, project].concat(projectChats.slice(0, 4)).filter(Boolean);
+          const item = {
+            projectId: project.id || '',
+            title: compactProjectSprintKanbanValue(project.title, 'Ohne Titel'),
+            status: compactProjectSprintKanbanValue(project.status, 'nicht erfasst'),
+            currentSprint,
+            lastCompletedSprint,
+            nextSprint,
+            furtherCandidates,
+            blocker,
+            prBranch: getProjectSprintKanbanDeliveryMeta(deliverySources),
+            mainChatUrl,
+            sprintChatUrl,
+            hasActiveSprint: !!activeSprint,
+            isUnlinked
+          };
+          item.column = classifyProjectSprintKanbanColumn(item);
+          return item;
+        });
+      }
+
+      function classifyProjectSprintKanbanColumn(item) {
+        const status = String(item && item.status || '').toLowerCase();
+        if (status === 'pausiert' || status === 'archiviert') return 'Pause / Archiv';
+        if (item && item.isUnlinked) return 'Noch nicht überführt 🕸️';
+        if (item && item.hasActiveSprint) return 'Aktiver Sprint';
+        if (item && item.blocker && item.blocker !== '—') return 'Wartet / Blockiert';
+        if (item && item.nextSprint && item.nextSprint !== '—') return 'Nächster Sprint klar';
+        return 'Wartet / Blockiert';
+      }
+
+      function escapeProjectSprintKanbanWikiTitle(value) {
+        return compactProjectSprintKanbanValue(value, 'Ohne Titel').replace(/\[\[/g, '［［').replace(/\]\]/g, '］］').replace(/\|/g, '｜');
+      }
+
+      function renderProjectSprintKanbanCard(item) {
+        const lines = [
+          `- [ ] [[${escapeProjectSprintKanbanWikiTitle(item.title)}]]${item.isUnlinked ? ' 🕸️' : ''}`,
+          `  - Status: ${compactProjectSprintKanbanValue(item.status)}`,
+          `  - Aktuell: ${compactProjectSprintKanbanValue(item.currentSprint)}`,
+          `  - Letzter Abschluss: ${compactProjectSprintKanbanValue(item.lastCompletedSprint)}`,
+          `  - Nächster Sprint: ${compactProjectSprintKanbanValue(item.nextSprint)}`,
+          `  - Danach: ${compactProjectSprintKanbanValue(item.furtherCandidates)}`,
+          `  - PR/Branch: ${compactProjectSprintKanbanValue(item.prBranch)}`,
+          `  - Blocker: ${compactProjectSprintKanbanValue(item.blocker)}`,
+          `  - Hauptchat: ${compactProjectSprintKanbanValue(item.mainChatUrl)}`,
+          `  - Sprintchat: ${compactProjectSprintKanbanValue(item.sprintChatUrl)}`
+        ];
+        if (item.isUnlinked) lines.push('  - Hinweis: Noch nicht in Hauptchat-/Sprintchat-Logik überführt');
+        return lines.join('\n');
+      }
+
+      function buildProjectSprintKanbanMarkdown() {
+        const columns = ['Aktiver Sprint', 'Nächster Sprint klar', 'Wartet / Blockiert', 'Noch nicht überführt 🕸️', 'Pause / Archiv'];
+        const items = buildProjectSprintKanbanItems();
+        const sections = columns.map(column => {
+          const cards = items.filter(item => item.column === column).map(renderProjectSprintKanbanCard);
+          return `## ${column}\n\n${cards.length ? cards.join('\n\n') : '_Keine Projekte._'}`;
+        });
+        return ['---', 'kanban-plugin: basic', '---', '', '# Roadtrip Projekt-Sprint-Kanban', '', sections.join('\n\n'), '', '%% kanban:settings', '{"kanban-plugin":"basic"}', '%%', ''].join('\n');
+      }
+
+      function renderObsidianKanbanExportPanel() {
+        const markdown = buildProjectSprintKanbanMarkdown();
+        return `
+          <details class="item" style="margin-bottom:14px;">
+            <summary style="font-weight:800;cursor:pointer;">Obsidian Kanban</summary>
+            <div class="mini" style="margin-top:8px;">Read-only Projekt-Sprint-Übersicht für das Obsidian Kanban Plugin. Berücksichtigt alle Projekte, auch pausierte und archivierte.</div>
+            <div class="stack-row" style="margin-top:10px;">
+              <button class="btn btn-primary" id="btnBuildObsidianKanban">Obsidian Kanban erzeugen</button>
+              <button class="btn" id="btnCopyObsidianKanban">Obsidian Kanban kopieren</button>
+              <button class="btn" id="btnDownloadObsidianKanban">Obsidian Kanban herunterladen</button>
+            </div>
+            <div class="field" style="margin-top:10px;">
+              <label for="obsidianKanbanMarkdownOutput">Markdown-Vorschau</label>
+              <textarea id="obsidianKanbanMarkdownOutput" readonly spellcheck="false" style="min-height:260px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(markdown)}</textarea>
+            </div>
+          </details>
+        `;
+      }
+
+      function refreshProjectSprintKanbanMarkdown() {
+        const output = $('obsidianKanbanMarkdownOutput');
+        const markdown = buildProjectSprintKanbanMarkdown();
+        if (output) output.value = markdown;
+        return markdown;
+      }
+
+      function copyProjectSprintKanbanMarkdown() {
+        const output = $('obsidianKanbanMarkdownOutput');
+        const markdown = refreshProjectSprintKanbanMarkdown();
+        const fallbackCopy = () => {
+          if (!output) return alert('Kopieren fehlgeschlagen. Bitte Markdown erneut erzeugen.');
+          try {
+            output.focus();
+            output.select();
+            const ok = document.execCommand && document.execCommand('copy');
+            alert(ok ? 'Obsidian Kanban kopiert.' : 'Kopieren fehlgeschlagen. Die Vorschau ist zum manuellen Kopieren markiert.');
+          } catch (_) {
+            alert('Kopieren fehlgeschlagen. Bitte die Vorschau manuell kopieren.');
+          }
+        };
+        if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(markdown).then(() => alert('Obsidian Kanban kopiert.')).catch(fallbackCopy);
+          return;
+        }
+        fallbackCopy();
+      }
+
+      function downloadProjectSprintKanbanMarkdown() {
+        const markdown = refreshProjectSprintKanbanMarkdown();
+        const date = new Date().toISOString().slice(0, 10);
+        downloadTextFile(`roadtrip-projekt-sprint-kanban-${date}.md`, markdown, 'text/markdown;charset=utf-8');
+      }
+
       function getMomentumDashboardProjects() {
         const projects = (S.projects || []).filter(p => p && p.status !== 'archiviert');
         const sortMode = ui.momentumSort || 'updated';
@@ -5967,6 +6173,7 @@
         if (!projects.length) {
           return `
             <div class="panel-title"><h3>Momentum Dashboard</h3></div>
+            ${renderObsidianKanbanExportPanel()}
             <div class="notice">Keine aktiven Projekte vorhanden.</div>
             <div class="stack-row" style="margin-top:10px;">
               <button class="btn btn-primary" id="btnStartNewProject">+ Neues Projekt</button>
@@ -5985,6 +6192,7 @@
               <option value="plannedFeatures" ${ui.momentumSort === 'plannedFeatures' ? 'selected' : ''}>Viele geplante Features</option>
             </select>
           </div>
+          ${renderObsidianKanbanExportPanel()}
           ${renderMultiProjectNotesImportSection({
             title: 'Projektübergreifender Brainstorm / Braindump',
             description: 'Gedanken zu mehreren Projekten einfügen, KI-Prompt erzeugen, JSON laden und Vorschläge manuell übernehmen.',
