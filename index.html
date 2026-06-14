@@ -2738,6 +2738,10 @@
           });
         }
 
+        if ($('obsidianKanbanModeSelect')) $('obsidianKanbanModeSelect').addEventListener('change', event => {
+          ui.obsidianKanbanMode = event.target.value === 'sprints' ? 'sprints' : 'projects';
+          refreshProjectSprintKanbanMarkdown();
+        });
         if ($('btnBuildObsidianKanban')) $('btnBuildObsidianKanban').addEventListener('click', refreshProjectSprintKanbanMarkdown);
         if ($('btnCopyObsidianKanban')) $('btnCopyObsidianKanban').addEventListener('click', copyProjectSprintKanbanMarkdown);
         if ($('btnDownloadObsidianKanban')) $('btnDownloadObsidianKanban').addEventListener('click', downloadProjectSprintKanbanMarkdown);
@@ -6039,6 +6043,205 @@
         return lines.join('\n');
       }
 
+      const MAX_SPRINT_KANBAN_CANDIDATES_PER_PROJECT = 3;
+      const SPRINT_CARD_KANBAN_COLUMNS = [
+        'Noch nicht überführt 🕸️',
+        'Sprint-Kandidaten',
+        'Nächster Sprint',
+        'Aktiver Sprint',
+        'Review / Smoke / Merge',
+        'Abgeschlossen / Importieren',
+        'Pause / Archiv'
+      ];
+
+      function getSprintCardKanbanText(sources) {
+        const seen = new Set();
+        const parts = [];
+        const add = value => {
+          if (value == null || seen.has(value)) return;
+          if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+            const text = compactProjectSprintKanbanValue(value, '');
+            if (text) parts.push(text);
+            return;
+          }
+          if (Array.isArray(value)) {
+            seen.add(value);
+            value.forEach(add);
+            return;
+          }
+          if (typeof value === 'object') {
+            seen.add(value);
+            ['title', 'status', 'summary', 'nextStep', 'rawReportText', 'rawHandoffText', 'branch', 'branchName', 'pullRequestUrl', 'handoffHistory'].forEach(key => add(value[key]));
+          }
+        };
+        (sources || []).forEach(add);
+        return parts.join(' ');
+      }
+
+      function buildSprintCardKanbanItem(project, type, source, overrides = {}) {
+        const projectTitle = compactProjectSprintKanbanValue(project && project.title, 'Ohne Titel');
+        const sprintTitle = compactProjectSprintKanbanValue(overrides.title || (source && source.title), type);
+        const sourceText = getSprintCardKanbanText([source, project]);
+        const blocker = getProjectSprintKanbanValue([source, project], ['blocker', 'blockers', 'openQuestion', 'openQuestions'], '—');
+        return {
+          projectId: project && project.id || '',
+          projectTitle,
+          title: sprintTitle,
+          type,
+          column: overrides.column || type,
+          status: compactProjectSprintKanbanValue(overrides.status || (source && source.status), 'nicht erfasst'),
+          goal: getProjectSprintKanbanValue([overrides, source, project], ['goal', 'purpose', 'currentFocus', 'summary', 'workflowContext'], 'nicht ableitbar'),
+          nextStep: getProjectSprintKanbanValue([overrides, source, project], ['nextStep', 'recommendedSprint'], 'nicht ableitbar'),
+          mainChatUrl: compactProjectSprintKanbanValue(overrides.mainChatUrl, '—'),
+          sprintChatUrl: compactProjectSprintKanbanValue(overrides.sprintChatUrl || (source && source.url), '—'),
+          prBranch: compactProjectSprintKanbanValue(overrides.prBranch, '—'),
+          blocker: compactProjectSprintKanbanValue(overrides.blocker || blocker, '—'),
+          sourceText
+        };
+      }
+
+      function buildSprintCardKanbanItems() {
+        const projects = Array.isArray(S.projects) ? S.projects : [];
+        const chats = Array.isArray(S.chats) ? S.chats : [];
+        const features = Array.isArray(S.features) ? S.features : [];
+        const featureStatusRank = { 'selected-for-sprint': 0, 'in-progress': 1, planned: 2, idea: 3, blocked: 4, deferred: 5 };
+        const reviewPattern = /code-seitig abgeschlossen|smoke(?:-test)?|pull request|\bpr\b|merge|hard reload|backup exportieren|\bimport|\breview\b|mergefähig/i;
+        const importPattern = /handoff[^.\n]{0,40}import|abschluss[^.\n]{0,40}import|abgeschlossen|completed/i;
+        const items = [];
+
+        projects.filter(Boolean).forEach(project => {
+          const projectItemStart = items.length;
+          const projectChats = chats
+            .filter(chat => chat && chat.projectId === project.id)
+            .slice()
+            .sort((a, b) => String(b.updatedAt || b.completedAt || b.startedAt || '').localeCompare(String(a.updatedAt || a.completedAt || a.startedAt || '')));
+          const sprintChats = projectChats.filter(chat => (chat.type || chat.chatType) === 'sprint');
+          const activeSprintChat = sprintChats.find(chat => String(chat.status || '').toLowerCase() === 'aktiv') || null;
+          const completedSprintChat = sprintChats.find(chat => String(chat.status || '').toLowerCase() === 'abgeschlossen' || chat.completedAt) || null;
+          const latestSprintChat = sprintChats[0] || null;
+          const mainChat = (project.mainChatId && projectChats.find(chat => chat.id === project.mainChatId))
+            || projectChats.find(chat => (chat.type || chat.chatType) === 'project-main')
+            || null;
+          const projectFeatures = features
+            .filter(feature => feature && feature.projectId === project.id && normalizeFeaturePool(feature.pool) === 'planned')
+            .filter(feature => Object.prototype.hasOwnProperty.call(featureStatusRank, feature.status))
+            .slice()
+            .sort((a, b) => (featureStatusRank[a.status] - featureStatusRank[b.status]) || String(a.title || '').localeCompare(String(b.title || '')));
+          const inProgressFeature = projectFeatures.find(feature => feature.status === 'in-progress') || null;
+          const selectedFeature = projectFeatures.find(feature => feature.status === 'selected-for-sprint') || null;
+          const mainChatUrl = getProjectSprintKanbanValue([project, mainChat], ['mainChatUrl', 'url'], '—');
+          const sprintChatUrl = getProjectSprintKanbanValue([activeSprintChat, latestSprintChat], ['url', 'sprintChatUrl'], '—');
+          const deliverySources = [activeSprintChat, completedSprintChat, latestSprintChat, mainChat, project].concat(projectChats.slice(0, 4)).filter(Boolean);
+          const deliveryMeta = getProjectSprintKanbanDeliveryMeta(deliverySources);
+          const knownSprintFields = ['currentSprint', 'activeSprint', 'lastCompletedSprint', 'completedSprint', 'nextSprint', 'recommendedSprint']
+            .some(key => !!compactProjectSprintKanbanValue(project[key], ''));
+          const hasHandoff = projectChats.some(chat => !!(chat && (chat.handoffImportedAt || chat.rawHandoffText || (Array.isArray(chat.handoffHistory) && chat.handoffHistory.length))));
+          const isPaused = ['pausiert', 'archiviert'].includes(String(project.status || '').toLowerCase());
+          const isUnlinked = !(compactProjectSprintKanbanValue(project.mainChatUrl, '') || mainChat || sprintChats.length || knownSprintFields || hasHandoff);
+          const shared = { mainChatUrl, sprintChatUrl, prBranch: deliveryMeta };
+
+          if (isPaused) {
+            items.push(buildSprintCardKanbanItem(project, 'Pause / Archiv', project, {
+              ...shared,
+              title: getProjectSprintKanbanValue([project], ['currentSprint', 'activeSprint', 'nextSprint', 'currentFocus'], 'Projekt pausiert / archiviert'),
+              status: compactProjectSprintKanbanValue(project.status, 'pausiert')
+            }));
+            return;
+          }
+
+          if (isUnlinked) {
+            items.push(buildSprintCardKanbanItem(project, 'Überführung', project, {
+              ...shared,
+              column: 'Noch nicht überführt 🕸️',
+              title: 'Hauptchat-/Sprintlogik anlegen 🕸️',
+              status: 'noch nicht überführt',
+              goal: 'Projekt in Roadtrip-Arbeitslogik überführen',
+              nextStep: 'Hauptchat-Bootstrap oder Sprintlogik anlegen'
+            }));
+            return;
+          }
+
+          const activeProjectSprint = getProjectSprintKanbanValue([project], ['activeSprint', 'currentSprint'], '');
+          const activeSource = activeSprintChat || (activeProjectSprint ? { title: activeProjectSprint, status: 'aktiv' } : inProgressFeature);
+          if (activeSource) {
+            items.push(buildSprintCardKanbanItem(project, 'Aktiver Sprint', activeSource, {
+              ...shared,
+              status: getProjectSprintKanbanValue([activeSource], ['status'], 'aktiv')
+            }));
+          }
+
+          const explicitNextSprint = getProjectSprintKanbanValue([project], ['nextSprint', 'recommendedSprint'], '');
+          const handoffNextStep = getProjectSprintKanbanValue([activeSprintChat, completedSprintChat, latestSprintChat, mainChat], ['nextStep'], '');
+          const projectNextStep = compactProjectSprintKanbanValue(project.nextStep, '');
+          const nextSource = explicitNextSprint
+            ? { title: explicitNextSprint, nextStep: projectNextStep || handoffNextStep, status: 'bereit' }
+            : handoffNextStep
+              ? { title: handoffNextStep, nextStep: handoffNextStep, status: 'bereit' }
+              : selectedFeature || (projectNextStep ? { title: projectNextStep, nextStep: projectNextStep, status: 'bereit' } : null);
+          if (nextSource) {
+            items.push(buildSprintCardKanbanItem(project, 'Nächster Sprint', nextSource, { ...shared, status: nextSource.status || 'bereit' }));
+          }
+
+          const usedTitles = new Set([activeSource, nextSource]
+            .filter(Boolean)
+            .map(source => compactProjectSprintKanbanValue(source.title, '').toLowerCase())
+            .filter(Boolean));
+          projectFeatures
+            .filter(feature => !usedTitles.has(compactProjectSprintKanbanValue(feature.title, '').toLowerCase()))
+            .slice(0, MAX_SPRINT_KANBAN_CANDIDATES_PER_PROJECT)
+            .forEach(feature => items.push(buildSprintCardKanbanItem(project, 'Sprint-Kandidat', feature, {
+              ...shared,
+              column: feature.status === 'deferred' ? 'Pause / Archiv' : 'Sprint-Kandidaten'
+            })));
+
+          const deliveryText = getSprintCardKanbanText(deliverySources);
+          if (reviewPattern.test(deliveryText)) {
+            items.push(buildSprintCardKanbanItem(project, 'Review / Smoke / Merge', latestSprintChat || completedSprintChat || project, {
+              ...shared,
+              title: getProjectSprintKanbanValue([latestSprintChat, completedSprintChat, project], ['title', 'lastCompletedSprint', 'completedSprint'], 'Review / Smoke / Merge'),
+              status: /code-seitig abgeschlossen|mergefähig/i.test(deliveryText) ? 'code-seitig abgeschlossen' : 'Review offen'
+            }));
+          }
+          if (completedSprintChat && importPattern.test(deliveryText)) {
+            items.push(buildSprintCardKanbanItem(project, 'Abgeschlossen / Importieren', completedSprintChat, {
+              ...shared,
+              status: 'abgeschlossen',
+              nextStep: getProjectSprintKanbanValue([completedSprintChat], ['nextStep'], 'Handoff prüfen oder importieren')
+            }));
+          }
+          if (items.length === projectItemStart) {
+            items.push(buildSprintCardKanbanItem(project, 'Sprint-Kandidat', project, {
+              ...shared,
+              column: 'Sprint-Kandidaten',
+              title: getProjectSprintKanbanValue([project], ['currentFocus', 'nextStep'], 'Nächsten Sprint ableiten'),
+              status: 'nicht ableitbar',
+              nextStep: getProjectSprintKanbanValue([project], ['nextStep'], 'Nächsten Sprint aus Hauptchat-Kontext ableiten')
+            }));
+          }
+        });
+        return items;
+      }
+
+      function classifySprintCardKanbanColumn(item) {
+        return SPRINT_CARD_KANBAN_COLUMNS.includes(item && item.column) ? item.column : 'Sprint-Kandidaten';
+      }
+
+      function renderSprintCardKanbanCard(item) {
+        const projectLink = `[[${escapeProjectSprintKanbanWikiTitle(item.projectTitle)}]]`;
+        return [
+          `- [ ] ${projectLink} · ${compactProjectSprintKanbanValue(item.title, 'Arbeitskarte')}`,
+          `  - Projekt: ${projectLink}`,
+          `  - Typ: ${compactProjectSprintKanbanValue(item.type)}`,
+          `  - Status: ${compactProjectSprintKanbanValue(item.status)}`,
+          `  - Ziel: ${compactProjectSprintKanbanValue(item.goal)}`,
+          `  - Nächster Schritt: ${compactProjectSprintKanbanValue(item.nextStep)}`,
+          `  - Hauptchat: ${compactProjectSprintKanbanValue(item.mainChatUrl)}`,
+          `  - Sprintchat: ${compactProjectSprintKanbanValue(item.sprintChatUrl)}`,
+          `  - PR/Branch: ${compactProjectSprintKanbanValue(item.prBranch)}`,
+          `  - Blocker: ${compactProjectSprintKanbanValue(item.blocker)}`
+        ].join('\n');
+      }
+
       function buildProjectSprintKanbanMarkdown() {
         const columns = ['Aktiver Sprint', 'Nächster Sprint klar', 'Wartet / Blockiert', 'Noch nicht überführt 🕸️', 'Pause / Archiv'];
         const items = buildProjectSprintKanbanItems();
@@ -6046,19 +6249,45 @@
           const cards = items.filter(item => item.column === column).map(renderProjectSprintKanbanCard);
           return `## ${column}\n\n${cards.length ? cards.join('\n\n') : '_Keine Projekte._'}`;
         });
-        return ['---', 'kanban-plugin: basic', '---', '', '# Roadtrip Projekt-Sprint-Kanban', '', sections.join('\n\n'), '', '%% kanban:settings', '{"kanban-plugin":"basic"}', '%%', ''].join('\n');
+        return ['---', 'kanban-plugin: basic', '---', '', sections.join('\n\n'), '', '%% kanban:settings', '{"kanban-plugin":"basic"}', '%%', ''].join('\n');
+      }
+
+      function buildSprintCardKanbanMarkdown() {
+        const items = buildSprintCardKanbanItems().map(item => ({ ...item, column: classifySprintCardKanbanColumn(item) }));
+        const sections = SPRINT_CARD_KANBAN_COLUMNS.map(column => {
+          const cards = items.filter(item => item.column === column).map(renderSprintCardKanbanCard);
+          return `## ${column}\n\n${cards.length ? cards.join('\n\n') : '_Keine Karten._'}`;
+        });
+        return ['---', 'kanban-plugin: basic', '---', '', sections.join('\n\n'), '', '%% kanban:settings', '{"kanban-plugin":"basic"}', '%%', ''].join('\n');
+      }
+
+      function getObsidianKanbanExportMode() {
+        const select = $('obsidianKanbanModeSelect');
+        return select ? select.value : (ui.obsidianKanbanMode === 'sprints' ? 'sprints' : 'projects');
+      }
+
+      function buildObsidianKanbanMarkdown(mode = getObsidianKanbanExportMode()) {
+        return mode === 'sprints' ? buildSprintCardKanbanMarkdown() : buildProjectSprintKanbanMarkdown();
       }
 
       function renderObsidianKanbanExportPanel() {
-        const markdown = buildProjectSprintKanbanMarkdown();
+        const mode = ui.obsidianKanbanMode === 'sprints' ? 'sprints' : 'projects';
+        const markdown = buildObsidianKanbanMarkdown(mode);
         return `
           <details class="item" style="margin-bottom:14px;">
             <summary style="font-weight:800;cursor:pointer;">Obsidian Kanban</summary>
-            <div class="mini" style="margin-top:8px;">Read-only Projekt-Sprint-Übersicht für das Obsidian Kanban Plugin. Berücksichtigt alle Projekte, auch pausierte und archivierte.</div>
+            <div class="mini" style="margin-top:8px;">Read-only Export für alle Projekte, auch pausierte und archivierte. Projektkarten geben groben Überblick; Sprintkarten exportieren konkrete aktive und geplante Arbeitseinheiten.</div>
+            <div class="field" style="margin-top:10px;max-width:320px;">
+              <label for="obsidianKanbanModeSelect">Exportmodus</label>
+              <select id="obsidianKanbanModeSelect">
+                <option value="projects" ${mode === 'projects' ? 'selected' : ''}>Projektkarten · Landkarte</option>
+                <option value="sprints" ${mode === 'sprints' ? 'selected' : ''}>Sprintkarten · konkrete Planung</option>
+              </select>
+            </div>
             <div class="stack-row" style="margin-top:10px;">
-              <button class="btn btn-primary" id="btnBuildObsidianKanban">Obsidian Kanban erzeugen</button>
-              <button class="btn" id="btnCopyObsidianKanban">Obsidian Kanban kopieren</button>
-              <button class="btn" id="btnDownloadObsidianKanban">Obsidian Kanban herunterladen</button>
+              <button class="btn btn-primary" id="btnBuildObsidianKanban">Kanban erzeugen</button>
+              <button class="btn" id="btnCopyObsidianKanban">Kanban kopieren</button>
+              <button class="btn" id="btnDownloadObsidianKanban">Markdown herunterladen</button>
             </div>
             <div class="field" style="margin-top:10px;">
               <label for="obsidianKanbanMarkdownOutput">Markdown-Vorschau</label>
@@ -6070,7 +6299,7 @@
 
       function refreshProjectSprintKanbanMarkdown() {
         const output = $('obsidianKanbanMarkdownOutput');
-        const markdown = buildProjectSprintKanbanMarkdown();
+        const markdown = buildObsidianKanbanMarkdown();
         if (output) output.value = markdown;
         return markdown;
       }
@@ -6097,9 +6326,11 @@
       }
 
       function downloadProjectSprintKanbanMarkdown() {
+        const mode = getObsidianKanbanExportMode();
         const markdown = refreshProjectSprintKanbanMarkdown();
         const date = new Date().toISOString().slice(0, 10);
-        downloadTextFile(`roadtrip-projekt-sprint-kanban-${date}.md`, markdown, 'text/markdown;charset=utf-8');
+        const kind = mode === 'sprints' ? 'sprint' : 'projekt';
+        downloadTextFile(`roadtrip-${kind}-kanban-${date}.md`, markdown, 'text/markdown;charset=utf-8');
       }
 
       function getMomentumDashboardProjects() {
