@@ -2014,7 +2014,8 @@
         plannedFeatureBulkByProject: {},
         nextSprintMainchatHandoffByProject: {},
         importFeatureDuplicateReviewsByProject: {},
-        sprintQuickPanelByProject: {}
+        sprintQuickPanelByProject: {},
+        pullRequestImport: { rawText: '', candidates: [] }
       };
 
       const $ = (id) => document.getElementById(id);
@@ -2149,6 +2150,7 @@
           analyses: [],
           chats: [],
           importVersions: [],
+          pullRequests: [],
           unmatchedNotes: [],
           deletedIds: {}
         };
@@ -2322,6 +2324,7 @@
         if (!Array.isArray(S.analyses)) S.analyses = [];
         if (!Array.isArray(S.chats)) S.chats = [];
         if (!Array.isArray(S.importVersions)) S.importVersions = [];
+        if (!Array.isArray(S.pullRequests)) S.pullRequests = [];
         if (!Array.isArray(S.unmatchedNotes)) S.unmatchedNotes = [];
         if (!S.deletedIds || typeof S.deletedIds !== 'object' || Array.isArray(S.deletedIds)) S.deletedIds = {};
         if (!S._lastLocalSaveAt && S._lastExported) S._lastLocalSaveAt = S._lastExported;
@@ -2330,6 +2333,9 @@
         S.features = S.features.map(ensureFeatureDefaults);
         S.notes = S.notes.map(ensureNoteDefaults);
         S.chats = S.chats.map(ensureChatDefaults);
+        S.pullRequests = S.pullRequests.map(ensurePullRequestDefaults);
+        if (!ui.pullRequestImport || typeof ui.pullRequestImport !== 'object') ui.pullRequestImport = { rawText: '', candidates: [] };
+        if (!Array.isArray(ui.pullRequestImport.candidates)) ui.pullRequestImport.candidates = [];
         if (!ui.filters || typeof ui.filters !== 'object') ui.filters = { pool: 'alle', status: 'alle', category: 'alle', search: '' };
         if (!ui.filters.pool) ui.filters.pool = 'alle';
         if (!ui.multiProjectImport || typeof ui.multiProjectImport !== 'object') ui.multiProjectImport = { rawText: '', prompt: '', resultJson: '', summary: '', updates: [], unmatchedNotes: [], visible: false };
@@ -2875,6 +2881,29 @@
         if ($('btnCopyMultiProjectNotesPrompt')) $('btnCopyMultiProjectNotesPrompt').addEventListener('click', () => copyPrompt('multiProjectPromptOutput'));
         if ($('btnLoadMultiProjectReview')) $('btnLoadMultiProjectReview').addEventListener('click', loadMultiProjectReviewProposals);
         if ($('btnClearMultiProjectReview')) $('btnClearMultiProjectReview').addEventListener('click', clearMultiProjectReview);
+        if ($('pullRequestMarkdownInput')) $('pullRequestMarkdownInput').addEventListener('input', e => { ui.pullRequestImport.rawText = e.target.value; });
+        if ($('btnExtractPullRequests')) $('btnExtractPullRequests').addEventListener('click', () => {
+          ui.pullRequestImport.candidates = extractPullRequestCandidatesFromText(ui.pullRequestImport.rawText || '');
+          renderView();
+        });
+        if ($('btnClearPullRequestImport')) $('btnClearPullRequestImport').addEventListener('click', () => {
+          ui.pullRequestImport = { rawText: '', candidates: [] };
+          renderView();
+        });
+        qq('[data-pr-project]').forEach(select => select.addEventListener('change', () => {
+          const candidate = getPullRequestImportCandidate(select.dataset.prProject || '');
+          if (!candidate) return;
+          candidate.projectId = select.value || '';
+          candidate.chatId = '';
+          renderView();
+        }));
+        qq('[data-pr-chat]').forEach(select => select.addEventListener('change', () => {
+          const candidate = getPullRequestImportCandidate(select.dataset.prChat || '');
+          if (candidate) candidate.chatId = select.value || '';
+        }));
+        qq('[data-pr-save]').forEach(btn => btn.addEventListener('click', () => savePullRequestCandidateByKey(btn.dataset.prSave || '', false)));
+        qq('[data-pr-later]').forEach(btn => btn.addEventListener('click', () => savePullRequestCandidateByKey(btn.dataset.prLater || '', true)));
+        qq('[data-pr-ignore]').forEach(btn => btn.addEventListener('click', () => removePullRequestImportCandidate(btn.dataset.prIgnore || '')));
         if ($('btnSaveCurrentUnmatchedNotes')) $('btnSaveCurrentUnmatchedNotes').addEventListener('click', saveCurrentUnmatchedNotes);
         if ($('btnCopyOpenUnmatchedMarkdown')) $('btnCopyOpenUnmatchedMarkdown').addEventListener('click', copyUnmatchedNotesMarkdown);
         if ($('btnDownloadOpenUnmatchedMarkdown')) $('btnDownloadOpenUnmatchedMarkdown').addEventListener('click', downloadUnmatchedNotesMarkdown);
@@ -7732,6 +7761,257 @@
         if ($('codeAnalysisPromptOutput')) $('codeAnalysisPromptOutput').value = state.outputPrompt;
       }
 
+      function normalizePullRequestStatus(value) {
+        const status = String(value || '').trim().toLowerCase();
+        return ['unknown', 'open', 'merged', 'closed'].includes(status) ? status : 'unknown';
+      }
+
+      function normalizeGithubPrUrl(owner, repo, number) {
+        return `https://github.com/${String(owner || '').toLowerCase()}/${String(repo || '').toLowerCase()}/pull/${Number(number)}`;
+      }
+
+      function getPullRequestKey(item) {
+        return `${String((item || {}).repoFullName || '').toLowerCase()}#${Number((item || {}).number) || 0}`;
+      }
+
+      function ensurePullRequestDefaults(item) {
+        const input = item && typeof item === 'object' && !Array.isArray(item) ? item : {};
+        const now = new Date().toISOString();
+        const owner = String(input.owner || '').trim().toLowerCase();
+        const repo = String(input.repo || '').trim().toLowerCase();
+        const number = Number(input.number) || 0;
+        return Object.assign({
+          id: uid('pr'),
+          url: owner && repo && number ? normalizeGithubPrUrl(owner, repo, number) : '',
+          repoFullName: owner && repo ? `${owner}/${repo}` : '',
+          owner,
+          repo,
+          number,
+          title: '',
+          projectId: '',
+          chatId: '',
+          status: 'unknown',
+          source: 'markdown-clipper',
+          rawContext: '',
+          importedAt: now,
+          updatedAt: now
+        }, input, {
+          owner,
+          repo,
+          number,
+          repoFullName: owner && repo ? `${owner}/${repo}` : String(input.repoFullName || '').toLowerCase(),
+          url: owner && repo && number ? normalizeGithubPrUrl(owner, repo, number) : String(input.url || ''),
+          status: normalizePullRequestStatus(input.status)
+        });
+      }
+
+      function mergePullRequestsByKey(localList, remoteList) {
+        const byKey = new Map();
+        const timestampFor = (item) => {
+          for (const field of ['updatedAt', 'importedAt', 'createdAt']) {
+            const ms = Date.parse(item && item[field]);
+            if (Number.isFinite(ms)) return ms;
+          }
+          return Number.NEGATIVE_INFINITY;
+        };
+        const isEmpty = (value) => value == null || value === '' || (Array.isArray(value) && value.length === 0);
+        const add = (item) => {
+          if (!item || typeof item !== 'object') return;
+          const itemTimestamp = timestampFor(item);
+          const normalized = ensurePullRequestDefaults(item);
+          const key = getPullRequestKey(normalized);
+          if (!normalized.repoFullName || !normalized.number || key.endsWith('#0')) return;
+          const existing = byKey.get(key);
+          if (!existing) {
+            byKey.set(key, { item: normalized, timestamp: itemTimestamp });
+            return;
+          }
+          const incomingIsNewer = itemTimestamp > existing.timestamp;
+          const newer = incomingIsNewer ? normalized : existing.item;
+          const older = incomingIsNewer ? existing.item : normalized;
+          Object.keys(older).forEach(field => {
+            if (isEmpty(newer[field]) && !isEmpty(older[field])) newer[field] = older[field];
+          });
+          byKey.set(key, { item: ensurePullRequestDefaults(newer), timestamp: incomingIsNewer ? itemTimestamp : existing.timestamp });
+        };
+        (Array.isArray(localList) ? localList : []).forEach(add);
+        (Array.isArray(remoteList) ? remoteList : []).forEach(add);
+        return Array.from(byKey.values()).map(entry => entry.item);
+      }
+
+      function inferPullRequestStatus(context) {
+        const text = String(context || '').toLowerCase();
+        if (/(^|[\s:([{-])(merged|zusammengeführt)(?=$|[\s:)\]}.,;-])/i.test(text)) return 'merged';
+        if (/(^|[\s:([{-])(closed|geschlossen)(?=$|[\s:)\]}.,;-])/i.test(text)) return 'closed';
+        if (/(^|[\s:([{-])(open|offen)(?=$|[\s:)\]}.,;-])/i.test(text)) return 'open';
+        return 'unknown';
+      }
+
+      function extractPullRequestCandidatesFromText(rawText) {
+        const lines = String(rawText || '').split(/\r?\n/);
+        const byKey = new Map();
+        const urlPattern = /(?:https?:\/\/)?(?:www\.)?github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/pull\/(\d+)(?:[?#][^\s)\]}>,]*)?/gi;
+        lines.forEach(line => {
+          let match;
+          while ((match = urlPattern.exec(line)) !== null) {
+            const owner = match[1].toLowerCase();
+            const repo = match[2].toLowerCase();
+            const number = Number(match[3]);
+            const key = `${owner}/${repo}#${number}`;
+            const markdownMatch = line.match(new RegExp(`\\[([^\\]]+)\\]\\(\\s*(?:https?:\\/\\/)?(?:www\\.)?github\\.com\\/${match[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/${match[2].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/pull\\/${match[3]}(?:[?#][^\\s)]*)?\\s*\\)`, 'i'));
+            const title = markdownMatch ? String(markdownMatch[1] || '').trim() : '';
+            const existing = byKey.get(key);
+            if (existing) {
+              if (!existing.title && title) existing.title = title;
+              if (existing.status === 'unknown') existing.status = inferPullRequestStatus(line);
+              continue;
+            }
+            const candidate = ensurePullRequestDefaults({
+              id: key,
+              owner,
+              repo,
+              number,
+              title,
+              status: inferPullRequestStatus(line),
+              rawContext: String(line || '').trim().slice(0, 280)
+            });
+            const suggestion = suggestProjectForPullRequest(candidate);
+            candidate.suggestion = suggestion;
+            candidate.projectId = suggestion.projectId || '';
+            candidate.chatId = '';
+            byKey.set(key, candidate);
+          }
+        });
+        return Array.from(byKey.values());
+      }
+
+      function getProjectPullRequestSearchText(project) {
+        const p = project || {};
+        return [p.title, p.type, p.summary, p.currentFocus, p.nextStep, p.mainChatUrl, p.driveUrl, p.obsidianUrl, ...(Array.isArray(p.tags) ? p.tags : [])].join(' ').toLowerCase();
+      }
+
+      function suggestProjectForPullRequest(candidate) {
+        const repoFullName = String(candidate.repoFullName || '').toLowerCase();
+        const repo = normalizeText(candidate.repo || '');
+        let best = { projectId: '', confidence: 'none', reason: 'Kein plausibler Projektbezug gefunden.' };
+        S.projects.forEach(project => {
+          const projectText = getProjectPullRequestSearchText(project);
+          const chatText = (S.chats || []).filter(chat => chat.projectId === project.id)
+            .map(chat => [chat.title, chat.url, chat.summary, chat.nextStep, chat.branch, chat.branchName].join(' ')).join(' ').toLowerCase();
+          if (projectText.includes(repoFullName) || projectText.includes(`github.com/${repoFullName}`) || chatText.includes(repoFullName) || chatText.includes(`github.com/${repoFullName}`)) {
+            best = { projectId: project.id, confidence: 'high', reason: 'Exakter Repository-Bezug in Projekt- oder Chatfeldern.' };
+            return;
+          }
+          const projectTitle = normalizeText(project.title || '');
+          if (best.confidence !== 'high' && (projectTitle === repo || (repo && projectTitle.split(/\s+/).includes(repo)))) {
+            best = { projectId: project.id, confidence: 'medium', reason: 'Projektname passt zum Repository-Namen.' };
+          } else if (best.confidence === 'none' && repo && normalizeText([project.summary, project.currentFocus, project.nextStep].join(' ')).includes(repo)) {
+            best = { projectId: project.id, confidence: 'low', reason: 'Repository-Name kommt nur im Projektkontext vor; Review nötig.' };
+          }
+        });
+        return best;
+      }
+
+      function getProjectSprintChatOptions(projectId) {
+        return (S.chats || []).filter(chat => chat.projectId === projectId && (chat.type === 'sprint' || normalizeText(chat.type).includes('sprint')))
+          .sort((a, b) => {
+            const activeDelta = (String(a.status || '').toLowerCase() === 'aktiv' ? 1 : 0) - (String(b.status || '').toLowerCase() === 'aktiv' ? 1 : 0);
+            if (activeDelta) return -activeDelta;
+            return String(b.updatedAt || b.completedAt || b.startedAt || '').localeCompare(String(a.updatedAt || a.completedAt || a.startedAt || ''));
+          });
+      }
+
+      function isPullRequestAlreadyStored(candidate) {
+        const key = getPullRequestKey(candidate);
+        return (S.pullRequests || []).some(item => getPullRequestKey(item) === key);
+      }
+
+      function getPullRequestImportCandidate(key) {
+        return (ui.pullRequestImport.candidates || []).find(item => getPullRequestKey(item) === key);
+      }
+
+      function removePullRequestImportCandidate(key) {
+        ui.pullRequestImport.candidates = (ui.pullRequestImport.candidates || []).filter(item => getPullRequestKey(item) !== key);
+        renderView();
+      }
+
+      function savePullRequestCandidateByKey(key, reviewLater) {
+        const candidate = getPullRequestImportCandidate(key);
+        if (!candidate || isPullRequestAlreadyStored(candidate)) return;
+        candidate.projectId = reviewLater ? '' : (candidate.projectId || '');
+        candidate.chatId = reviewLater ? '' : (candidate.chatId || '');
+        if (!reviewLater && !candidate.projectId) return alert('Bitte ein Projekt wählen oder „Später prüfen“ verwenden.');
+        const saved = ensurePullRequestDefaults(Object.assign({}, candidate, { id: uid('pr'), updatedAt: new Date().toISOString() }));
+        delete saved.suggestion;
+        S.pullRequests.push(saved);
+        const chat = saved.chatId ? (S.chats || []).find(item => item.id === saved.chatId) : null;
+        if (chat) {
+          if (!Array.isArray(chat.pullRequests)) chat.pullRequests = [];
+          if (!chat.pullRequests.some(item => getPullRequestKey(item) === getPullRequestKey(saved))) {
+            chat.pullRequests.push({ url: saved.url, repoFullName: saved.repoFullName, number: saved.number, title: saved.title, source: saved.source });
+            chat.updatedAt = saved.updatedAt;
+          }
+        }
+        save();
+        renderView();
+      }
+
+      function renderPullRequestMarkdownImportSection() {
+        const state = ui.pullRequestImport || { rawText: '', candidates: [] };
+        const candidates = Array.isArray(state.candidates) ? state.candidates : [];
+        return `
+          <details class="item" style="margin-bottom:12px;" ${candidates.length ? 'open' : ''}>
+            <summary style="font-weight:700;cursor:pointer;">GitHub-PR-Markdown abgleichen</summary>
+            <div class="mini" style="margin:8px 0 10px;">Erkennt ausschließlich kopierte GitHub-PR-Links lokal. Keine API, keine externen Requests und keine automatische Speicherung.</div>
+            <div class="field">
+              <label for="pullRequestMarkdownInput">GitHub-PR-Markdown / Rohtext</label>
+              <textarea id="pullRequestMarkdownInput" style="min-height:130px;" placeholder="[PR-Titel](https://github.com/owner/repo/pull/123)">${escapeHtml(state.rawText || '')}</textarea>
+            </div>
+            <div class="stack-row">
+              <button class="btn btn-primary" id="btnExtractPullRequests">PR-Links erkennen</button>
+              <button class="btn" id="btnClearPullRequestImport">Eingabe leeren</button>
+            </div>
+            <div style="margin-top:12px;">
+              ${candidates.length ? candidates.map(renderPullRequestCandidate).join('') : '<div class="notice">Noch keine PR-Kandidaten erkannt.</div>'}
+            </div>
+          </details>
+        `;
+      }
+
+      function renderPullRequestCandidate(candidate) {
+        const key = getPullRequestKey(candidate);
+        const stored = isPullRequestAlreadyStored(candidate);
+        const suggestion = candidate.suggestion || { confidence: 'none', reason: 'Kein Vorschlag.' };
+        const project = S.projects.find(item => item.id === candidate.projectId);
+        const chats = candidate.projectId ? getProjectSprintChatOptions(candidate.projectId) : [];
+        return `
+          <div class="item" style="margin-bottom:10px;">
+            <div class="stack-row" style="justify-content:space-between;align-items:flex-start;">
+              <div><strong>${escapeHtml(candidate.title || candidate.url)}</strong><div class="mini">${escapeHtml(candidate.repoFullName)} · PR #${candidate.number}</div></div>
+              <span class="pill">${escapeHtml(candidate.status)}</span>
+            </div>
+            <div class="mini" style="margin:7px 0;">${escapeHtml(candidate.rawContext || '')}</div>
+            <div class="notice ${suggestion.confidence === 'low' ? 'notice-info' : ''}" style="margin-bottom:8px;">
+              Vorschlag: <strong>${project ? escapeHtml(project.title) : 'keine Zuordnung'}</strong> · ${escapeHtml(suggestion.confidence)} · ${escapeHtml(suggestion.reason)}
+            </div>
+            <div class="field"><label>Projekt</label><select data-pr-project="${escapeAttr(key)}">
+              <option value="">— Projekt wählen —</option>
+              ${S.projects.map(item => `<option value="${escapeAttr(item.id)}" ${item.id === candidate.projectId ? 'selected' : ''}>${escapeHtml(item.title)}</option>`).join('')}
+            </select></div>
+            <div class="field"><label>Sprintchat / Handoff (optional)</label><select data-pr-chat="${escapeAttr(key)}" ${candidate.projectId ? '' : 'disabled'}>
+              <option value="">— kein Sprintchat —</option>
+              ${chats.map(chat => `<option value="${escapeAttr(chat.id)}" ${chat.id === candidate.chatId ? 'selected' : ''}>${escapeHtml(chat.title || 'Sprintchat')} · ${escapeHtml(chat.status || '')}</option>`).join('')}
+            </select></div>
+            <div class="stack-row">
+              <button class="btn btn-primary" data-pr-save="${escapeAttr(key)}" ${stored ? 'disabled' : ''}>Speichern</button>
+              <button class="btn" data-pr-ignore="${escapeAttr(key)}">Ignorieren</button>
+              <button class="btn" data-pr-later="${escapeAttr(key)}" ${stored ? 'disabled' : ''}>Später prüfen</button>
+              ${stored ? '<span class="pill">bereits gespeichert</span>' : (!candidate.projectId ? '<span class="pill">Projekt nötig / Review nötig</span>' : '')}
+            </div>
+          </div>
+        `;
+      }
+
       function renderImportWorkspace() {
         // Auto-sync import project to active project when a concrete project is selected
         const contextProjectId = ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : (ui.importDraft.projectId || '');
@@ -7749,6 +8029,7 @@
               <button class="btn" id="btnStartNewProjectImport">Neues Projekt</button>
             </div>
           </div>
+          ${renderPullRequestMarkdownImportSection()}
           <details class="item" style="margin-bottom:12px;">
             <summary style="font-weight:700;cursor:pointer;">Codex-Codeanalyse vorbereiten</summary>
             <div class="mini" style="margin:8px 0 10px;">Erzeugt einen kompakten Soll-/Ist-Analyseprompt. Das Delta-JSON bleibt Review-Artefakt und wird nicht automatisch auf Features angewendet.</div>
@@ -12396,7 +12677,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
 
       function getStateLatestEntityTimestamp(state) {
         const st = (state && typeof state === 'object' && !Array.isArray(state)) ? state : {};
-        const arrays = ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes'];
+        const arrays = ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes', 'pullRequests'];
         const fields = ['updatedAt', 'createdAt', 'importedAt', 'completedAt'];
         let newestMs = Number.NEGATIVE_INFINITY;
         arrays.forEach(key => {
@@ -12419,7 +12700,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
 
       function hasRoadtripUserData(state) {
         if (!state || typeof state !== 'object' || Array.isArray(state)) return false;
-        const arrays = ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes'];
+        const arrays = ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes', 'pullRequests'];
         const hasEntityData = arrays.some(k => Array.isArray(state[k]) && state[k].some(item => item && typeof item === 'object'));
         const deletedIds = state.deletedIds && typeof state.deletedIds === 'object' && !Array.isArray(state.deletedIds) ? state.deletedIds : {};
         const hasTombstones = Object.keys(deletedIds).some(id => !!deletedIds[id]);
@@ -12433,7 +12714,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       function normalizeStateForSyncCompare(state) {
         const source = (state && typeof state === 'object' && !Array.isArray(state)) ? state : {};
         const normalized = {};
-        const arrayKeys = ['projects', 'features', 'notes', 'chats', 'analyses', 'importVersions', 'unmatchedNotes'];
+        const arrayKeys = ['projects', 'features', 'notes', 'chats', 'analyses', 'importVersions', 'unmatchedNotes', 'pullRequests'];
         const normalizeValue = (value) => {
           if (Array.isArray(value)) return value.map(normalizeValue);
           if (value && typeof value === 'object') {
@@ -12497,6 +12778,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
             const list = Array.isArray(merged[entityType]) ? merged[entityType] : [];
             merged[entityType] = list.filter(item => item && item.id && !merged.deletedIds[item.id]);
           });
+          const remotePullRequests = (remoteBase.pullRequests || []).filter(item => item && item.id && !merged.deletedIds[item.id]);
+          merged.pullRequests = mergePullRequestsByKey([], remotePullRequests);
           return merged;
         }
 
@@ -12540,6 +12823,9 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         };
 
         ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes'].forEach(mergeEntityArray);
+        const localPullRequests = (localBase.pullRequests || []).filter(item => item && item.id && !merged.deletedIds[item.id]);
+        const remotePullRequests = (remoteBase.pullRequests || []).filter(item => item && item.id && !merged.deletedIds[item.id]);
+        merged.pullRequests = mergePullRequestsByKey(localPullRequests, remotePullRequests);
         return merged;
       }
 
@@ -13027,6 +13313,14 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         if (selections.importVersions) {
           S.importVersions = mergeArrayById(S.importVersions || [], incomingState.importVersions || [], 'id', null);
         }
+        if (selections.pullRequests) {
+          const byKey = new Map((S.pullRequests || []).map(item => [getPullRequestKey(item), item]));
+          (incomingState.pullRequests || []).forEach(item => {
+            const normalized = ensurePullRequestDefaults(item);
+            if (!byKey.has(getPullRequestKey(normalized))) byKey.set(getPullRequestKey(normalized), normalized);
+          });
+          S.pullRequests = Array.from(byKey.values());
+        }
         S.projects = (S.projects || []).filter(p => !isDeleted(p.id));
         S.features = (S.features || []).filter(f => !isDeleted(f.id));
         S.notes = (S.notes || []).filter(n => !isDeleted(n.id));
@@ -13058,8 +13352,10 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         }
         if (!Array.isArray(normalized.chats)) normalized.chats = [];
         if (!Array.isArray(normalized.importVersions)) normalized.importVersions = [];
+        if (!Array.isArray(normalized.pullRequests)) normalized.pullRequests = [];
         if (!normalized.deletedIds || typeof normalized.deletedIds !== 'object' || Array.isArray(normalized.deletedIds)) normalized.deletedIds = {};
         normalized.features = normalized.features.map(ensureFeatureDefaults);
+        normalized.pullRequests = normalized.pullRequests.map(ensurePullRequestDefaults);
         return normalized;
       }
 
@@ -13074,7 +13370,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           notes: (normalized.notes || []).length,
           analyses: (normalized.analyses || []).length,
           chats: (normalized.chats || []).length,
-          importVersions: (normalized.importVersions || []).length
+          importVersions: (normalized.importVersions || []).length,
+          pullRequests: (normalized.pullRequests || []).length
         };
         const modal = document.createElement('div');
         modal.id = 'importMergeModal';
@@ -13093,6 +13390,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
                 <span class="pill">Analysen: ${counts.analyses}</span>
                 <span class="pill">Chats: ${counts.chats}</span>
                 <span class="pill">Importe: ${counts.importVersions}</span>
+                <span class="pill">Pull Requests: ${counts.pullRequests}</span>
               </div>
             </div>
             <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:16px;">
@@ -13104,6 +13402,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
                 <span class="pill">Analysen: ${S.analyses.length}</span>
                 <span class="pill">Chats: ${S.chats.length}</span>
                 <span class="pill">Importe: ${(S.importVersions || []).length}</span>
+                <span class="pill">Pull Requests: ${(S.pullRequests || []).length}</span>
               </div>
             </div>
             <div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:16px;">
@@ -13126,6 +13425,9 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
                 </label>
                 <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;letter-spacing:0;color:var(--ink);">
                   <input type="checkbox" id="mergeImportVersions" checked style="width:16px;height:16px;"> Importe/Versionen (${counts.importVersions})
+                </label>
+                <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;letter-spacing:0;color:var(--ink);">
+                  <input type="checkbox" id="mergePullRequests" checked style="width:16px;height:16px;"> Pull Requests (${counts.pullRequests})
                 </label>
               </div>
               <div class="notice" style="margin-top:10px;font-size:12px;">Merge ist sicher: bestehende IDs und Titel werden nicht überschrieben. Nur neue Einträge werden hinzugefügt.</div>
@@ -13157,9 +13459,10 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
             notes: modal.querySelector('#mergeNotes').checked,
             analyses: modal.querySelector('#mergeAnalyses').checked,
             chats: modal.querySelector('#mergeChats').checked,
-            importVersions: modal.querySelector('#mergeImportVersions').checked
+            importVersions: modal.querySelector('#mergeImportVersions').checked,
+            pullRequests: modal.querySelector('#mergePullRequests').checked
           };
-          if (!sel.projects && !sel.features && !sel.notes && !sel.analyses && !sel.chats && !sel.importVersions) {
+          if (!sel.projects && !sel.features && !sel.notes && !sel.analyses && !sel.chats && !sel.importVersions && !sel.pullRequests) {
             return alert('Bitte mindestens einen Bereich auswählen.');
           }
           applySelectiveMerge(_importDraftData, sel);
@@ -13248,6 +13551,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           chatCount: Array.isArray(source.chats) ? source.chats.length : 0,
           analysisCount: Array.isArray(source.analyses) ? source.analyses.length : 0,
           importVersionCount: Array.isArray(source.importVersions) ? source.importVersions.length : 0,
+          pullRequestCount: Array.isArray(source.pullRequests) ? source.pullRequests.length : 0,
           deletedIdCount: source.deletedIds && typeof source.deletedIds === 'object' && !Array.isArray(source.deletedIds) ? Object.keys(source.deletedIds).length : 0
         };
       }
@@ -13267,6 +13571,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
             chats: preparedChats.clean,
             analyses: Array.isArray(S.analyses) ? S.analyses : [],
             importVersions: preparedImportVersions.clean,
+            pullRequests: Array.isArray(S.pullRequests) ? S.pullRequests : [],
             deletedIds: S.deletedIds && typeof S.deletedIds === 'object' && !Array.isArray(S.deletedIds) ? S.deletedIds : {}
           };
           const counts = getRoadtripEntityCounts(exportData);
@@ -13284,6 +13589,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
               chats: 'chats.json',
               analyses: 'analyses.json',
               importVersions: 'importVersions.json',
+              pullRequests: 'pullRequests.json',
               deletedIds: 'deletedIds.json'
             }
           };
@@ -13361,6 +13667,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           chats: await parseZipJsonFile(zip, 'chats.json', [], true),
           analyses: await parseZipJsonFile(zip, 'analyses.json', [], true),
           importVersions: await parseZipJsonFile(zip, 'importVersions.json', [], true),
+          pullRequests: await parseZipJsonFile(zip, 'pullRequests.json', [], false),
           deletedIds: await parseZipJsonFile(zip, 'deletedIds.json', {}, true)
         });
         applyRoadtripZipMeta(reconstructedS, meta);
