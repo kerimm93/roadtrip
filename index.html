@@ -6078,6 +6078,36 @@
         return parts.join(' ');
       }
 
+      function hasSprintCardKanbanDeliverySignal(sources) {
+        const deliverySources = (sources || []).filter(source => source && typeof source === 'object');
+        const hasPullRequest = deliverySources.some(source =>
+          ['pr', 'prNumber', 'pullRequest', 'pullRequestNumber', 'prUrl', 'pullRequestUrl'].some(key =>
+            !!compactProjectSprintKanbanValue(source[key], '')
+          ) || (Array.isArray(source.pullRequests) && source.pullRequests.length > 0)
+        );
+        if (hasPullRequest) return true;
+        const rawDeliveryText = deliverySources
+          .flatMap(source => [
+            source.rawHandoffText,
+            source.rawReportText,
+            ...(Array.isArray(source.handoffHistory) ? source.handoffHistory.map(entry =>
+              typeof entry === 'string' ? entry : entry && (entry.raw || entry.rawHandoffText || entry.rawReportText)
+            ) : [])
+          ])
+          .map(value => compactProjectSprintKanbanValue(value, ''))
+          .filter(Boolean)
+          .join(' ');
+        const strongDeliveryPattern = /code-seitig abgeschlossen|smoke(?:-test)?|pull request|\bpr(?:\s*(?:#\d+|mergen|reviewen))?\b|mergefähig|hard reload|backup exportieren|pr mergen/i;
+        if (strongDeliveryPattern.test(rawDeliveryText)) return true;
+        const hasBranch = deliverySources.some(source =>
+          ['branch', 'branchName'].some(key => !!compactProjectSprintKanbanValue(source[key], ''))
+        );
+        const hasBranchDeliveryHint = /\b(?:merge|review|smoke(?:-test)?)\b/i.test(rawDeliveryText);
+        const hasCompletedDeliveryHint = deliverySources.some(source => !!source.completedAt)
+          && /code-seitig abgeschlossen|mergefähig|smoke(?:-test)?|hard reload|backup exportieren/i.test(rawDeliveryText);
+        return (hasBranch && hasBranchDeliveryHint) || hasCompletedDeliveryHint;
+      }
+
       function buildSprintCardKanbanItem(project, type, source, overrides = {}) {
         const projectTitle = compactProjectSprintKanbanValue(project && project.title, 'Ohne Titel');
         const sprintTitle = compactProjectSprintKanbanValue(overrides.title || (source && source.title), type);
@@ -6105,7 +6135,6 @@
         const chats = Array.isArray(S.chats) ? S.chats : [];
         const features = Array.isArray(S.features) ? S.features : [];
         const featureStatusRank = { 'selected-for-sprint': 0, 'in-progress': 1, planned: 2, idea: 3, blocked: 4, deferred: 5 };
-        const reviewPattern = /code-seitig abgeschlossen|smoke(?:-test)?|pull request|\bpr\b|merge|hard reload|backup exportieren|\bimport|\breview\b|mergefähig/i;
         const importPattern = /handoff[^.\n]{0,40}import|abschluss[^.\n]{0,40}import|abgeschlossen|completed/i;
         const items = [];
 
@@ -6117,7 +6146,10 @@
             .sort((a, b) => String(b.updatedAt || b.completedAt || b.startedAt || '').localeCompare(String(a.updatedAt || a.completedAt || a.startedAt || '')));
           const sprintChats = projectChats.filter(chat => (chat.type || chat.chatType) === 'sprint');
           const activeSprintChat = sprintChats.find(chat => String(chat.status || '').toLowerCase() === 'aktiv') || null;
-          const completedSprintChat = sprintChats.find(chat => String(chat.status || '').toLowerCase() === 'abgeschlossen' || chat.completedAt) || null;
+          const completedSprintChat = sprintChats
+            .filter(chat => String(chat.status || '').toLowerCase() === 'abgeschlossen' || chat.completedAt)
+            .sort((a, b) => String(b.completedAt || b.handoffImportedAt || b.updatedAt || b.startedAt || '')
+              .localeCompare(String(a.completedAt || a.handoffImportedAt || a.updatedAt || a.startedAt || '')))[0] || null;
           const latestSprintChat = sprintChats[0] || null;
           const mainChat = (project.mainChatId && projectChats.find(chat => chat.id === project.mainChatId))
             || projectChats.find(chat => (chat.type || chat.chatType) === 'project-main')
@@ -6195,7 +6227,7 @@
             })));
 
           const deliveryText = getSprintCardKanbanText(deliverySources);
-          if (reviewPattern.test(deliveryText)) {
+          if (hasSprintCardKanbanDeliverySignal(deliverySources)) {
             items.push(buildSprintCardKanbanItem(project, 'Review / Smoke / Merge', latestSprintChat || completedSprintChat || project, {
               ...shared,
               title: getProjectSprintKanbanValue([latestSprintChat, completedSprintChat, project], ['title', 'lastCompletedSprint', 'completedSprint'], 'Review / Smoke / Merge'),
