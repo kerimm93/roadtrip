@@ -7805,6 +7805,40 @@
         });
       }
 
+      function mergePullRequestsByKey(localList, remoteList) {
+        const byKey = new Map();
+        const timestampFor = (item) => {
+          for (const field of ['updatedAt', 'importedAt', 'createdAt']) {
+            const ms = Date.parse(item && item[field]);
+            if (Number.isFinite(ms)) return ms;
+          }
+          return Number.NEGATIVE_INFINITY;
+        };
+        const isEmpty = (value) => value == null || value === '' || (Array.isArray(value) && value.length === 0);
+        const add = (item) => {
+          if (!item || typeof item !== 'object') return;
+          const itemTimestamp = timestampFor(item);
+          const normalized = ensurePullRequestDefaults(item);
+          const key = getPullRequestKey(normalized);
+          if (!normalized.repoFullName || !normalized.number || key.endsWith('#0')) return;
+          const existing = byKey.get(key);
+          if (!existing) {
+            byKey.set(key, { item: normalized, timestamp: itemTimestamp });
+            return;
+          }
+          const incomingIsNewer = itemTimestamp > existing.timestamp;
+          const newer = incomingIsNewer ? normalized : existing.item;
+          const older = incomingIsNewer ? existing.item : normalized;
+          Object.keys(older).forEach(field => {
+            if (isEmpty(newer[field]) && !isEmpty(older[field])) newer[field] = older[field];
+          });
+          byKey.set(key, { item: ensurePullRequestDefaults(newer), timestamp: incomingIsNewer ? itemTimestamp : existing.timestamp });
+        };
+        (Array.isArray(localList) ? localList : []).forEach(add);
+        (Array.isArray(remoteList) ? remoteList : []).forEach(add);
+        return Array.from(byKey.values()).map(entry => entry.item);
+      }
+
       function inferPullRequestStatus(context) {
         const text = String(context || '').toLowerCase();
         if (/(^|[\s:([{-])(merged|zusammengeführt)(?=$|[\s:)\]}.,;-])/i.test(text)) return 'merged';
@@ -12740,10 +12774,12 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const merged = JSON.parse(JSON.stringify(opts.preferRemoteWhenLocalClean ? remoteBase : localBase));
         merged.deletedIds = mergeDeletedIds(localBase.deletedIds || {}, remoteBase.deletedIds || {});
         if (opts.preferRemoteWhenLocalClean) {
-          ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes', 'pullRequests'].forEach(entityType => {
+          ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes'].forEach(entityType => {
             const list = Array.isArray(merged[entityType]) ? merged[entityType] : [];
             merged[entityType] = list.filter(item => item && item.id && !merged.deletedIds[item.id]);
           });
+          const remotePullRequests = (remoteBase.pullRequests || []).filter(item => item && item.id && !merged.deletedIds[item.id]);
+          merged.pullRequests = mergePullRequestsByKey([], remotePullRequests);
           return merged;
         }
 
@@ -12786,7 +12822,10 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           merged[entityType] = Array.from(byId.values()).filter(item => item && item.id && !merged.deletedIds[item.id]);
         };
 
-        ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes', 'pullRequests'].forEach(mergeEntityArray);
+        ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes'].forEach(mergeEntityArray);
+        const localPullRequests = (localBase.pullRequests || []).filter(item => item && item.id && !merged.deletedIds[item.id]);
+        const remotePullRequests = (remoteBase.pullRequests || []).filter(item => item && item.id && !merged.deletedIds[item.id]);
+        merged.pullRequests = mergePullRequestsByKey(localPullRequests, remotePullRequests);
         return merged;
       }
 
