@@ -8011,6 +8011,17 @@
           && (String(chat.status || '').toLowerCase() === 'abgeschlossen' || !!chat.completedAt));
       }
 
+      function removePullRequestFromOtherChats(prKey, targetChatId, projectId, updatedAt) {
+        (S.chats || []).forEach(chat => {
+          if (!chat || chat.projectId !== projectId || chat.id === targetChatId) return;
+          if (!(chat.type === 'sprint' || normalizeText(chat.type).includes('sprint'))) return;
+          if (!Array.isArray(chat.pullRequests) || !chat.pullRequests.length) return;
+          const beforeCount = chat.pullRequests.length;
+          chat.pullRequests = chat.pullRequests.filter(item => getPullRequestKey(item) !== prKey);
+          if (chat.pullRequests.length !== beforeCount) chat.updatedAt = updatedAt;
+        });
+      }
+
       function buildPullRequestSprintAssignmentPrompt() {
         const state = ui.pullRequestImport || {};
         const projectId = getPullRequestImportProjectId();
@@ -8098,28 +8109,49 @@
         const projectId = getPullRequestImportProjectId();
         if (!projectId || parsed.projectId !== projectId) return alert('projectId passt nicht zum gewählten Projektkontext.');
         const validChats = new Map(getCompletedSprintChatsForPullRequests(projectId).map(chat => [chat.id, chat]));
-        const pullRequestsByKey = new Map((S.pullRequests || []).map(item => [getPullRequestKey(item), item]));
+        const pullRequestsByKey = new Map();
+        (S.pullRequests || []).forEach(item => {
+          const normalized = ensurePullRequestDefaults(item);
+          const key = getPullRequestKey(normalized);
+          if (!key || key.endsWith('#0')) return;
+          pullRequestsByKey.set(key, { item, stored: true });
+        });
+        ((ui.pullRequestImport && ui.pullRequestImport.candidates) || []).forEach(candidate => {
+          const normalized = ensurePullRequestDefaults(Object.assign({}, candidate, { projectId: projectId }));
+          const key = getPullRequestKey(normalized);
+          if (!key || key.endsWith('#0') || pullRequestsByKey.has(key)) return;
+          pullRequestsByKey.set(key, { item: normalized, stored: false });
+        });
         let assigned = 0;
         let skipped = 0;
         parsed.assignments.forEach(assignment => {
           const key = getPullRequestKey(assignment);
-          const pullRequest = pullRequestsByKey.get(key);
+          const match = pullRequestsByKey.get(key);
+          const pullRequest = match ? match.item : null;
           const chat = validChats.get(String(assignment.chatId || ''));
-          if (!pullRequest || pullRequest.projectId !== projectId || !chat) {
+          if (!pullRequest || !chat || (match.stored && pullRequest.projectId !== projectId)) {
             skipped += 1;
             return;
           }
           const now = new Date().toISOString();
-          pullRequest.chatId = chat.id;
-          pullRequest.updatedAt = now;
+          const savedPullRequest = match.stored
+            ? pullRequest
+            : ensurePullRequestDefaults(Object.assign({}, pullRequest, { id: uid('pr'), projectId, chatId: chat.id, updatedAt: now }));
+          savedPullRequest.chatId = chat.id;
+          savedPullRequest.updatedAt = now;
+          if (!match.stored) {
+            S.pullRequests.push(savedPullRequest);
+            pullRequestsByKey.set(key, { item: savedPullRequest, stored: true });
+          }
+          removePullRequestFromOtherChats(key, chat.id, projectId, now);
           if (!Array.isArray(chat.pullRequests)) chat.pullRequests = [];
           if (!chat.pullRequests.some(item => getPullRequestKey(item) === key)) {
             chat.pullRequests.push({
-              url: pullRequest.url,
-              repoFullName: pullRequest.repoFullName,
-              number: pullRequest.number,
-              title: pullRequest.title,
-              source: pullRequest.source
+              url: savedPullRequest.url,
+              repoFullName: savedPullRequest.repoFullName,
+              number: savedPullRequest.number,
+              title: savedPullRequest.title,
+              source: savedPullRequest.source
             });
           }
           chat.updatedAt = now;
