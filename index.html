@@ -2015,7 +2015,7 @@
         nextSprintMainchatHandoffByProject: {},
         importFeatureDuplicateReviewsByProject: {},
         sprintQuickPanelByProject: {},
-        pullRequestImport: { rawText: '', candidates: [] }
+        pullRequestImport: { rawText: '', candidates: [], projectId: '', repoFullName: '', assignmentPrompt: '', assignmentJson: '' }
       };
 
       const $ = (id) => document.getElementById(id);
@@ -2334,8 +2334,12 @@
         S.notes = S.notes.map(ensureNoteDefaults);
         S.chats = S.chats.map(ensureChatDefaults);
         S.pullRequests = S.pullRequests.map(ensurePullRequestDefaults);
-        if (!ui.pullRequestImport || typeof ui.pullRequestImport !== 'object') ui.pullRequestImport = { rawText: '', candidates: [] };
+        if (!ui.pullRequestImport || typeof ui.pullRequestImport !== 'object') ui.pullRequestImport = { rawText: '', candidates: [], projectId: '', repoFullName: '', assignmentPrompt: '', assignmentJson: '' };
         if (!Array.isArray(ui.pullRequestImport.candidates)) ui.pullRequestImport.candidates = [];
+        if (typeof ui.pullRequestImport.projectId !== 'string') ui.pullRequestImport.projectId = '';
+        if (typeof ui.pullRequestImport.repoFullName !== 'string') ui.pullRequestImport.repoFullName = '';
+        if (typeof ui.pullRequestImport.assignmentPrompt !== 'string') ui.pullRequestImport.assignmentPrompt = '';
+        if (typeof ui.pullRequestImport.assignmentJson !== 'string') ui.pullRequestImport.assignmentJson = '';
         if (!ui.filters || typeof ui.filters !== 'object') ui.filters = { pool: 'alle', status: 'alle', category: 'alle', search: '' };
         if (!ui.filters.pool) ui.filters.pool = 'alle';
         if (!ui.multiProjectImport || typeof ui.multiProjectImport !== 'object') ui.multiProjectImport = { rawText: '', prompt: '', resultJson: '', summary: '', updates: [], unmatchedNotes: [], visible: false };
@@ -2882,18 +2886,47 @@
         if ($('btnLoadMultiProjectReview')) $('btnLoadMultiProjectReview').addEventListener('click', loadMultiProjectReviewProposals);
         if ($('btnClearMultiProjectReview')) $('btnClearMultiProjectReview').addEventListener('click', clearMultiProjectReview);
         if ($('pullRequestMarkdownInput')) $('pullRequestMarkdownInput').addEventListener('input', e => { ui.pullRequestImport.rawText = e.target.value; });
+        if ($('pullRequestProjectContext')) $('pullRequestProjectContext').addEventListener('change', e => {
+          ui.pullRequestImport.projectId = e.target.value || '';
+          ui.pullRequestImport.candidates.forEach(candidate => {
+            if (!candidate.projectManuallySet) candidate.projectId = ui.pullRequestImport.projectId;
+          });
+          renderView();
+        });
+        if ($('pullRequestRepoContext')) $('pullRequestRepoContext').addEventListener('input', e => { ui.pullRequestImport.repoFullName = String(e.target.value || '').trim().toLowerCase(); });
         if ($('btnExtractPullRequests')) $('btnExtractPullRequests').addEventListener('click', () => {
           ui.pullRequestImport.candidates = extractPullRequestCandidatesFromText(ui.pullRequestImport.rawText || '');
+          ui.pullRequestImport.candidates.forEach(candidate => {
+            candidate.projectId = ui.pullRequestImport.projectId || candidate.projectId;
+            candidate.projectManuallySet = false;
+          });
+          if (!ui.pullRequestImport.repoFullName && ui.pullRequestImport.candidates.length) {
+            ui.pullRequestImport.repoFullName = ui.pullRequestImport.candidates[0].repoFullName || '';
+          }
           renderView();
         });
         if ($('btnClearPullRequestImport')) $('btnClearPullRequestImport').addEventListener('click', () => {
-          ui.pullRequestImport = { rawText: '', candidates: [] };
+          const projectId = ui.pullRequestImport.projectId || '';
+          ui.pullRequestImport = { rawText: '', candidates: [], projectId, repoFullName: '', assignmentPrompt: '', assignmentJson: '' };
           renderView();
         });
+        if ($('btnBuildPullRequestAssignmentPrompt')) $('btnBuildPullRequestAssignmentPrompt').addEventListener('click', () => {
+          try {
+            ui.pullRequestImport.assignmentPrompt = buildPullRequestSprintAssignmentPrompt();
+            renderView();
+          } catch (err) {
+            alert(err && err.message ? err.message : 'Zuordnungsprompt konnte nicht erstellt werden.');
+          }
+        });
+        if ($('btnCopyPullRequestAssignmentPrompt')) $('btnCopyPullRequestAssignmentPrompt').addEventListener('click', () => copyPrompt('pullRequestAssignmentPromptOutput'));
+        if ($('pullRequestAssignmentPromptOutput')) $('pullRequestAssignmentPromptOutput').addEventListener('input', e => { ui.pullRequestImport.assignmentPrompt = e.target.value; });
+        if ($('pullRequestAssignmentJsonInput')) $('pullRequestAssignmentJsonInput').addEventListener('input', e => { ui.pullRequestImport.assignmentJson = e.target.value; });
+        if ($('btnImportPullRequestAssignments')) $('btnImportPullRequestAssignments').addEventListener('click', importPullRequestSprintAssignments);
         qq('[data-pr-project]').forEach(select => select.addEventListener('change', () => {
           const candidate = getPullRequestImportCandidate(select.dataset.prProject || '');
           if (!candidate) return;
           candidate.projectId = select.value || '';
+          candidate.projectManuallySet = true;
           candidate.chatId = '';
           renderView();
         }));
@@ -6870,6 +6903,12 @@
                   </div>
                   ${c.summary ? `<div class="item-desc">${escapeHtml(c.summary)}</div>` : ''}
                   ${c.nextStep ? `<div class="mini" style="color:var(--accent)">→ ${escapeHtml(c.nextStep)}</div>` : ''}
+                  ${Array.isArray(c.pullRequests) && c.pullRequests.length ? `
+                    <div class="mini" style="margin:7px 0 4px;"><strong>Pull Requests</strong></div>
+                    <div class="list">
+                      ${c.pullRequests.map(pr => `<a href="${escapeAttr(pr.url || '#')}" target="_blank" rel="noopener" class="mini">${escapeHtml(pr.title || `${pr.repoFullName || 'PR'} #${pr.number || '—'}`)} · PR #${escapeHtml(String(pr.number || '—'))}</a>`).join('')}
+                    </div>
+                  ` : ''}
                   <div class="stack-row">
                     ${c.url && c.url.trim() ? `<a href="${escapeAttr(c.url.trim())}" target="_blank" rel="noopener" class="btn">Öffnen</a>` : ''}
                     ${p.mainChatId !== c.id ? `<button class="btn" data-set-chat-main="${c.id}" ${isArchivedProject ? 'disabled' : ''}>Als Hauptchat markieren</button>` : '<span class="pill pill-gold">Kanonischer Hauptchat</span>'}
@@ -7956,13 +7995,186 @@
         renderView();
       }
 
+      function getPullRequestImportProjectId() {
+        const state = ui.pullRequestImport || {};
+        if (state.projectId && S.projects.some(project => project.id === state.projectId)) return state.projectId;
+        if (ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY && S.projects.some(project => project.id === ui.activeProjectId)) {
+          state.projectId = ui.activeProjectId;
+          return state.projectId;
+        }
+        return '';
+      }
+
+      function getCompletedSprintChatsForPullRequests(projectId) {
+        return (S.chats || []).filter(chat => chat.projectId === projectId
+          && (chat.type === 'sprint' || normalizeText(chat.type).includes('sprint'))
+          && (String(chat.status || '').toLowerCase() === 'abgeschlossen' || !!chat.completedAt));
+      }
+
+      function removePullRequestFromOtherChats(prKey, targetChatId, projectId, updatedAt) {
+        (S.chats || []).forEach(chat => {
+          if (!chat || chat.projectId !== projectId || chat.id === targetChatId) return;
+          if (!(chat.type === 'sprint' || normalizeText(chat.type).includes('sprint'))) return;
+          if (!Array.isArray(chat.pullRequests) || !chat.pullRequests.length) return;
+          const beforeCount = chat.pullRequests.length;
+          chat.pullRequests = chat.pullRequests.filter(item => getPullRequestKey(item) !== prKey);
+          if (chat.pullRequests.length !== beforeCount) chat.updatedAt = updatedAt;
+        });
+      }
+
+      function buildPullRequestSprintAssignmentPrompt() {
+        const state = ui.pullRequestImport || {};
+        const projectId = getPullRequestImportProjectId();
+        const project = S.projects.find(item => item.id === projectId);
+        if (!project) throw new Error('Bitte zuerst ein Projekt als PR-Kontext wählen.');
+        const candidateKeys = new Set((state.candidates || []).map(getPullRequestKey));
+        const pullRequests = mergePullRequestsByKey(
+          (S.pullRequests || []).filter(item => item.projectId === projectId),
+          (state.candidates || []).filter(item => item.projectId === projectId)
+        ).filter(item => candidateKeys.size === 0 || candidateKeys.has(getPullRequestKey(item)) || item.projectId === projectId);
+        if (!pullRequests.length) throw new Error('Für dieses Projekt sind noch keine extrahierten oder gespeicherten PRs vorhanden.');
+        const repoFullName = String(state.repoFullName || pullRequests[0].repoFullName || '').trim().toLowerCase();
+        const sprintChats = getCompletedSprintChatsForPullRequests(projectId);
+        const prPayload = pullRequests.map(item => ({
+          url: item.url || '',
+          repoFullName: item.repoFullName || '',
+          number: Number(item.number) || 0,
+          title: item.title || '',
+          status: normalizePullRequestStatus(item.status),
+          rawContext: item.rawContext || '',
+          importedAt: item.importedAt || ''
+        }));
+        const chatPayload = sprintChats.map(chat => ({
+          chatId: chat.id,
+          title: chat.title || '',
+          status: chat.status || '',
+          summary: chat.summary || '',
+          currentFocus: chat.currentFocus || '',
+          nextStep: chat.nextStep || '',
+          branchName: chat.branchName || chat.branch || '',
+          pullRequests: Array.isArray(chat.pullRequests) ? chat.pullRequests : [],
+          completedAt: chat.completedAt || '',
+          importedAt: chat.importedAt || chat.handoffImportedAt || '',
+          updatedAt: chat.updatedAt || ''
+        }));
+        return [
+          '# Roadtrip: Pull Requests abgeschlossenen Sprintchats zuordnen',
+          '',
+          `Projekt: ${project.title || project.id}`,
+          `projectId: ${project.id}`,
+          `repoFullName: ${repoFullName || '—'}`,
+          '',
+          'Ordne die Pull Requests nur dann einem abgeschlossenen Sprintchat/Handoff zu, wenn Titel, Kontext, Branch oder vorhandene Zusammenfassung eine plausible Verbindung ergeben.',
+          '- Markiere unsichere Zuordnungen mit reviewNeeded: true und confidence "medium" oder "low".',
+          '- Ordne keinen PR blind zu. Nicht plausible Fälle gehören in unmatched.',
+          '- Schlage keine Feature-Updates und keine Projekt-, Feature- oder Sprintstatusänderungen vor.',
+          '- Gib ausschließlich gültiges JSON ohne Markdown-Codefence zurück.',
+          '',
+          '## Pull Requests',
+          JSON.stringify(prPayload, null, 2),
+          '',
+          '## Abgeschlossene Sprintchats / Handoffs',
+          JSON.stringify(chatPayload, null, 2),
+          '',
+          '## Exakter JSON-Vertrag',
+          JSON.stringify({
+            type: 'roadtrip-pr-sprint-assignment-v1',
+            projectId: project.id,
+            repoFullName,
+            assignments: [{
+              repoFullName: repoFullName || 'owner/repo',
+              number: 123,
+              url: 'https://github.com/owner/repo/pull/123',
+              title: '...',
+              chatId: '...',
+              confidence: 'high|medium|low',
+              reason: '...',
+              reviewNeeded: false
+            }],
+            unmatched: [{ repoFullName: repoFullName || 'owner/repo', number: 123, url: '...', reason: '...' }]
+          }, null, 2)
+        ].join('\n');
+      }
+
+      function importPullRequestSprintAssignments() {
+        let parsed;
+        try {
+          parsed = JSON.parse(String((ui.pullRequestImport || {}).assignmentJson || '').trim());
+        } catch (err) {
+          return alert('Ungültiges JSON für die PR-Sprint-Zuordnung.');
+        }
+        if (!parsed || parsed.type !== 'roadtrip-pr-sprint-assignment-v1' || !Array.isArray(parsed.assignments)) {
+          return alert('Ungültiger Vertrag: type und assignments fehlen oder sind falsch.');
+        }
+        const projectId = getPullRequestImportProjectId();
+        if (!projectId || parsed.projectId !== projectId) return alert('projectId passt nicht zum gewählten Projektkontext.');
+        const validChats = new Map(getCompletedSprintChatsForPullRequests(projectId).map(chat => [chat.id, chat]));
+        const pullRequestsByKey = new Map();
+        (S.pullRequests || []).forEach(item => {
+          const normalized = ensurePullRequestDefaults(item);
+          const key = getPullRequestKey(normalized);
+          if (!key || key.endsWith('#0')) return;
+          pullRequestsByKey.set(key, { item, stored: true });
+        });
+        ((ui.pullRequestImport && ui.pullRequestImport.candidates) || []).forEach(candidate => {
+          const normalized = ensurePullRequestDefaults(Object.assign({}, candidate, { projectId: projectId }));
+          const key = getPullRequestKey(normalized);
+          if (!key || key.endsWith('#0') || pullRequestsByKey.has(key)) return;
+          pullRequestsByKey.set(key, { item: normalized, stored: false });
+        });
+        let assigned = 0;
+        let skipped = 0;
+        parsed.assignments.forEach(assignment => {
+          const key = getPullRequestKey(assignment);
+          const match = pullRequestsByKey.get(key);
+          const pullRequest = match ? match.item : null;
+          const chat = validChats.get(String(assignment.chatId || ''));
+          if (!pullRequest || !chat || (match.stored && pullRequest.projectId !== projectId)) {
+            skipped += 1;
+            return;
+          }
+          const now = new Date().toISOString();
+          const savedPullRequest = match.stored
+            ? pullRequest
+            : ensurePullRequestDefaults(Object.assign({}, pullRequest, { id: uid('pr'), projectId, chatId: chat.id, updatedAt: now }));
+          savedPullRequest.chatId = chat.id;
+          savedPullRequest.updatedAt = now;
+          if (!match.stored) {
+            S.pullRequests.push(savedPullRequest);
+            pullRequestsByKey.set(key, { item: savedPullRequest, stored: true });
+          }
+          removePullRequestFromOtherChats(key, chat.id, projectId, now);
+          if (!Array.isArray(chat.pullRequests)) chat.pullRequests = [];
+          if (!chat.pullRequests.some(item => getPullRequestKey(item) === key)) {
+            chat.pullRequests.push({
+              url: savedPullRequest.url,
+              repoFullName: savedPullRequest.repoFullName,
+              number: savedPullRequest.number,
+              title: savedPullRequest.title,
+              source: savedPullRequest.source
+            });
+          }
+          chat.updatedAt = now;
+          assigned += 1;
+        });
+        save();
+        alert(`${assigned} PR-Zuordnung(en) importiert. ${skipped} Eintrag/Einträge übersprungen. Unmatched bleiben unverändert.`);
+        renderView();
+      }
+
       function renderPullRequestMarkdownImportSection() {
         const state = ui.pullRequestImport || { rawText: '', candidates: [] };
+        const projectId = getPullRequestImportProjectId();
         const candidates = Array.isArray(state.candidates) ? state.candidates : [];
         return `
           <details class="item" style="margin-bottom:12px;" ${candidates.length ? 'open' : ''}>
             <summary style="font-weight:700;cursor:pointer;">GitHub-PR-Markdown abgleichen</summary>
-            <div class="mini" style="margin:8px 0 10px;">Erkennt ausschließlich kopierte GitHub-PR-Links lokal. Keine API, keine externen Requests und keine automatische Speicherung.</div>
+            <div class="mini" style="margin:8px 0 10px;">Wähle einmal Projekt und Repository. Erkannte PRs werden diesem Kontext zugeordnet und anschließend mit abgeschlossenen Sprintchats verglichen. Keine API oder externen Requests.</div>
+            <div class="field"><label for="pullRequestProjectContext">Projekt</label><select id="pullRequestProjectContext">
+              <option value="">— Projekt wählen —</option>
+              ${S.projects.map(project => `<option value="${escapeAttr(project.id)}" ${project.id === projectId ? 'selected' : ''}>${escapeHtml(project.title)}</option>`).join('')}
+            </select></div>
+            <div class="field"><label for="pullRequestRepoContext">Repository (owner/repo, optional ableitbar)</label><input id="pullRequestRepoContext" value="${escapeAttr(state.repoFullName || '')}" placeholder="owner/repo"></div>
             <div class="field">
               <label for="pullRequestMarkdownInput">GitHub-PR-Markdown / Rohtext</label>
               <textarea id="pullRequestMarkdownInput" style="min-height:130px;" placeholder="[PR-Titel](https://github.com/owner/repo/pull/123)">${escapeHtml(state.rawText || '')}</textarea>
@@ -7973,6 +8185,15 @@
             </div>
             <div style="margin-top:12px;">
               ${candidates.length ? candidates.map(renderPullRequestCandidate).join('') : '<div class="notice">Noch keine PR-Kandidaten erkannt.</div>'}
+            </div>
+            <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px;">
+              <div class="stack-row">
+                <button class="btn btn-primary" id="btnBuildPullRequestAssignmentPrompt">Sprint-Zuordnungsprompt erstellen</button>
+                <button class="btn" id="btnCopyPullRequestAssignmentPrompt" ${state.assignmentPrompt ? '' : 'disabled'}>Prompt kopieren</button>
+              </div>
+              <div class="field" style="margin-top:10px;"><label for="pullRequestAssignmentPromptOutput">Zuordnungsprompt</label><textarea id="pullRequestAssignmentPromptOutput" style="min-height:180px;" readonly>${escapeHtml(state.assignmentPrompt || '')}</textarea></div>
+              <div class="field"><label for="pullRequestAssignmentJsonInput">JSON-Ergebnis importieren</label><textarea id="pullRequestAssignmentJsonInput" style="min-height:160px;" placeholder='{"type":"roadtrip-pr-sprint-assignment-v1",...}'>${escapeHtml(state.assignmentJson || '')}</textarea></div>
+              <button class="btn btn-primary" id="btnImportPullRequestAssignments">PR-Sprint-Zuordnung importieren</button>
             </div>
           </details>
         `;
@@ -7991,9 +8212,7 @@
               <span class="pill">${escapeHtml(candidate.status)}</span>
             </div>
             <div class="mini" style="margin:7px 0;">${escapeHtml(candidate.rawContext || '')}</div>
-            <div class="notice ${suggestion.confidence === 'low' ? 'notice-info' : ''}" style="margin-bottom:8px;">
-              Vorschlag: <strong>${project ? escapeHtml(project.title) : 'keine Zuordnung'}</strong> · ${escapeHtml(suggestion.confidence)} · ${escapeHtml(suggestion.reason)}
-            </div>
+            <div class="notice ${suggestion.confidence === 'low' ? 'notice-info' : ''}" style="margin-bottom:8px;">Projektkontext: <strong>${project ? escapeHtml(project.title) : 'noch nicht gewählt'}</strong>${candidate.projectManuallySet ? ' · manuell abweichend' : ''}</div>
             <div class="field"><label>Projekt</label><select data-pr-project="${escapeAttr(key)}">
               <option value="">— Projekt wählen —</option>
               ${S.projects.map(item => `<option value="${escapeAttr(item.id)}" ${item.id === candidate.projectId ? 'selected' : ''}>${escapeHtml(item.title)}</option>`).join('')}
