@@ -7832,7 +7832,20 @@
       }
 
       function collectDeltaNestedUpdates(items, key) {
-        return normalizeDeltaReviewArray(items).map(item => item[key]).filter(value => value && typeof value === 'object' && !Array.isArray(value)).map((value, index) => Object.assign({ title: normalizeDeltaReviewArray(items)[index] ? (normalizeDeltaReviewArray(items)[index].title || normalizeDeltaReviewArray(items)[index].featureId || '') : '' }, value));
+        return normalizeDeltaReviewArray(items).flatMap(item => {
+          const nested = item[key];
+          const sourceLabel = item.title || item.featureTitle || item.featureId || item.id || '';
+          const sourceFeatureId = item.featureId || item.id || '';
+          const normalizeNested = Array.isArray(nested)
+            ? nested
+            : (nested && typeof nested === 'object' && !Array.isArray(nested) ? [nested] : []);
+          return normalizeNested
+            .filter(value => value && typeof value === 'object' && !Array.isArray(value))
+            .map(value => Object.assign({
+              title: value.title || value.featureTitle || sourceLabel,
+              sourceFeatureId: value.sourceFeatureId || sourceFeatureId
+            }, value));
+        });
       }
 
       function validateRoadtripCodeAnalysisDeltaResult(parsed) {
