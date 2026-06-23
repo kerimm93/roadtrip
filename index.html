@@ -1993,7 +1993,7 @@
         showAllProjects: false,
         projectEditMode: false,
         importDraft: { html: '', prompt: '', analysisPrompt: '', cleanupPrompt: '', projectId: '' },
-        codeAnalysisPromptPrep: { scope: '', repoBranch: '', outputPrompt: '', mode: '', analysisMode: 'planned-feature-check', includeDescription: false, includePurposeWorkflow: false, includeCriteriaQuestions: false, includeSourceContext: false, includeFeatureFlow: false },
+        codeAnalysisPromptPrep: { scope: '', repoBranch: '', outputPrompt: '', mode: '', analysisMode: 'planned-feature-check', includeDescription: false, includePurposeWorkflow: false, includeCriteriaQuestions: false, includeSourceContext: false, includeFeatureFlow: false, deltaResultJson: '', deltaReview: null, deltaReviewError: '' },
         chatWorkflow: { projectId: '', sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', sprintStartJson: '', mainChatBootstrapJson: '', prompt: '', mode: '', sprintExecutionMode: SPRINT_EXECUTION_MODES.codexControl },
         chatWorkflowByProject: {},
         chatWorkflowHandoff: { projectId: '', sourceChatId: '', rawJson: '' },
@@ -2960,6 +2960,7 @@
         if ($('codeAnalysisMode')) $('codeAnalysisMode').addEventListener('change', e => {
           getCodeAnalysisPromptPrepState().analysisMode = e.target.value;
           if ($('codeAnalysisModeHelp')) $('codeAnalysisModeHelp').textContent = getCodeAnalysisModeHelp(e.target.value);
+          if ($('codeAnalysisModePurpose')) $('codeAnalysisModePurpose').textContent = getCodeAnalysisModePurpose(e.target.value);
         });
         qq('[data-code-analysis-disclosure]').forEach(input => input.addEventListener('change', e => {
           const key = e.target.dataset.codeAnalysisDisclosure || '';
@@ -2974,6 +2975,8 @@
         if ($('analysisBundleInstructions')) $('analysisBundleInstructions').addEventListener('input', e => { getCodeAnalysisPromptPrepState().bundleInstructions = e.target.value; });
         if ($('analysisBundleResultSchema')) $('analysisBundleResultSchema').addEventListener('input', e => { getCodeAnalysisPromptPrepState().bundleResultSchema = e.target.value; });
         if ($('analysisBundleFallbackPrompt')) $('analysisBundleFallbackPrompt').addEventListener('input', e => { getCodeAnalysisPromptPrepState().bundleFallbackPrompt = e.target.value; });
+        if ($('codeAnalysisDeltaResultJson')) $('codeAnalysisDeltaResultJson').addEventListener('input', e => { getCodeAnalysisPromptPrepState().deltaResultJson = e.target.value; });
+        if ($('btnCheckCodeAnalysisDeltaResult')) $('btnCheckCodeAnalysisDeltaResult').addEventListener('click', loadCodeAnalysisDeltaReview);
         if ($('analysisPromptOutput')) $('analysisPromptOutput').addEventListener('input', e => { ui.importDraft.analysisPrompt = e.target.value; });
         if ($('promptOutput')) $('promptOutput').addEventListener('input', e => { ui.importDraft.prompt = e.target.value; });
         if ($('cleanupPromptOutput')) $('cleanupPromptOutput').addEventListener('input', e => { ui.importDraft.cleanupPrompt = e.target.value; });
@@ -7220,7 +7223,7 @@
 
       function getCodeAnalysisPromptPrepState() {
         if (!ui.codeAnalysisPromptPrep || typeof ui.codeAnalysisPromptPrep !== 'object') {
-          ui.codeAnalysisPromptPrep = { scope: '', repoBranch: '', outputPrompt: '', mode: '', analysisMode: 'planned-feature-check', includeDescription: false, includePurposeWorkflow: false, includeCriteriaQuestions: false, includeSourceContext: false, includeFeatureFlow: false, bundleSafeJson: '', bundlePrivateJson: '', bundleInstructions: '', bundleResultSchema: '', bundleFallbackPrompt: '' };
+          ui.codeAnalysisPromptPrep = { scope: '', repoBranch: '', outputPrompt: '', mode: '', analysisMode: 'planned-feature-check', includeDescription: false, includePurposeWorkflow: false, includeCriteriaQuestions: false, includeSourceContext: false, includeFeatureFlow: false, bundleSafeJson: '', bundlePrivateJson: '', bundleInstructions: '', bundleResultSchema: '', bundleFallbackPrompt: '', deltaResultJson: '', deltaReview: null, deltaReviewError: '' };
         }
         const allowedModes = ['full-scan', 'planned-feature-check', 'implemented-feature-dedupe', 'planned-vs-implemented-match', 'sprint-delta'];
         if (!allowedModes.includes(ui.codeAnalysisPromptPrep.analysisMode)) ui.codeAnalysisPromptPrep.analysisMode = 'planned-feature-check';
@@ -7230,15 +7233,26 @@
       }
 
       const CODE_ANALYSIS_MODE_HELP = {
-        'full-scan': 'Wähle das, wenn du den Code zum ersten Mal vollständig analysierst oder einen komplett neuen Projektstand erfassen willst.',
-        'planned-feature-check': 'Wähle das, wenn du prüfen willst, welche geplanten Features im Code bereits umgesetzt, teilweise umgesetzt oder noch offen sind.',
-        'implemented-feature-dedupe': 'Wähle das, wenn du bereits erkannte Ist-Features auf Dubletten, Überschneidungen oder mehrfach erfasste Funktionen prüfen willst.',
-        'planned-vs-implemented-match': 'Wähle das, wenn du geplante Features und erkannte implementierte Features gegeneinander abgleichen willst, ohne sie automatisch zu verschmelzen.',
-        'sprint-delta': 'Wähle das, wenn du nur Änderungen seit der letzten sauberen Codeanalyse oder seit einem bestimmten Sprint prüfen willst.'
+        'full-scan': 'Full Scan · Typ: Vollscan. Wann nutzen: neues Projekt oder lange nicht analysierter Code. Prüft: gesamten Code breit gegen bekannte planned/implemented Features und potenziell neue Ist-Funktionen. Erwartetes Ergebnis: roadtrip-code-analysis-delta-v1 als Review-Artefakt.',
+        'planned-feature-check': 'Planned Feature Check · Typ: Rückstandsprüfung. Wann nutzen: wenn du wissen willst, ob geplante Features im Code bereits umgesetzt, teilweise umgesetzt oder weiterhin offen sind. Prüft: planned Features gegen konkrete Code-Evidenz. Erwartetes Ergebnis: plannedFeatureResults im roadtrip-code-analysis-delta-v1.',
+        'implemented-feature-dedupe': 'Implemented Feature Dedupe · Typ: Dedupe. Wann nutzen: wenn viele ähnliche umgesetzte Features gefunden wurden. Prüft: implemented Features auf Überschneidungen und Zusammenführungs-Kandidaten. Erwartetes Ergebnis: duplicateReview, review-only ohne Merge.',
+        'planned-vs-implemented-match': 'Planned vs. Implemented Match · Typ: Rückstands-/Dublettenprüfung. Wann nutzen: wenn Rückstände, Dubletten oder erledigte planned Features bereinigt werden sollen. Prüft: planned Features gegen vorhandene implemented Features und Code-Evidenz. Erwartetes Ergebnis: plannedFeatureResults und duplicateReview.',
+        'sprint-delta': 'Sprint Delta · Typ: Sprintabschluss / Delta-Abgleich. Wann nutzen: nach abgeschlossenem Sprint, Commit oder PR. Prüft: gezielt geänderte Codebereiche und deren Abgleich mit der Feature-Datenbank. Erwartetes Ergebnis: roadtrip-code-analysis-delta-v1.'
       };
 
       function getCodeAnalysisModeHelp(mode) {
         return CODE_ANALYSIS_MODE_HELP[mode] || CODE_ANALYSIS_MODE_HELP['planned-feature-check'];
+      }
+
+      function getCodeAnalysisModePurpose(mode) {
+        const labels = {
+          'full-scan': 'Full Scan',
+          'planned-feature-check': 'Rückstandsprüfung',
+          'implemented-feature-dedupe': 'Dedupe',
+          'planned-vs-implemented-match': 'Rückstandsprüfung / Dedupe',
+          'sprint-delta': 'Sprintabschluss / Delta-Abgleich'
+        };
+        return labels[mode] || labels['planned-feature-check'];
       }
 
       function buildRoadtripAnalysisJsonContract() {
@@ -7800,6 +7814,128 @@
         if ($('codeAnalysisPromptOutput')) $('codeAnalysisPromptOutput').value = state.outputPrompt;
       }
 
+
+      function parseRoadtripCodeAnalysisDeltaResult(rawText) {
+        const raw = String(rawText || '').trim();
+        if (!raw) throw new Error('Bitte füge zuerst ein Delta-Analyseergebnis als JSON ein.');
+        let parsed;
+        try {
+          parsed = JSON.parse(raw);
+        } catch (err) {
+          throw new Error('Das Delta-Analyseergebnis ist kein gültiges JSON. Bitte JSON ohne Markdown-Codefences einfügen.');
+        }
+        return validateRoadtripCodeAnalysisDeltaResult(parsed);
+      }
+
+      function normalizeDeltaReviewArray(value) {
+        return Array.isArray(value) ? value.filter(item => item && typeof item === 'object' && !Array.isArray(item)) : [];
+      }
+
+      function collectDeltaNestedUpdates(items, key) {
+        return normalizeDeltaReviewArray(items).flatMap(item => {
+          const nested = item[key];
+          const sourceLabel = item.title || item.featureTitle || item.featureId || item.id || '';
+          const sourceFeatureId = item.featureId || item.id || '';
+          const normalizeNested = Array.isArray(nested)
+            ? nested
+            : (nested && typeof nested === 'object' && !Array.isArray(nested) ? [nested] : []);
+          return normalizeNested
+            .filter(value => value && typeof value === 'object' && !Array.isArray(value))
+            .map(value => Object.assign({
+              title: value.title || value.featureTitle || sourceLabel,
+              sourceFeatureId: value.sourceFeatureId || sourceFeatureId
+            }, value));
+        });
+      }
+
+      function validateRoadtripCodeAnalysisDeltaResult(parsed) {
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          throw new Error('Das Delta-Analyseergebnis muss ein JSON-Objekt sein.');
+        }
+        if (parsed.type !== 'roadtrip-code-analysis-delta-v1') {
+          throw new Error('Falscher Ergebnis-Typ: erwartet wird exakt roadtrip-code-analysis-delta-v1.');
+        }
+        return {
+          type: parsed.type,
+          projectId: String(parsed.projectId || ''),
+          analysisMode: String(parsed.analysisMode || ''),
+          summary: String(parsed.summary || ''),
+          humanReviewRequired: parsed.humanReviewRequired === true,
+          plannedFeatureResults: normalizeDeltaReviewArray(parsed.plannedFeatureResults),
+          implementedFeatureCandidates: normalizeDeltaReviewArray(parsed.implementedFeatureCandidates),
+          duplicateReview: normalizeDeltaReviewArray(parsed.duplicateReview),
+          safeUpdates: normalizeDeltaReviewArray(parsed.safeUpdates).concat(collectDeltaNestedUpdates(parsed.plannedFeatureResults, 'safeUpdates')),
+          unsafeUpdates: normalizeDeltaReviewArray(parsed.unsafeUpdates).concat(collectDeltaNestedUpdates(parsed.plannedFeatureResults, 'unsafeUpdates')),
+          openQuestions: Array.isArray(parsed.openQuestions) ? parsed.openQuestions : []
+        };
+      }
+
+      function loadCodeAnalysisDeltaReview() {
+        const state = getCodeAnalysisPromptPrepState();
+        state.deltaResultJson = $('codeAnalysisDeltaResultJson') ? $('codeAnalysisDeltaResultJson').value : state.deltaResultJson;
+        try {
+          state.deltaReview = parseRoadtripCodeAnalysisDeltaResult(state.deltaResultJson);
+          state.deltaReviewError = '';
+        } catch (err) {
+          state.deltaReview = null;
+          state.deltaReviewError = err && err.message ? err.message : 'Delta-Analyseergebnis konnte nicht geprüft werden.';
+        }
+        renderView();
+      }
+
+      function renderDeltaReviewValue(value) {
+        if (Array.isArray(value)) return value.map(item => typeof item === 'object' ? JSON.stringify(item) : String(item)).filter(Boolean).join('; ');
+        if (value && typeof value === 'object') return JSON.stringify(value);
+        return String(value == null ? '' : value);
+      }
+
+      function renderDeltaReviewEntry(item) {
+        const title = item.title || item.featureTitle || item.featureId || item.id || item.sourceFeatureId || 'Ohne Titel';
+        const status = item.classification || item.status || item.matchType || item.kind || item.recommendedStatus || '—';
+        const confidence = item.confidence || '—';
+        const evidence = item.evidence || item.reason || item.notes || item.description || '';
+        const suggested = item.suggestedAction || item.recommendedAction || item.recommendedStatus || item.safeUpdates || item.fieldMergeSuggestion || '';
+        return `<div class="item">
+          <div class="row-top"><strong>${escapeHtml(title)}</strong><span class="pill">${escapeHtml(status)}</span></div>
+          <div class="mini">Confidence: ${escapeHtml(confidence)}</div>
+          ${evidence ? `<div class="mini"><strong>Evidence / Reason / Notes:</strong> ${escapeHtml(shorten(renderDeltaReviewValue(evidence), 360))}</div>` : ''}
+          ${suggested ? `<div class="mini"><strong>Vorschlag:</strong> ${escapeHtml(shorten(renderDeltaReviewValue(suggested), 360))}</div>` : ''}
+        </div>`;
+      }
+
+      function renderDeltaReviewSection(title, items) {
+        const list = Array.isArray(items) ? items : [];
+        return `<details class="item" style="margin-top:8px;" open>
+          <summary style="font-weight:700;cursor:pointer;">${escapeHtml(title)} (${list.length})</summary>
+          <div class="list" style="margin-top:8px;">${list.length ? list.map(renderDeltaReviewEntry).join('') : '<div class="notice">Keine Einträge im Delta-Ergebnis.</div>'}</div>
+        </details>`;
+      }
+
+      function renderCodeAnalysisDeltaReview(review) {
+        if (!review) return '';
+        const counts = [
+          ['plannedFeatureResults', review.plannedFeatureResults.length],
+          ['implementedFeatureCandidates', review.implementedFeatureCandidates.length],
+          ['duplicateReview', review.duplicateReview.length],
+          ['safeUpdates', review.safeUpdates.length],
+          ['unsafeUpdates', review.unsafeUpdates.length],
+          ['openQuestions', review.openQuestions.length]
+        ];
+        return `<div class="notice notice-info" style="margin-top:12px;">
+          <strong>Review-only: Keine Daten wurden geändert.</strong><br>
+          Typ: <code>${escapeHtml(review.type)}</code>${review.analysisMode ? ` · Modus: ${escapeHtml(review.analysisMode)}` : ''}${review.projectId ? ` · Projekt: ${escapeHtml(review.projectId)}` : ''}<br>
+          Human Review Required: <strong>${review.humanReviewRequired ? 'ja' : 'nein / nicht gesetzt'}</strong>
+          ${review.summary ? `<div style="margin-top:6px;">${escapeHtml(review.summary)}</div>` : ''}
+          <div class="stack-row" style="margin-top:8px;">${counts.map(([label, count]) => `<span class="pill">${escapeHtml(label)}: ${count}</span>`).join('')}</div>
+        </div>
+        ${renderDeltaReviewSection('plannedFeatureResults', review.plannedFeatureResults)}
+        ${renderDeltaReviewSection('implementedFeatureCandidates', review.implementedFeatureCandidates)}
+        ${renderDeltaReviewSection('duplicateReview', review.duplicateReview)}
+        ${renderDeltaReviewSection('safeUpdates · nur anzeigen, nicht übernehmen', review.safeUpdates)}
+        ${renderDeltaReviewSection('unsafeUpdates', review.unsafeUpdates)}
+        ${renderDeltaReviewSection('openQuestions', review.openQuestions.map(item => typeof item === 'object' && item ? item : { title: String(item || 'Offene Frage'), notes: String(item || '') }))}`;
+      }
+
       function normalizePullRequestStatus(value) {
         const status = String(value || '').trim().toLowerCase();
         return ['unknown', 'open', 'merged', 'closed'].includes(status) ? status : 'unknown';
@@ -8263,7 +8399,8 @@
                   ['sprint-delta', 'Sprint Delta (vorbereitet)']
                 ].map(([value, label]) => `<option value="${value}" ${getCodeAnalysisPromptPrepState().analysisMode === value ? 'selected' : ''}>${label}</option>`).join('')}
               </select>
-              <div id="codeAnalysisModeHelp" class="mini">${escapeHtml(getCodeAnalysisModeHelp(getCodeAnalysisPromptPrepState().analysisMode))}</div>
+              <div class="stack-row" style="margin-top:6px;gap:6px;"><span class="pill pill-info">Standardauftrag: Sprint Delta / Delta-Abgleich</span><span id="codeAnalysisModePurpose" class="pill">${escapeHtml(getCodeAnalysisModePurpose(getCodeAnalysisPromptPrepState().analysisMode))}</span></div>
+              <div id="codeAnalysisModeHelp" class="mini" style="margin-top:6px;">${escapeHtml(getCodeAnalysisModeHelp(getCodeAnalysisPromptPrepState().analysisMode))}</div>
             </div>
             <div class="field">
               <label for="codeAnalysisScope">Analyse-Scope / Fragestellung</label>
@@ -8274,8 +8411,8 @@
               <input id="codeAnalysisRepoBranch" value="${escapeAttr(getCodeAnalysisPromptPrepState().repoBranch || '')}" placeholder="z. B. owner/repo · branch sprint-43" />
             </div>
             <details class="item" style="margin-bottom:12px;">
-              <summary style="font-weight:700;cursor:pointer;">Private Feature-Details im Analyseprompt freigeben</summary>
-              <div class="notice notice-info" style="margin:8px 0;">Diese Felder können private Projektinformationen enthalten. Standardmäßig bleiben sie aus Codex-Cloud- und Fallback-Prompts entfernt.</div>
+              <summary style="font-weight:700;cursor:pointer;">Kontext-Auswahl · private Feature-Details optional freigeben</summary>
+              <div class="notice notice-info" style="margin:8px 0;">Der Safe-Kontext enthält Projektbasis, planned Features und implemented Features nur kompakt. Offene Notizen, letzte Sprints/Handoffs und PR-Links werden hier nicht automatisch erweitert; vorhandene PR-Links können nur als manueller Scope-Hinweis genutzt werden. Private Detailfelder bleiben standardmäßig ausgeschlossen und werden nur über diese Checkboxen bewusst ergänzt.</div>
               ${[
                 ['includeDescription', 'Beschreibungen einbeziehen'],
                 ['includePurposeWorkflow', 'Zweck & Workflow-Kontext einbeziehen'],
@@ -8296,6 +8433,20 @@
               </div>
             </div>
             <div class="notice">Das neue Delta-JSON ist bewusst review-only: Roadtrip führt daraus keine automatischen Feature-Merges, Löschungen oder planned-Neuanlagen aus.</div>
+            <div class="item" style="margin-top:12px;">
+              <div class="row-top"><strong>Delta-Analyseergebnis importieren</strong><span class="pill">Review-only</span></div>
+              <div class="mini" style="margin:8px 0;">Füge hier das JSON-Ergebnis eines Analyseauftrags ein. Roadtrip prüft und zeigt es als Review-Artefakt an. Es wird nichts automatisch übernommen.</div>
+              <div class="field">
+                <label for="codeAnalysisDeltaResultJson">result.json · erwartet: roadtrip-code-analysis-delta-v1</label>
+                <textarea id="codeAnalysisDeltaResultJson" style="min-height:170px;font-family:var(--font-mono);font-size:12px;" placeholder='{
+  "type": "roadtrip-code-analysis-delta-v1",
+  "plannedFeatureResults": []
+}'>${escapeHtml(getCodeAnalysisPromptPrepState().deltaResultJson || '')}</textarea>
+              </div>
+              <div class="stack-row"><button class="btn btn-primary" id="btnCheckCodeAnalysisDeltaResult">Delta-Ergebnis prüfen</button><span class="pill">Keine Feature-/Projekt-/Sprint-/Chat-/PR-Mutation</span></div>
+              ${getCodeAnalysisPromptPrepState().deltaReviewError ? `<div class="notice notice-danger" style="margin-top:10px;">${escapeHtml(getCodeAnalysisPromptPrepState().deltaReviewError)}</div>` : ''}
+              ${renderCodeAnalysisDeltaReview(getCodeAnalysisPromptPrepState().deltaReview)}
+            </div>
             <details class="item" style="margin-top:12px;">
               <summary style="font-weight:700;cursor:pointer;">Analyse-Kontextbundle</summary>
               <div class="mini" style="margin:8px 0 10px;">Erzeugt copyfähige Artefakte für Codex CLI, GPT oder Browser-Workflows. CLI, Shell und Terminal sind nicht erforderlich.</div>
