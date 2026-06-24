@@ -1993,7 +1993,7 @@
         showAllProjects: false,
         projectEditMode: false,
         importDraft: { html: '', prompt: '', analysisPrompt: '', cleanupPrompt: '', projectId: '' },
-        codeAnalysisPromptPrep: { scope: '', repoBranch: '', outputPrompt: '', mode: '', analysisMode: 'planned-feature-check', includeDescription: false, includePurposeWorkflow: false, includeCriteriaQuestions: false, includeSourceContext: false, includeFeatureFlow: false, deltaResultJson: '', deltaReview: null, deltaReviewError: '' },
+        codeAnalysisPromptPrep: { scope: '', repoBranch: '', outputPrompt: '', mode: '', analysisMode: 'planned-feature-check', includeDescription: false, includePurposeWorkflow: false, includeCriteriaQuestions: false, includeSourceContext: false, includeFeatureFlow: false, deltaResultJson: '', deltaReview: null, deltaReviewAnalysisId: '', deltaReviewError: '' },
         chatWorkflow: { projectId: '', sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', sprintStartJson: '', mainChatBootstrapJson: '', prompt: '', mode: '', sprintExecutionMode: SPRINT_EXECUTION_MODES.codexControl },
         chatWorkflowByProject: {},
         chatWorkflowHandoff: { projectId: '', sourceChatId: '', rawJson: '' },
@@ -2977,6 +2977,35 @@
         if ($('analysisBundleFallbackPrompt')) $('analysisBundleFallbackPrompt').addEventListener('input', e => { getCodeAnalysisPromptPrepState().bundleFallbackPrompt = e.target.value; });
         if ($('codeAnalysisDeltaResultJson')) $('codeAnalysisDeltaResultJson').addEventListener('input', e => { getCodeAnalysisPromptPrepState().deltaResultJson = e.target.value; });
         if ($('btnCheckCodeAnalysisDeltaResult')) $('btnCheckCodeAnalysisDeltaResult').addEventListener('click', loadCodeAnalysisDeltaReview);
+        if ($('btnCloseActiveDeltaReview')) $('btnCloseActiveDeltaReview').addEventListener('click', closeActiveCodeAnalysisDeltaReview);
+        qq('[data-open-delta-review]').forEach(btn => btn.addEventListener('click', () => openCodeAnalysisDeltaReview(btn.dataset.openDeltaReview || '')));
+        qq('[data-delta-state]').forEach(btn => btn.addEventListener('click', () => {
+          const [recordId, key, status, note] = String(btn.dataset.deltaState || '').split('|');
+          setDeltaReviewItemState(recordId || '', key || '', status || 'open', note || '');
+        }));
+        qq('[data-delta-apply-safe]').forEach(btn => btn.addEventListener('click', () => {
+          const [recordId, index] = String(btn.dataset.deltaApplySafe || '').split('|');
+          applyDeltaSafeUpdate(recordId || '', Number(index));
+        }));
+        qq('[data-delta-open-feature]').forEach(btn => btn.addEventListener('click', () => {
+          const [recordId, section, index] = String(btn.dataset.deltaOpenFeature || '').split('|');
+          const record = (S.analyses || []).find(a => a && a.id === recordId);
+          const review = record && record.result;
+          const list = review && Array.isArray(review[section]) ? review[section] : [];
+          openDeltaReviewFeature(list[Number(index)] || {});
+        }));
+        qq('[data-delta-planned-partial]').forEach(btn => btn.addEventListener('click', () => {
+          const [recordId, index] = String(btn.dataset.deltaPlannedPartial || '').split('|');
+          markDeltaPlannedPartial(recordId || '', Number(index));
+        }));
+        qq('[data-delta-planned-implemented]').forEach(btn => btn.addEventListener('click', () => {
+          const [recordId, index] = String(btn.dataset.deltaPlannedImplemented || '').split('|');
+          markDeltaPlannedImplemented(recordId || '', Number(index));
+        }));
+        qq('[data-delta-create-implemented]').forEach(btn => btn.addEventListener('click', () => {
+          const [recordId, index] = String(btn.dataset.deltaCreateImplemented || '').split('|');
+          createDeltaImplementedFeature(recordId || '', Number(index), false);
+        }));
         if ($('analysisPromptOutput')) $('analysisPromptOutput').addEventListener('input', e => { ui.importDraft.analysisPrompt = e.target.value; });
         if ($('promptOutput')) $('promptOutput').addEventListener('input', e => { ui.importDraft.prompt = e.target.value; });
         if ($('cleanupPromptOutput')) $('cleanupPromptOutput').addEventListener('input', e => { ui.importDraft.cleanupPrompt = e.target.value; });
@@ -6772,7 +6801,7 @@
         const nextSprintMainchatHandoff = getNextSprintMainchatHandoffState(p.id);
         const chatWorkflowSource = sourceChats.find(c => c.id === chatWorkflow.sourceChatId) || null;
         const isArchivedProject = p.status === 'archiviert';
-        const latestAnalysis = S.analyses.filter(a => a.projectId === p.id).sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''))[0];
+        const latestAnalysis = S.analyses.filter(a => a.projectId === p.id).sort((a,b) => ((b.createdAt || b.importedAt || b.updatedAt || '').localeCompare(a.createdAt || a.importedAt || a.updatedAt || '')))[0];
         const projectImports = getProjectImportVersions(p.id);
 
         function renderChatTypeBadge(type) {
@@ -7131,7 +7160,7 @@
           ${renderProjectImportHistory(projectImports)}
 
           <div class="mini" style="margin-bottom:6px;color:var(--ink-dim);">
-            Features: ${projectFeatures.length} | Letzte Analyse: ${latestAnalysis ? formatDateTime(latestAnalysis.createdAt) : '—'}
+            Features: ${projectFeatures.length} | Letzte Analyse: ${latestAnalysis ? formatDateTime(latestAnalysis.createdAt || latestAnalysis.importedAt || latestAnalysis.updatedAt) : '—'}
           </div>
           ${renderTable(projectFeatures)}
         `;
@@ -7223,7 +7252,7 @@
 
       function getCodeAnalysisPromptPrepState() {
         if (!ui.codeAnalysisPromptPrep || typeof ui.codeAnalysisPromptPrep !== 'object') {
-          ui.codeAnalysisPromptPrep = { scope: '', repoBranch: '', outputPrompt: '', mode: '', analysisMode: 'planned-feature-check', includeDescription: false, includePurposeWorkflow: false, includeCriteriaQuestions: false, includeSourceContext: false, includeFeatureFlow: false, bundleSafeJson: '', bundlePrivateJson: '', bundleInstructions: '', bundleResultSchema: '', bundleFallbackPrompt: '', deltaResultJson: '', deltaReview: null, deltaReviewError: '' };
+          ui.codeAnalysisPromptPrep = { scope: '', repoBranch: '', outputPrompt: '', mode: '', analysisMode: 'planned-feature-check', includeDescription: false, includePurposeWorkflow: false, includeCriteriaQuestions: false, includeSourceContext: false, includeFeatureFlow: false, bundleSafeJson: '', bundlePrivateJson: '', bundleInstructions: '', bundleResultSchema: '', bundleFallbackPrompt: '', deltaResultJson: '', deltaReview: null, deltaReviewAnalysisId: '', deltaReviewError: '' };
         }
         const allowedModes = ['full-scan', 'planned-feature-check', 'implemented-feature-dedupe', 'planned-vs-implemented-match', 'sprint-delta'];
         if (!allowedModes.includes(ui.codeAnalysisPromptPrep.analysisMode)) ui.codeAnalysisPromptPrep.analysisMode = 'planned-feature-check';
@@ -7870,16 +7899,105 @@
         };
       }
 
+      function getDeltaReviewProjectId(review) {
+        return String((review && review.projectId) || (ui.importDraft && ui.importDraft.projectId) || (ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '') || '').trim();
+      }
+
+      function getDeltaReviewRecordsForActiveProject() {
+        const projectId = getDeltaReviewProjectId(getActiveDeltaReviewRecord() && getActiveDeltaReviewRecord().result);
+        return (S.analyses || [])
+          .filter(a => a && a.type === 'code-analysis-delta-review' && (!projectId || a.projectId === projectId))
+          .sort((a, b) => String(b.importedAt || b.createdAt || '').localeCompare(String(a.importedAt || a.createdAt || '')));
+      }
+
+      function getActiveDeltaReviewRecord() {
+        const state = getCodeAnalysisPromptPrepState();
+        const activeId = String(state.deltaReviewAnalysisId || '');
+        if (activeId) {
+          const found = (S.analyses || []).find(a => a && a.id === activeId && a.type === 'code-analysis-delta-review');
+          if (found) return found;
+        }
+        return null;
+      }
+
+      function setActiveDeltaReviewRecord(record) {
+        const state = getCodeAnalysisPromptPrepState();
+        state.deltaReviewAnalysisId = record && record.id ? record.id : '';
+        state.deltaReview = record && record.result ? record.result : null;
+      }
+
+      function persistCodeAnalysisDeltaReview(review) {
+        const now = new Date().toISOString();
+        const projectId = getDeltaReviewProjectId(review);
+        const record = {
+          id: uid('an'),
+          type: 'code-analysis-delta-review',
+          projectId,
+          analysisMode: review.analysisMode || getCodeAnalysisPromptPrepState().analysisMode || '',
+          sourceType: 'manual-json-import',
+          title: review.summary ? shorten(review.summary, 80) : 'Delta-Review ' + now.slice(0, 10),
+          summary: review.summary || '',
+          rawType: review.type,
+          result: review,
+          reviewState: {},
+          createdAt: now,
+          importedAt: now,
+          updatedAt: now
+        };
+        S.analyses.push(record);
+        setActiveDeltaReviewRecord(record);
+        save();
+        return record;
+      }
+
       function loadCodeAnalysisDeltaReview() {
         const state = getCodeAnalysisPromptPrepState();
         state.deltaResultJson = $('codeAnalysisDeltaResultJson') ? $('codeAnalysisDeltaResultJson').value : state.deltaResultJson;
         try {
-          state.deltaReview = parseRoadtripCodeAnalysisDeltaResult(state.deltaResultJson);
+          const review = parseRoadtripCodeAnalysisDeltaResult(state.deltaResultJson);
           state.deltaReviewError = '';
+          persistCodeAnalysisDeltaReview(review);
         } catch (err) {
           state.deltaReview = null;
+          state.deltaReviewAnalysisId = '';
           state.deltaReviewError = err && err.message ? err.message : 'Delta-Analyseergebnis konnte nicht geprüft werden.';
         }
+        renderView();
+      }
+
+      function openCodeAnalysisDeltaReview(id) {
+        const record = (S.analyses || []).find(a => a && a.id === id && a.type === 'code-analysis-delta-review');
+        if (!record) return;
+        setActiveDeltaReviewRecord(record);
+        getCodeAnalysisPromptPrepState().deltaReviewError = '';
+        renderView();
+      }
+
+      function closeActiveCodeAnalysisDeltaReview() {
+        setActiveDeltaReviewRecord(null);
+        renderView();
+      }
+
+      function getDeltaReviewItemKey(section, item, index) {
+        const raw = item || {};
+        const id = raw.featureId || raw.sourceFeatureId || raw.targetFeatureId || raw.id || raw.title || raw.featureTitle || raw.name || index;
+        return section + ':' + normalizeText(id || index);
+      }
+
+      function getDeltaReviewItemState(record, key) {
+        const state = record && record.reviewState && record.reviewState[key];
+        return state && typeof state === 'object' ? state : { status: 'open', note: '', updatedAt: '' };
+      }
+
+      function setDeltaReviewItemState(recordId, key, status, note) {
+        const record = (S.analyses || []).find(a => a && a.id === recordId && a.type === 'code-analysis-delta-review');
+        if (!record) return;
+        if (!record.reviewState || typeof record.reviewState !== 'object' || Array.isArray(record.reviewState)) record.reviewState = {};
+        const now = new Date().toISOString();
+        record.reviewState[key] = { status: status || 'open', note: note || '', updatedAt: now };
+        record.updatedAt = now;
+        setActiveDeltaReviewRecord(record);
+        save();
         renderView();
       }
 
@@ -7889,51 +8007,242 @@
         return String(value == null ? '' : value);
       }
 
-      function renderDeltaReviewEntry(item) {
+      function getDeltaReviewTargetFeature(item) {
+        const id = String((item && (item.sourceFeatureId || item.featureId || item.targetFeatureId || item.id)) || '');
+        if (id) {
+          const byId = S.features.find(f => f && f.id === id);
+          if (byId) return byId;
+        }
+        const title = normalizeText((item && (item.title || item.featureTitle || item.sourceLabel)) || '');
+        const projectId = getDeltaReviewProjectId(item || {});
+        if (!title) return null;
+        return S.features.find(f => f && (!projectId || f.projectId === projectId) && normalizeText(f.title || '') === title) || null;
+      }
+
+      function normalizeDeltaTextList(value) {
+        if (Array.isArray(value)) return value.map(v => String(v || '').trim()).filter(Boolean);
+        const text = String(value || '').trim();
+        return text ? text.split(/\r?\n/).map(v => v.replace(/^[-•*]\s+/, '').trim()).filter(Boolean) : [];
+      }
+
+      function mergeUniqueTextList(current, incoming) {
+        const out = normalizeDeltaTextList(current);
+        normalizeDeltaTextList(incoming).forEach(item => {
+          if (!out.some(existing => normalizeText(existing) === normalizeText(item))) out.push(item);
+        });
+        return out;
+      }
+
+      function appendDeltaText(existing, incoming) {
+        const next = String(incoming || '').trim();
+        if (!next) return String(existing || '').trim();
+        const current = String(existing || '').trim();
+        if (!current) return next;
+        if (normalizeText(current).includes(normalizeText(next))) return current;
+        return current + '\n\n' + next;
+      }
+
+      function mergeDeltaPatchAlias(patch, source, targetKey, aliasKey) {
+        if (!source || !Object.prototype.hasOwnProperty.call(source, aliasKey)) return;
+        if (targetKey === 'sourceContext') {
+          patch[targetKey] = appendDeltaText(patch[targetKey], source[aliasKey]);
+          return;
+        }
+        patch[targetKey] = mergeUniqueTextList(patch[targetKey], source[aliasKey]);
+      }
+
+      function extractDeltaSafeUpdatePatch(item) {
+        const sources = [(item && item.fields) || {}, (item && item.update) || {}, (item && item.values) || {}, item || {}];
+        const patch = Object.assign({}, sources[0], sources[1], sources[2]);
+        ['description','purpose','workflowContext','acceptanceCriteria','sourceContext','featureFlow','openQuestions','priority','category','status'].forEach(key => {
+          if (item && Object.prototype.hasOwnProperty.call(item, key)) patch[key] = item[key];
+        });
+        sources.forEach(source => {
+          mergeDeltaPatchAlias(patch, source, 'sourceContext', 'sourceContextAppend');
+          mergeDeltaPatchAlias(patch, source, 'openQuestions', 'openQuestionsAppend');
+          mergeDeltaPatchAlias(patch, source, 'acceptanceCriteria', 'acceptanceCriteriaAppend');
+        });
+        return patch;
+      }
+
+      function applyDeltaSafeUpdate(recordId, index) {
+        const record = (S.analyses || []).find(a => a && a.id === recordId);
+        const item = record && record.result && record.result.safeUpdates ? record.result.safeUpdates[index] : null;
+        if (!record || !item) return;
+        const key = getDeltaReviewItemKey('safeUpdates', item, index);
+        const feature = getDeltaReviewTargetFeature(item);
+        if (!feature) return setDeltaReviewItemState(recordId, key, 'needs-review', 'Ziel-Feature nicht gefunden.');
+        applyFeatureDefaults(feature);
+        if (!isPlannedFeature(feature)) return setDeltaReviewItemState(recordId, key, 'needs-review', 'Safe Update abgebrochen: Ziel ist kein planned Feature.');
+        const patch = extractDeltaSafeUpdatePatch(item);
+        const changes = [];
+        const needsConfirm = [];
+        ['description','purpose','workflowContext','featureFlow'].forEach(field => {
+          const value = String(patch[field] || '').trim();
+          if (!value) return;
+          if (String(feature[field] || '').trim() && normalizeText(feature[field]) !== normalizeText(value)) needsConfirm.push(field);
+        });
+        if (needsConfirm.length && !confirm('Diese gefüllten Felder werden ergänzt: ' + needsConfirm.join(', ') + '. Fortfahren?')) return setDeltaReviewItemState(recordId, key, 'needs-review', 'Ergänzung gefüllter Felder nicht bestätigt.');
+        ['description','purpose','workflowContext','featureFlow'].forEach(field => {
+          const value = String(patch[field] || '').trim();
+          if (!value) return;
+          feature[field] = appendDeltaText(feature[field], value);
+          changes.push(field);
+        });
+        if (patch.sourceContext) { feature.sourceContext = appendDeltaText(feature.sourceContext, patch.sourceContext); changes.push('sourceContext'); }
+        if (patch.openQuestions) { feature.openQuestions = mergeUniqueTextList(feature.openQuestions, patch.openQuestions); changes.push('openQuestions'); }
+        if (patch.acceptanceCriteria) { feature.acceptanceCriteria = mergeUniqueTextList(feature.acceptanceCriteria, patch.acceptanceCriteria); changes.push('acceptanceCriteria'); }
+        const priority = String(patch.priority || '').trim();
+        if (priority && PRIORITIES.includes(priority) && feature.priority !== priority) {
+          if (feature.priority && !confirm('Priorität von "' + feature.priority + '" auf "' + priority + '" ändern?')) return setDeltaReviewItemState(recordId, key, 'needs-review', 'Prioritätsänderung nicht bestätigt.');
+          feature.priority = priority; changes.push('priority');
+        }
+        const category = String(patch.category || '').trim();
+        if (category && FEATURE_CATEGORIES.includes(category) && feature.category !== category) {
+          if (feature.category && !confirm('Kategorie von "' + feature.category + '" auf "' + category + '" ändern?')) return setDeltaReviewItemState(recordId, key, 'needs-review', 'Kategorieänderung nicht bestätigt.');
+          feature.category = category; changes.push('category');
+        }
+        const status = resolveStatusForPool(patch.status, 'planned');
+        if (status && status !== feature.status) {
+          if (!confirm('Status des planned Features auf "' + getFeatureStatusLabel(status) + '" ändern?')) return setDeltaReviewItemState(recordId, key, 'needs-review', 'Statusänderung nicht bestätigt.');
+          feature.status = status; changes.push('status');
+        }
+        if (!changes.length) return setDeltaReviewItemState(recordId, key, 'needs-review', 'Keine erlaubten Feldänderungen gefunden.');
+        feature.updatedAt = new Date().toISOString();
+        markFeatureDirtyRoadtrip(feature);
+        setDeltaReviewItemState(recordId, key, 'applied', 'Übernommen: ' + Array.from(new Set(changes)).join(', '));
+      }
+
+      function openDeltaReviewFeature(item) {
+        const feature = getDeltaReviewTargetFeature(item);
+        ui.view = 'database';
+        if (feature) {
+          ui.activeProjectId = feature.projectId || ui.activeProjectId;
+          ui.filters.search = feature.title || feature.id || '';
+          ui.editingFeatureId = feature.id || '';
+        }
+        renderAll();
+      }
+
+      function markDeltaPlannedImplemented(recordId, index) {
+        const record = (S.analyses || []).find(a => a && a.id === recordId);
+        const item = record && record.result && record.result.plannedFeatureResults ? record.result.plannedFeatureResults[index] : null;
+        const feature = getDeltaReviewTargetFeature(item);
+        const key = getDeltaReviewItemKey('plannedFeatureResults', item, index);
+        if (!feature) return setDeltaReviewItemState(recordId, key, 'needs-review', 'Feature nicht gefunden.');
+        if (!confirm('Dieses planned Feature wirklich als umgesetzt markieren? Das ändert Pool/Status und wird gespeichert.')) return;
+        updateFeaturePool(feature.id, 'implemented');
+        const updated = S.features.find(f => f.id === feature.id);
+        if (updated) { updated.status = 'needs-review'; updated.updatedAt = new Date().toISOString(); markFeatureDirtyRoadtrip(updated); }
+        setDeltaReviewItemState(recordId, key, 'applied', 'Als implemented/needs-review markiert.');
+      }
+
+      function markDeltaPlannedPartial(recordId, index) {
+        const record = (S.analyses || []).find(a => a && a.id === recordId);
+        const item = record && record.result && record.result.plannedFeatureResults ? record.result.plannedFeatureResults[index] : null;
+        const feature = getDeltaReviewTargetFeature(item);
+        const key = getDeltaReviewItemKey('plannedFeatureResults', item, index);
+        if (!feature || !isPlannedFeature(feature)) return setDeltaReviewItemState(recordId, key, 'needs-review', 'Planned Feature nicht gefunden.');
+        if (!confirm('Status dieses planned Features auf "In Arbeit" setzen?')) return;
+        feature.status = 'in-progress'; feature.updatedAt = new Date().toISOString(); markFeatureDirtyRoadtrip(feature);
+        setDeltaReviewItemState(recordId, key, 'applied', 'Als teilweise umgesetzt / in-progress markiert.');
+      }
+
+      function createDeltaImplementedFeature(recordId, index, force) {
+        const record = (S.analyses || []).find(a => a && a.id === recordId);
+        const item = record && record.result && record.result.implementedFeatureCandidates ? record.result.implementedFeatureCandidates[index] : null;
+        if (!item) return;
+        const key = getDeltaReviewItemKey('implementedFeatureCandidates', item, index);
+        const projectId = getDeltaReviewProjectId(record.result) || String(item.projectId || '');
+        const title = String(item.title || item.featureTitle || item.name || '').trim();
+        if (!projectId || !title) return setDeltaReviewItemState(recordId, key, 'needs-review', 'projectId oder title fehlt.');
+        const dup = S.features.find(f => f && f.projectId === projectId && isImplementedFeature(f) && normalizeText(f.title || '') === normalizeText(title));
+        if (dup && !force) return setDeltaReviewItemState(recordId, key, 'needs-review', 'Mögliche implemented Dublette: ' + (dup.title || dup.id));
+        if (dup && !confirm('Es gibt eine mögliche Dublette. Trotzdem als neues implemented Feature anlegen?')) return;
+        const now = new Date().toISOString();
+        S.features.push(ensureFeatureDefaults({
+          id: uid('f'), projectId, title,
+          description: String(item.description || item.summary || item.reason || '').trim(),
+          sourceContext: appendDeltaText(item.sourceContext || '', item.evidence || ''),
+          pool: 'implemented', status: 'detected', reviewStatus: 'needs-review',
+          priority: PRIORITIES.includes(item.priority) ? item.priority : 'mittel',
+          category: FEATURE_CATEGORIES.includes(item.category) ? item.category : 'Sonstiges',
+          sourceType: 'code-analysis-delta-review', createdAt: now, updatedAt: now
+        }));
+        setDeltaReviewItemState(recordId, key, 'applied', 'Als implemented Feature angelegt.');
+      }
+
+      function renderDeltaReviewEntry(section, item, index, record) {
         const title = item.title || item.featureTitle || item.featureId || item.id || item.sourceFeatureId || 'Ohne Titel';
         const status = item.classification || item.status || item.matchType || item.kind || item.recommendedStatus || '—';
         const confidence = item.confidence || '—';
         const evidence = item.evidence || item.reason || item.notes || item.description || '';
         const suggested = item.suggestedAction || item.recommendedAction || item.recommendedStatus || item.safeUpdates || item.fieldMergeSuggestion || '';
+        const key = getDeltaReviewItemKey(section, item, index);
+        const reviewState = getDeltaReviewItemState(record, key);
+        const stateLine = `<span class="pill">Review: ${escapeHtml(reviewState.status || 'open')}</span>${reviewState.updatedAt ? `<span class="pill">${escapeHtml(reviewState.updatedAt.slice(0, 16).replace('T', ' '))}</span>` : ''}`;
+        let actions = '';
+        if (section === 'plannedFeatureResults') actions = `<button class="btn" data-delta-open-feature="${escapeAttr(record.id)}|plannedFeatureResults|${index}">Feature öffnen</button><button class="btn" data-delta-state="${escapeAttr(record.id)}|${escapeAttr(key)}|applied|Geprüft markiert.">Als geprüft markieren</button><button class="btn" data-delta-planned-partial="${escapeAttr(record.id)}|${index}">Als teilweise umgesetzt markieren</button><button class="btn" data-delta-planned-implemented="${escapeAttr(record.id)}|${index}">Als umgesetzt markieren</button>`;
+        if (section === 'safeUpdates') actions = `<button class="btn btn-primary" data-delta-apply-safe="${escapeAttr(record.id)}|${index}">Übernehmen</button><button class="btn" data-delta-open-feature="${escapeAttr(record.id)}|safeUpdates|${index}">Feature öffnen</button>`;
+        if (section === 'implementedFeatureCandidates') actions = `<button class="btn btn-primary" data-delta-create-implemented="${escapeAttr(record.id)}|${index}">Als implemented Feature anlegen</button>`;
+        if (section === 'duplicateReview') actions = `<button class="btn" data-delta-state="${escapeAttr(record.id)}|${escapeAttr(key)}|needs-review|Duplicate Review manuell vorgemerkt; kein Merge ausgeführt.">Duplicate Review erzeugen</button>`;
+        actions += `<button class="btn" data-delta-state="${escapeAttr(record.id)}|${escapeAttr(key)}|later|Später prüfen.">Später prüfen</button><button class="btn" data-delta-state="${escapeAttr(record.id)}|${escapeAttr(key)}|ignored|Ignoriert.">Ignorieren</button>`;
         return `<div class="item">
           <div class="row-top"><strong>${escapeHtml(title)}</strong><span class="pill">${escapeHtml(status)}</span></div>
+          <div class="stack-row" style="margin-top:6px;">${stateLine}</div>
+          ${reviewState.note ? `<div class="mini"><strong>Letzte Aktion:</strong> ${escapeHtml(reviewState.note)}</div>` : ''}
           <div class="mini">Confidence: ${escapeHtml(confidence)}</div>
           ${evidence ? `<div class="mini"><strong>Evidence / Reason / Notes:</strong> ${escapeHtml(shorten(renderDeltaReviewValue(evidence), 360))}</div>` : ''}
           ${suggested ? `<div class="mini"><strong>Vorschlag:</strong> ${escapeHtml(shorten(renderDeltaReviewValue(suggested), 360))}</div>` : ''}
+          <div class="stack-row" style="margin-top:8px;">${actions}</div>
         </div>`;
       }
 
-      function renderDeltaReviewSection(title, items) {
+      function renderDeltaReviewSection(title, section, items, record) {
         const list = Array.isArray(items) ? items : [];
         return `<details class="item" style="margin-top:8px;" open>
           <summary style="font-weight:700;cursor:pointer;">${escapeHtml(title)} (${list.length})</summary>
-          <div class="list" style="margin-top:8px;">${list.length ? list.map(renderDeltaReviewEntry).join('') : '<div class="notice">Keine Einträge im Delta-Ergebnis.</div>'}</div>
+          <div class="list" style="margin-top:8px;">${list.length ? list.map((item, idx) => renderDeltaReviewEntry(section, item, idx, record)).join('') : '<div class="notice">Keine Einträge im Delta-Ergebnis.</div>'}</div>
+        </details>`;
+      }
+
+      function renderStoredDeltaReviewList() {
+        const records = getDeltaReviewRecordsForActiveProject();
+        if (!records.length) return '';
+        return `<details class="item" style="margin-top:12px;">
+          <summary style="font-weight:700;cursor:pointer;">Gespeicherte Delta-Reviews (${records.length})</summary>
+          <div class="list" style="margin-top:8px;">${records.slice(0, 8).map(record => `<div class="item"><div class="row-top"><strong>${escapeHtml(record.title || 'Delta-Review')}</strong><span class="pill">${escapeHtml(record.importedAt ? record.importedAt.slice(0, 16).replace('T', ' ') : '—')}</span></div><div class="mini">Projekt: ${escapeHtml(record.projectId || '—')} · Modus: ${escapeHtml(record.analysisMode || '—')}</div>${record.summary ? `<div class="mini">${escapeHtml(shorten(record.summary, 220))}</div>` : ''}<button class="btn" data-open-delta-review="${escapeAttr(record.id)}">Review öffnen</button></div>`).join('')}</div>
         </details>`;
       }
 
       function renderCodeAnalysisDeltaReview(review) {
-        if (!review) return '';
+        const record = getActiveDeltaReviewRecord();
+        const effectiveReview = (record && record.result) || review;
+        if (!effectiveReview) return renderStoredDeltaReviewList();
         const counts = [
-          ['plannedFeatureResults', review.plannedFeatureResults.length],
-          ['implementedFeatureCandidates', review.implementedFeatureCandidates.length],
-          ['duplicateReview', review.duplicateReview.length],
-          ['safeUpdates', review.safeUpdates.length],
-          ['unsafeUpdates', review.unsafeUpdates.length],
-          ['openQuestions', review.openQuestions.length]
+          ['plannedFeatureResults', effectiveReview.plannedFeatureResults.length],
+          ['implementedFeatureCandidates', effectiveReview.implementedFeatureCandidates.length],
+          ['duplicateReview', effectiveReview.duplicateReview.length],
+          ['safeUpdates', effectiveReview.safeUpdates.length],
+          ['unsafeUpdates', effectiveReview.unsafeUpdates.length],
+          ['openQuestions', effectiveReview.openQuestions.length]
         ];
         return `<div class="notice notice-info" style="margin-top:12px;">
-          <strong>Review-only: Keine Daten wurden geändert.</strong><br>
-          Typ: <code>${escapeHtml(review.type)}</code>${review.analysisMode ? ` · Modus: ${escapeHtml(review.analysisMode)}` : ''}${review.projectId ? ` · Projekt: ${escapeHtml(review.projectId)}` : ''}<br>
-          Human Review Required: <strong>${review.humanReviewRequired ? 'ja' : 'nein / nicht gesetzt'}</strong>
-          ${review.summary ? `<div style="margin-top:6px;">${escapeHtml(review.summary)}</div>` : ''}
+          <div class="row-top"><strong>Aktive Delta-Review Workbench</strong><span class="pill">Review-only Import</span></div>
+          Typ: <code>${escapeHtml(effectiveReview.type)}</code>${effectiveReview.analysisMode ? ` · Modus: ${escapeHtml(effectiveReview.analysisMode)}` : ''}${(record && record.projectId) || effectiveReview.projectId ? ` · Projekt: ${escapeHtml((record && record.projectId) || effectiveReview.projectId)}` : ''}<br>
+          Importzeit: <strong>${escapeHtml(record && record.importedAt ? record.importedAt : 'nicht persistiert')}</strong><br>
+          Human Review Required: <strong>${effectiveReview.humanReviewRequired ? 'ja' : 'nein / nicht gesetzt'}</strong>
+          ${effectiveReview.summary ? `<div style="margin-top:6px;">${escapeHtml(effectiveReview.summary)}</div>` : ''}
           <div class="stack-row" style="margin-top:8px;">${counts.map(([label, count]) => `<span class="pill">${escapeHtml(label)}: ${count}</span>`).join('')}</div>
+          <div class="stack-row" style="margin-top:8px;"><button class="btn" id="btnCloseActiveDeltaReview">Aktive Review schließen</button></div>
         </div>
-        ${renderDeltaReviewSection('plannedFeatureResults', review.plannedFeatureResults)}
-        ${renderDeltaReviewSection('implementedFeatureCandidates', review.implementedFeatureCandidates)}
-        ${renderDeltaReviewSection('duplicateReview', review.duplicateReview)}
-        ${renderDeltaReviewSection('safeUpdates · nur anzeigen, nicht übernehmen', review.safeUpdates)}
-        ${renderDeltaReviewSection('unsafeUpdates', review.unsafeUpdates)}
-        ${renderDeltaReviewSection('openQuestions', review.openQuestions.map(item => typeof item === 'object' && item ? item : { title: String(item || 'Offene Frage'), notes: String(item || '') }))}`;
+        ${renderStoredDeltaReviewList()}
+        ${renderDeltaReviewSection('plannedFeatureResults', 'plannedFeatureResults', effectiveReview.plannedFeatureResults, record || { id: '' })}
+        ${renderDeltaReviewSection('implementedFeatureCandidates', 'implementedFeatureCandidates', effectiveReview.implementedFeatureCandidates, record || { id: '' })}
+        ${renderDeltaReviewSection('duplicateReview', 'duplicateReview', effectiveReview.duplicateReview, record || { id: '' })}
+        ${renderDeltaReviewSection('safeUpdates · einzeln defensiv übernehmen', 'safeUpdates', effectiveReview.safeUpdates, record || { id: '' })}
+        ${renderDeltaReviewSection('unsafeUpdates', 'unsafeUpdates', effectiveReview.unsafeUpdates, record || { id: '' })}
+        ${renderDeltaReviewSection('openQuestions', 'openQuestions', effectiveReview.openQuestions.map(item => typeof item === 'object' && item ? item : { title: String(item || 'Offene Frage'), notes: String(item || '') }), record || { id: '' })}`;
       }
 
       function normalizePullRequestStatus(value) {
