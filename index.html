@@ -6801,7 +6801,7 @@
         const nextSprintMainchatHandoff = getNextSprintMainchatHandoffState(p.id);
         const chatWorkflowSource = sourceChats.find(c => c.id === chatWorkflow.sourceChatId) || null;
         const isArchivedProject = p.status === 'archiviert';
-        const latestAnalysis = S.analyses.filter(a => a.projectId === p.id).sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''))[0];
+        const latestAnalysis = S.analyses.filter(a => a.projectId === p.id).sort((a,b) => ((b.createdAt || b.importedAt || b.updatedAt || '').localeCompare(a.createdAt || a.importedAt || a.updatedAt || '')))[0];
         const projectImports = getProjectImportVersions(p.id);
 
         function renderChatTypeBadge(type) {
@@ -7160,7 +7160,7 @@
           ${renderProjectImportHistory(projectImports)}
 
           <div class="mini" style="margin-bottom:6px;color:var(--ink-dim);">
-            Features: ${projectFeatures.length} | Letzte Analyse: ${latestAnalysis ? formatDateTime(latestAnalysis.createdAt) : '—'}
+            Features: ${projectFeatures.length} | Letzte Analyse: ${latestAnalysis ? formatDateTime(latestAnalysis.createdAt || latestAnalysis.importedAt || latestAnalysis.updatedAt) : '—'}
           </div>
           ${renderTable(projectFeatures)}
         `;
@@ -7940,6 +7940,7 @@
           rawType: review.type,
           result: review,
           reviewState: {},
+          createdAt: now,
           importedAt: now,
           updatedAt: now
         };
@@ -8041,10 +8042,25 @@
         return current + '\n\n' + next;
       }
 
+      function mergeDeltaPatchAlias(patch, source, targetKey, aliasKey) {
+        if (!source || !Object.prototype.hasOwnProperty.call(source, aliasKey)) return;
+        if (targetKey === 'sourceContext') {
+          patch[targetKey] = appendDeltaText(patch[targetKey], source[aliasKey]);
+          return;
+        }
+        patch[targetKey] = mergeUniqueTextList(patch[targetKey], source[aliasKey]);
+      }
+
       function extractDeltaSafeUpdatePatch(item) {
-        const patch = Object.assign({}, (item && item.fields) || {}, (item && item.update) || {}, (item && item.values) || {});
+        const sources = [(item && item.fields) || {}, (item && item.update) || {}, (item && item.values) || {}, item || {}];
+        const patch = Object.assign({}, sources[0], sources[1], sources[2]);
         ['description','purpose','workflowContext','acceptanceCriteria','sourceContext','featureFlow','openQuestions','priority','category','status'].forEach(key => {
           if (item && Object.prototype.hasOwnProperty.call(item, key)) patch[key] = item[key];
+        });
+        sources.forEach(source => {
+          mergeDeltaPatchAlias(patch, source, 'sourceContext', 'sourceContextAppend');
+          mergeDeltaPatchAlias(patch, source, 'openQuestions', 'openQuestionsAppend');
+          mergeDeltaPatchAlias(patch, source, 'acceptanceCriteria', 'acceptanceCriteriaAppend');
         });
         return patch;
       }
