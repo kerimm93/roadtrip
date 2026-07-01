@@ -7865,14 +7865,32 @@
         return Array.isArray(value) ? value.filter(item => item && typeof item === 'object' && !Array.isArray(item)) : [];
       }
 
+      function stableDeltaSignatureValue(value) {
+        if (Array.isArray(value)) return '[' + value.map(stableDeltaSignatureValue).join(',') + ']';
+        if (value && typeof value === 'object') {
+          return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + stableDeltaSignatureValue(value[key])).join(',') + '}';
+        }
+        return JSON.stringify(value == null ? null : value);
+      }
+
       function getDeltaReviewUpdateSignature(item) {
         const raw = item && typeof item === 'object' ? item : {};
+        const payloadKeys = [
+          'fields', 'fieldUpdates', 'update', 'updates', 'values',
+          'sourceContextAppend', 'openQuestionsAppend', 'acceptanceCriteriaAppend',
+          'acceptanceCriteria', 'oldValue', 'newValue', 'value',
+          'reason', 'evidence', 'risk', 'warning', 'explanation', 'notes', 'description'
+        ];
+        const payload = {};
+        payloadKeys.forEach(key => {
+          if (Object.prototype.hasOwnProperty.call(raw, key)) payload[key] = raw[key];
+        });
         return [
           raw.sourceFeatureId || raw.featureId || raw.targetFeatureId || raw.id || '',
           raw.title || raw.featureTitle || raw.name || '',
           raw.field || raw.fieldName || raw.path || raw.targetField || '',
           raw.action || raw.operation || raw.kind || raw.type || '',
-          renderDeltaReviewValue(raw.value || raw.newValue || raw.sourceContext || raw.reason || raw.evidence || '')
+          stableDeltaSignatureValue(payload)
         ].map(value => normalizeText(value)).join('|');
       }
 
@@ -8250,7 +8268,14 @@
 
       function getDeltaReviewSuggestionCode(item) {
         const raw = item || {};
-        return raw.suggestedStatus || raw.suggested_status || raw.classification || raw.statusSuggestion || raw.recommendation || raw.suggestedAction || raw.recommendedAction || raw.recommendedStatus || raw.status || '';
+        const keys = [
+          'suggestedStatus', 'suggested_status', 'recommendedStatus', 'recommended_status',
+          'statusSuggestion', 'status_suggestion', 'recommendation', 'recommendedAction',
+          'recommended_action', 'suggestedAction', 'suggested_action', 'action',
+          'classification', 'status'
+        ];
+        const foundKey = keys.find(key => Object.prototype.hasOwnProperty.call(raw, key) && String(raw[key] == null ? '' : raw[key]).trim());
+        return foundKey ? raw[foundKey] : '';
       }
 
       function getDeltaPlannedSuggestionAction(code) {
@@ -8260,8 +8285,8 @@
         if (['deferred','postpone','later'].includes(value)) return { type: 'deferred', label: 'Zurückstellen' };
         if (['planned','missing','not-implemented','open'].includes(value)) return { type: 'planned', label: 'Als geplant/offen lassen' };
         if (['needs-human-review','unclear','review-needed'].includes(value)) return { type: 'review', label: 'Review nötig markieren' };
-        if (value === 'blocked') return { type: 'blocked', label: 'Als blockiert markieren' };
-        if (value === 'obsolete') return FEATURE_STATUS_BY_POOL.implemented.includes('obsolete') ? { type: 'obsolete', label: 'Als veraltet markieren' } : { type: 'later', label: 'Später prüfen' };
+        if (value === 'blocked') return FEATURE_STATUS_BY_POOL.planned.includes('blocked') ? { type: 'blocked', label: 'Als blockiert markieren' } : { type: 'later', label: 'Später prüfen' };
+        if (value === 'obsolete') return { type: 'review', label: 'Review nötig markieren' };
         return null;
       }
 
@@ -8273,7 +8298,6 @@
           else if (action.type === 'partial') base.push(`<button class="btn btn-primary" data-delta-planned-partial="${escapeAttr(record.id)}|${index}">${escapeHtml(action.label)}</button>`);
           else if (action.type === 'deferred') base.push(`<button class="btn btn-primary" data-delta-planned-status="${escapeAttr(record.id)}|${index}|deferred|Zurückgestellt.">${escapeHtml(action.label)}</button>`);
           else if (action.type === 'blocked') base.push(`<button class="btn btn-primary" data-delta-planned-status="${escapeAttr(record.id)}|${index}|blocked|Als blockiert markiert.">${escapeHtml(action.label)}</button>`);
-          else if (action.type === 'obsolete') base.push(`<button class="btn btn-primary" data-delta-planned-implemented="${escapeAttr(record.id)}|${index}">${escapeHtml(action.label)}</button>`);
           else if (action.type === 'planned') base.push(`<button class="btn btn-primary" data-delta-state="${escapeAttr(record.id)}|${escapeAttr(key)}|applied|Als geplant/offen bestätigt.">${escapeHtml(action.label)}</button>`);
           else if (action.type === 'review') base.push(`<button class="btn btn-primary" data-delta-state="${escapeAttr(record.id)}|${escapeAttr(key)}|needs-review|Review nötig markiert.">${escapeHtml(action.label)}</button>`);
         }
