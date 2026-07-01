@@ -2979,6 +2979,7 @@
         if ($('btnCheckCodeAnalysisDeltaResult')) $('btnCheckCodeAnalysisDeltaResult').addEventListener('click', loadCodeAnalysisDeltaReview);
         if ($('btnCloseActiveDeltaReview')) $('btnCloseActiveDeltaReview').addEventListener('click', closeActiveCodeAnalysisDeltaReview);
         qq('[data-open-delta-review]').forEach(btn => btn.addEventListener('click', () => openCodeAnalysisDeltaReview(btn.dataset.openDeltaReview || '')));
+        qq('[data-delete-delta-review]').forEach(btn => btn.addEventListener('click', () => deleteCodeAnalysisDeltaReview(btn.dataset.deleteDeltaReview || '')));
         qq('[data-delta-state]').forEach(btn => btn.addEventListener('click', () => {
           const [recordId, key, status, note] = String(btn.dataset.deltaState || '').split('|');
           setDeltaReviewItemState(recordId || '', key || '', status || 'open', note || '');
@@ -3001,6 +3002,10 @@
         qq('[data-delta-planned-implemented]').forEach(btn => btn.addEventListener('click', () => {
           const [recordId, index] = String(btn.dataset.deltaPlannedImplemented || '').split('|');
           markDeltaPlannedImplemented(recordId || '', Number(index));
+        }));
+        qq('[data-delta-planned-status]').forEach(btn => btn.addEventListener('click', () => {
+          const [recordId, index, status, note] = String(btn.dataset.deltaPlannedStatus || '').split('|');
+          markDeltaPlannedStatus(recordId || '', Number(index), status || '', note || '');
         }));
         qq('[data-delta-create-implemented]').forEach(btn => btn.addEventListener('click', () => {
           const [recordId, index] = String(btn.dataset.deltaCreateImplemented || '').split('|');
@@ -7860,9 +7865,30 @@
         return Array.isArray(value) ? value.filter(item => item && typeof item === 'object' && !Array.isArray(item)) : [];
       }
 
+      function getDeltaReviewUpdateSignature(item) {
+        const raw = item && typeof item === 'object' ? item : {};
+        return [
+          raw.sourceFeatureId || raw.featureId || raw.targetFeatureId || raw.id || '',
+          raw.title || raw.featureTitle || raw.name || '',
+          raw.field || raw.fieldName || raw.path || raw.targetField || '',
+          raw.action || raw.operation || raw.kind || raw.type || '',
+          renderDeltaReviewValue(raw.value || raw.newValue || raw.sourceContext || raw.reason || raw.evidence || '')
+        ].map(value => normalizeText(value)).join('|');
+      }
+
+      function dedupeDeltaReviewItems(items) {
+        const seen = new Set();
+        return normalizeDeltaReviewArray(items).filter(item => {
+          const signature = getDeltaReviewUpdateSignature(item);
+          if (seen.has(signature)) return false;
+          seen.add(signature);
+          return true;
+        });
+      }
+
       function collectDeltaNestedUpdates(items, key) {
-        return normalizeDeltaReviewArray(items).flatMap(item => {
-          const nested = item[key];
+        const nestedItems = normalizeDeltaReviewArray(items).flatMap(item => {
+          const nested = item && Object.prototype.hasOwnProperty.call(item, key) ? item[key] : null;
           const sourceLabel = item.title || item.featureTitle || item.featureId || item.id || '';
           const sourceFeatureId = item.featureId || item.id || '';
           const normalizeNested = Array.isArray(nested)
@@ -7875,6 +7901,7 @@
               sourceFeatureId: value.sourceFeatureId || sourceFeatureId
             }, value));
         });
+        return dedupeDeltaReviewItems(nestedItems);
       }
 
       function validateRoadtripCodeAnalysisDeltaResult(parsed) {
@@ -7893,8 +7920,8 @@
           plannedFeatureResults: normalizeDeltaReviewArray(parsed.plannedFeatureResults),
           implementedFeatureCandidates: normalizeDeltaReviewArray(parsed.implementedFeatureCandidates),
           duplicateReview: normalizeDeltaReviewArray(parsed.duplicateReview),
-          safeUpdates: normalizeDeltaReviewArray(parsed.safeUpdates).concat(collectDeltaNestedUpdates(parsed.plannedFeatureResults, 'safeUpdates')),
-          unsafeUpdates: normalizeDeltaReviewArray(parsed.unsafeUpdates).concat(collectDeltaNestedUpdates(parsed.plannedFeatureResults, 'unsafeUpdates')),
+          safeUpdates: dedupeDeltaReviewItems(normalizeDeltaReviewArray(parsed.safeUpdates).concat(collectDeltaNestedUpdates(parsed.plannedFeatureResults, 'safeUpdates'))),
+          unsafeUpdates: dedupeDeltaReviewItems(normalizeDeltaReviewArray(parsed.unsafeUpdates).concat(collectDeltaNestedUpdates(parsed.plannedFeatureResults, 'unsafeUpdates'))),
           openQuestions: Array.isArray(parsed.openQuestions) ? parsed.openQuestions : []
         };
       }
@@ -7944,10 +7971,21 @@
           importedAt: now,
           updatedAt: now
         };
+        const fingerprint = getDeltaReviewFingerprint(record);
+        const duplicate = (S.analyses || []).find(existing => existing && existing.type === 'code-analysis-delta-review' && getDeltaReviewFingerprint(existing) === fingerprint);
+        if (duplicate && !confirm('Ein sehr ähnlicher Delta-Review ist bereits gespeichert. Trotzdem erneut speichern?')) {
+          setActiveDeltaReviewRecord(duplicate);
+          return duplicate;
+        }
         S.analyses.push(record);
         setActiveDeltaReviewRecord(record);
         save();
         return record;
+      }
+
+      function getDeltaReviewFingerprint(record) {
+        const result = (record && record.result) || record || {};
+        return [record && record.projectId || result.projectId || '', record && record.analysisMode || result.analysisMode || '', record && record.rawType || result.type || '', result.summary || record && record.summary || '', normalizeDeltaReviewArray(result.plannedFeatureResults).length, normalizeDeltaReviewArray(result.safeUpdates).length, normalizeDeltaReviewArray(result.unsafeUpdates).length, normalizeDeltaReviewArray(result.implementedFeatureCandidates).length, normalizeDeltaReviewArray(result.duplicateReview).length].map(value => normalizeText(value)).join('|');
       }
 
       function loadCodeAnalysisDeltaReview() {
@@ -7975,6 +8013,17 @@
 
       function closeActiveCodeAnalysisDeltaReview() {
         setActiveDeltaReviewRecord(null);
+        renderView();
+      }
+
+      function deleteCodeAnalysisDeltaReview(id) {
+        const idx = (S.analyses || []).findIndex(a => a && a.id === id && a.type === 'code-analysis-delta-review');
+        if (idx < 0) return;
+        if (!confirm('Diesen gespeicherten Delta-Review löschen? Features, Projekte, Sprints, Chats und PRs bleiben unverändert.')) return;
+        const activeId = String(getCodeAnalysisPromptPrepState().deltaReviewAnalysisId || '');
+        S.analyses.splice(idx, 1);
+        if (activeId === id) setActiveDeltaReviewRecord(null);
+        save();
         renderView();
       }
 
@@ -8177,12 +8226,12 @@
         const status = item.classification || item.status || item.matchType || item.kind || item.recommendedStatus || '—';
         const confidence = item.confidence || '—';
         const evidence = item.evidence || item.reason || item.notes || item.description || '';
-        const suggested = item.suggestedAction || item.recommendedAction || item.recommendedStatus || item.safeUpdates || item.fieldMergeSuggestion || '';
+        const suggested = getDeltaReviewSuggestionCode(item);
         const key = getDeltaReviewItemKey(section, item, index);
         const reviewState = getDeltaReviewItemState(record, key);
         const stateLine = `<span class="pill">Review: ${escapeHtml(reviewState.status || 'open')}</span>${reviewState.updatedAt ? `<span class="pill">${escapeHtml(reviewState.updatedAt.slice(0, 16).replace('T', ' '))}</span>` : ''}`;
         let actions = '';
-        if (section === 'plannedFeatureResults') actions = `<button class="btn" data-delta-open-feature="${escapeAttr(record.id)}|plannedFeatureResults|${index}">Feature öffnen</button><button class="btn" data-delta-state="${escapeAttr(record.id)}|${escapeAttr(key)}|applied|Geprüft markiert.">Als geprüft markieren</button><button class="btn" data-delta-planned-partial="${escapeAttr(record.id)}|${index}">Als teilweise umgesetzt markieren</button><button class="btn" data-delta-planned-implemented="${escapeAttr(record.id)}|${index}">Als umgesetzt markieren</button>`;
+        if (section === 'plannedFeatureResults') actions = renderDeltaPlannedFeatureActions(item, record, key, index);
         if (section === 'safeUpdates') actions = `<button class="btn btn-primary" data-delta-apply-safe="${escapeAttr(record.id)}|${index}">Übernehmen</button><button class="btn" data-delta-open-feature="${escapeAttr(record.id)}|safeUpdates|${index}">Feature öffnen</button>`;
         if (section === 'implementedFeatureCandidates') actions = `<button class="btn btn-primary" data-delta-create-implemented="${escapeAttr(record.id)}|${index}">Als implemented Feature anlegen</button>`;
         if (section === 'duplicateReview') actions = `<button class="btn" data-delta-state="${escapeAttr(record.id)}|${escapeAttr(key)}|needs-review|Duplicate Review manuell vorgemerkt; kein Merge ausgeführt.">Duplicate Review erzeugen</button>`;
@@ -8193,9 +8242,64 @@
           ${reviewState.note ? `<div class="mini"><strong>Letzte Aktion:</strong> ${escapeHtml(reviewState.note)}</div>` : ''}
           <div class="mini">Confidence: ${escapeHtml(confidence)}</div>
           ${evidence ? `<div class="mini"><strong>Evidence / Reason / Notes:</strong> ${escapeHtml(shorten(renderDeltaReviewValue(evidence), 360))}</div>` : ''}
-          ${suggested ? `<div class="mini"><strong>Vorschlag:</strong> ${escapeHtml(shorten(renderDeltaReviewValue(suggested), 360))}</div>` : ''}
+          ${suggested ? `<div class="mini"><span class="pill">Vorschlag: ${escapeHtml(shorten(renderDeltaReviewValue(suggested), 80))}</span></div>` : ''}
+          ${section === 'unsafeUpdates' ? `<div class="notice notice-warning" style="margin-top:8px;">${escapeHtml(getDeltaUnsafeUpdateReason(item))}</div>` : ''}
           <div class="stack-row" style="margin-top:8px;">${actions}</div>
         </div>`;
+      }
+
+      function getDeltaReviewSuggestionCode(item) {
+        const raw = item || {};
+        return raw.suggestedStatus || raw.suggested_status || raw.classification || raw.statusSuggestion || raw.recommendation || raw.suggestedAction || raw.recommendedAction || raw.recommendedStatus || raw.status || '';
+      }
+
+      function getDeltaPlannedSuggestionAction(code) {
+        const value = normalizeText(code);
+        if (['confirmed','implemented','done','completed'].includes(value)) return { type: 'implemented', label: 'Als umgesetzt/bestätigt markieren' };
+        if (['in-progress','partial','partially-implemented','partly-implemented'].includes(value)) return { type: 'partial', label: 'Als teilweise umgesetzt markieren' };
+        if (['deferred','postpone','later'].includes(value)) return { type: 'deferred', label: 'Zurückstellen' };
+        if (['planned','missing','not-implemented','open'].includes(value)) return { type: 'planned', label: 'Als geplant/offen lassen' };
+        if (['needs-human-review','unclear','review-needed'].includes(value)) return { type: 'review', label: 'Review nötig markieren' };
+        if (value === 'blocked') return { type: 'blocked', label: 'Als blockiert markieren' };
+        if (value === 'obsolete') return FEATURE_STATUS_BY_POOL.implemented.includes('obsolete') ? { type: 'obsolete', label: 'Als veraltet markieren' } : { type: 'later', label: 'Später prüfen' };
+        return null;
+      }
+
+      function renderDeltaPlannedFeatureActions(item, record, key, index) {
+        const action = getDeltaPlannedSuggestionAction(getDeltaReviewSuggestionCode(item));
+        const base = [];
+        if (action) {
+          if (action.type === 'implemented') base.push(`<button class="btn btn-primary" data-delta-planned-implemented="${escapeAttr(record.id)}|${index}">${escapeHtml(action.label)}</button>`);
+          else if (action.type === 'partial') base.push(`<button class="btn btn-primary" data-delta-planned-partial="${escapeAttr(record.id)}|${index}">${escapeHtml(action.label)}</button>`);
+          else if (action.type === 'deferred') base.push(`<button class="btn btn-primary" data-delta-planned-status="${escapeAttr(record.id)}|${index}|deferred|Zurückgestellt.">${escapeHtml(action.label)}</button>`);
+          else if (action.type === 'blocked') base.push(`<button class="btn btn-primary" data-delta-planned-status="${escapeAttr(record.id)}|${index}|blocked|Als blockiert markiert.">${escapeHtml(action.label)}</button>`);
+          else if (action.type === 'obsolete') base.push(`<button class="btn btn-primary" data-delta-planned-implemented="${escapeAttr(record.id)}|${index}">${escapeHtml(action.label)}</button>`);
+          else if (action.type === 'planned') base.push(`<button class="btn btn-primary" data-delta-state="${escapeAttr(record.id)}|${escapeAttr(key)}|applied|Als geplant/offen bestätigt.">${escapeHtml(action.label)}</button>`);
+          else if (action.type === 'review') base.push(`<button class="btn btn-primary" data-delta-state="${escapeAttr(record.id)}|${escapeAttr(key)}|needs-review|Review nötig markiert.">${escapeHtml(action.label)}</button>`);
+        }
+        base.push(`<button class="btn" data-delta-open-feature="${escapeAttr(record.id)}|plannedFeatureResults|${index}">Feature öffnen</button>`);
+        base.push(`<button class="btn" data-delta-state="${escapeAttr(record.id)}|${escapeAttr(key)}|applied|Geprüft markiert.">Als geprüft markieren</button>`);
+        if (!action || action.type !== 'partial') base.push(`<button class="btn" data-delta-planned-partial="${escapeAttr(record.id)}|${index}">Als teilweise umgesetzt markieren</button>`);
+        if (!action || action.type !== 'implemented') base.push(`<button class="btn" data-delta-planned-implemented="${escapeAttr(record.id)}|${index}">Als umgesetzt markieren</button>`);
+        return base.join('');
+      }
+
+      function markDeltaPlannedStatus(recordId, index, status, note) {
+        const record = (S.analyses || []).find(a => a && a.id === recordId);
+        const item = record && record.result && record.result.plannedFeatureResults ? record.result.plannedFeatureResults[index] : null;
+        const feature = getDeltaReviewTargetFeature(item);
+        const key = getDeltaReviewItemKey('plannedFeatureResults', item, index);
+        const safeStatus = resolveStatusForPool(status, 'planned');
+        if (!feature || !isPlannedFeature(feature) || !safeStatus) return setDeltaReviewItemState(recordId, key, 'needs-review', 'Planned Feature oder Status nicht gefunden.');
+        if (!confirm('Status dieses planned Features auf "' + getFeatureStatusLabel(safeStatus) + '" setzen?')) return;
+        feature.status = safeStatus; feature.updatedAt = new Date().toISOString(); markFeatureDirtyRoadtrip(feature);
+        setDeltaReviewItemState(recordId, key, 'applied', note || ('Status auf ' + safeStatus + ' gesetzt.'));
+      }
+
+      function getDeltaUnsafeUpdateReason(item) {
+        const raw = item || {};
+        const reason = raw.reason || raw.evidence || raw.risk || raw.warning || raw.explanation || raw.notes || raw.description || '';
+        return reason ? 'Keine automatische Übernahme: ' + shorten(renderDeltaReviewValue(reason), 360) : 'Keine automatische Übernahme, weil dieser Eintrag als unsafe eingestuft wurde.';
       }
 
       function renderDeltaReviewSection(title, section, items, record) {
@@ -8208,24 +8312,37 @@
 
       function renderStoredDeltaReviewList() {
         const records = getDeltaReviewRecordsForActiveProject();
-        if (!records.length) return '';
-        return `<details class="item" style="margin-top:12px;">
+        if (!records.length) return `<details class="item" style="margin-top:12px;" open><summary style="font-weight:700;cursor:pointer;">Gespeicherte Delta-Reviews (0)</summary><div class="notice" style="margin-top:8px;">${getDeltaReviewProjectId() ? 'Für das aktive Projekt sind noch keine Delta-Reviews gespeichert.' : 'Projekt wählen oder Delta-Review importieren, um gespeicherte Reviews zu sehen.'}</div></details>`;
+        return `<details class="item" style="margin-top:12px;" open>
           <summary style="font-weight:700;cursor:pointer;">Gespeicherte Delta-Reviews (${records.length})</summary>
-          <div class="list" style="margin-top:8px;">${records.slice(0, 8).map(record => `<div class="item"><div class="row-top"><strong>${escapeHtml(record.title || 'Delta-Review')}</strong><span class="pill">${escapeHtml(record.importedAt ? record.importedAt.slice(0, 16).replace('T', ' ') : '—')}</span></div><div class="mini">Projekt: ${escapeHtml(record.projectId || '—')} · Modus: ${escapeHtml(record.analysisMode || '—')}</div>${record.summary ? `<div class="mini">${escapeHtml(shorten(record.summary, 220))}</div>` : ''}<button class="btn" data-open-delta-review="${escapeAttr(record.id)}">Review öffnen</button></div>`).join('')}</div>
+          <div class="list" style="margin-top:8px;">${records.slice(0, 8).map(record => `<div class="item"><div class="row-top"><strong>${escapeHtml(record.title || 'Delta-Review')}</strong><span class="pill">${escapeHtml(record.importedAt ? record.importedAt.slice(0, 16).replace('T', ' ') : '—')}</span></div><div class="mini">Projekt: ${escapeHtml(record.projectId || '—')} · Modus: ${escapeHtml(record.analysisMode || '—')}</div>${record.summary ? `<div class="mini">${escapeHtml(shorten(record.summary, 220))}</div>` : ''}<div class="stack-row" style="margin-top:8px;"><button class="btn" data-open-delta-review="${escapeAttr(record.id)}">Review öffnen</button><button class="btn btn-danger" data-delete-delta-review="${escapeAttr(record.id)}">Review löschen</button></div></div>`).join('')}</div>
         </details>`;
+      }
+
+      function getDeltaReviewCountSummary(review) {
+        const source = review || {};
+        return {
+          plannedFeatureResults: normalizeDeltaReviewArray(source.plannedFeatureResults).length,
+          implementedFeatureCandidates: normalizeDeltaReviewArray(source.implementedFeatureCandidates).length,
+          duplicateReview: normalizeDeltaReviewArray(source.duplicateReview).length,
+          safeUpdates: normalizeDeltaReviewArray(source.safeUpdates).length,
+          unsafeUpdates: normalizeDeltaReviewArray(source.unsafeUpdates).length,
+          openQuestions: Array.isArray(source.openQuestions) ? source.openQuestions.length : 0
+        };
       }
 
       function renderCodeAnalysisDeltaReview(review) {
         const record = getActiveDeltaReviewRecord();
         const effectiveReview = (record && record.result) || review;
         if (!effectiveReview) return renderStoredDeltaReviewList();
+        const activeCounts = getDeltaReviewCountSummary(effectiveReview);
         const counts = [
-          ['plannedFeatureResults', effectiveReview.plannedFeatureResults.length],
-          ['implementedFeatureCandidates', effectiveReview.implementedFeatureCandidates.length],
-          ['duplicateReview', effectiveReview.duplicateReview.length],
-          ['safeUpdates', effectiveReview.safeUpdates.length],
-          ['unsafeUpdates', effectiveReview.unsafeUpdates.length],
-          ['openQuestions', effectiveReview.openQuestions.length]
+          ['plannedFeatureResults', activeCounts.plannedFeatureResults],
+          ['implementedFeatureCandidates', activeCounts.implementedFeatureCandidates],
+          ['duplicateReview', activeCounts.duplicateReview],
+          ['safeUpdates', activeCounts.safeUpdates],
+          ['unsafeUpdates', activeCounts.unsafeUpdates],
+          ['openQuestions', activeCounts.openQuestions]
         ];
         return `<div class="notice notice-info" style="margin-top:12px;">
           <div class="row-top"><strong>Aktive Delta-Review Workbench</strong><span class="pill">Review-only Import</span></div>
@@ -8234,6 +8351,7 @@
           Human Review Required: <strong>${effectiveReview.humanReviewRequired ? 'ja' : 'nein / nicht gesetzt'}</strong>
           ${effectiveReview.summary ? `<div style="margin-top:6px;">${escapeHtml(effectiveReview.summary)}</div>` : ''}
           <div class="stack-row" style="margin-top:8px;">${counts.map(([label, count]) => `<span class="pill">${escapeHtml(label)}: ${count}</span>`).join('')}</div>
+          <div class="mini" style="margin-top:6px;">Counts stammen aus dem aktiven Review.${activeCounts.safeUpdates === activeCounts.unsafeUpdates && activeCounts.safeUpdates > 0 ? ' Safe/Unsafe laut importiertem Delta gleich groß.' : ''}</div>
           <div class="stack-row" style="margin-top:8px;"><button class="btn" id="btnCloseActiveDeltaReview">Aktive Review schließen</button></div>
         </div>
         ${renderStoredDeltaReviewList()}
