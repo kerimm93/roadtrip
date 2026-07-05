@@ -2772,6 +2772,8 @@
         if ($('btnCompactExport')) $('btnCompactExport').addEventListener('click', exportCompactJson);
         if ($('btnCompactRawData')) $('btnCompactRawData').addEventListener('click', compactRoadtripRawData);
         if ($('btnZipBackupExport')) $('btnZipBackupExport').addEventListener('click', exportRoadtripZipBackup);
+        if ($('btnActiveProjectFeatureNotesCsv')) $('btnActiveProjectFeatureNotesCsv').addEventListener('click', exportActiveProjectFeatureNotesCsv);
+        if ($('btnAllProjectsFeatureNotesCsvZip')) $('btnAllProjectsFeatureNotesCsvZip').addEventListener('click', exportAllProjectsFeatureNotesZip);
         if ($('importZipBackupInput')) $('importZipBackupInput').addEventListener('change', startRoadtripZipImport);
         if ($('btnBackfillImportMetadata')) $('btnBackfillImportMetadata').addEventListener('click', runImportHistoryMetadataBackfill);
         updateStorageDisplay();
@@ -9083,6 +9085,15 @@
                 <label class="btn btn-secondary" for="importZipBackupInput">ZIP-Backup prüfen/importieren</label>
                 <input id="importZipBackupInput" class="hidden" type="file" accept=".zip,application/zip,application/x-zip-compressed">
               </div>
+              <div class="card" style="margin-top:12px;">
+                <div class="panel-title"><h3>Feature-/Notes-CSV-Export</h3><div class="section-label">Read-only</div></div>
+                <div class="mini" style="margin-bottom:8px;">Read-only Export für GPT/Claude-/Obsidian-/CSV-Analyse. Verändert keine Roadtrip-Daten.</div>
+                <div class="stack-row settings-actions">
+                  <button class="btn btn-secondary" id="btnActiveProjectFeatureNotesCsv" ${ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? '' : 'disabled'}>Aktives Projekt als CSV exportieren</button>
+                  <button class="btn btn-secondary" id="btnAllProjectsFeatureNotesCsvZip">Alle Projekte als CSV-ZIP exportieren</button>
+                </div>
+                ${ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? '' : '<div class="mini">Für den Projekt-CSV-Export bitte ein aktives Projekt auswählen. Der globale CSV-ZIP-Export bleibt verfügbar.</div>'}
+              </div>
               <details class="settings-danger-zone">
                 <summary>Advanced · Danger-Zone</summary>
                 <div class="notice notice-danger settings-note">Seltene oder destruktive Werkzeuge: vorher ein ZIP-Backup exportieren. Aktionen bleiben ghost-only und überschreiben keine Daten ohne deine bestehende Handler-Bestätigung.</div>
@@ -14297,6 +14308,208 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
 
       function exportJson() {
         downloadJson('roadtrip_export.json', S);
+      }
+
+      const FEATURE_CSV_COLUMNS = [
+        'projectId', 'projectTitle', 'projectStatus', 'featureId', 'pool', 'title',
+        'status', 'reviewStatus', 'priority', 'category', 'description', 'purpose',
+        'workflowContext', 'acceptanceCriteria', 'sourceContext', 'featureFlow',
+        'openQuestions', 'notes', 'createdAt', 'updatedAt'
+      ];
+
+      const NOTES_CSV_COLUMNS = [
+        'projectId', 'projectTitle', 'noteId', 'title', 'text', 'type', 'status',
+        'sourceType', 'sourceNoteIds', 'processedIntoFeatureIds', 'createdAt', 'updatedAt'
+      ];
+
+      function csvValue(value) {
+        if (value == null) return '';
+        if (Array.isArray(value) || (typeof value === 'object' && value)) return JSON.stringify(value);
+        return String(value);
+      }
+
+      function csvEscapeCell(value) {
+        const text = csvValue(value);
+        const escaped = text.replace(/"/g, '""');
+        return /[",\r\n]/.test(escaped) ? `"${escaped}"` : escaped;
+      }
+
+      function rowsToCsv(rows, columns) {
+        const safeRows = Array.isArray(rows) ? rows : [];
+        return [columns.map(csvEscapeCell).join(',')]
+          .concat(safeRows.map(row => columns.map(column => csvEscapeCell(row && row[column])).join(',')))
+          .join('\n');
+      }
+
+      function getProjectById(projectId) {
+        return (S.projects || []).find(project => project && project.id === projectId) || null;
+      }
+
+      function getProjectFeaturesForCsv(projectId) {
+        return getVisibleFeatures(S.features).filter(feature => feature && feature.projectId === projectId);
+      }
+
+      function getProjectNotesForCsv(projectId) {
+        return (S.notes || []).filter(note => note && note.projectId === projectId);
+      }
+
+      function noteTitleFallback(note) {
+        const title = String((note && note.title) || '').trim();
+        if (title) return title;
+        return shorten(String((note && note.text) || '').trim().replace(/\s+/g, ' '), 80);
+      }
+
+      function buildFeatureCsvRows(features) {
+        return (Array.isArray(features) ? features : []).map(feature => {
+          const project = getProjectById(feature && feature.projectId);
+          return {
+            projectId: (feature && feature.projectId) || '',
+            projectTitle: (project && project.title) || '',
+            projectStatus: (project && project.status) || '',
+            featureId: (feature && feature.id) || '',
+            pool: normalizeFeaturePool(feature && feature.pool),
+            title: (feature && feature.title) || '',
+            status: (feature && feature.status) || '',
+            reviewStatus: (feature && feature.reviewStatus) || '',
+            priority: (feature && feature.priority) || '',
+            category: (feature && feature.category) || '',
+            description: (feature && feature.description) || '',
+            purpose: (feature && feature.purpose) || '',
+            workflowContext: (feature && feature.workflowContext) || '',
+            acceptanceCriteria: feature && feature.acceptanceCriteria,
+            sourceContext: (feature && feature.sourceContext) || '',
+            featureFlow: (feature && feature.featureFlow) || '',
+            openQuestions: feature && feature.openQuestions,
+            notes: feature && feature.notes,
+            createdAt: (feature && feature.createdAt) || '',
+            updatedAt: (feature && feature.updatedAt) || ''
+          };
+        });
+      }
+
+      function buildNotesCsvRows(notes) {
+        return (Array.isArray(notes) ? notes : []).map(note => {
+          const project = getProjectById(note && note.projectId);
+          return {
+            projectId: (note && note.projectId) || '',
+            projectTitle: (project && project.title) || '',
+            noteId: (note && note.id) || '',
+            title: noteTitleFallback(note),
+            text: (note && (note.text || note.body || note.content)) || '',
+            type: getNoteType(note),
+            status: getNoteStatus(note),
+            sourceType: (note && note.sourceType) || '',
+            sourceNoteIds: note && note.sourceNoteIds,
+            processedIntoFeatureIds: note && note.processedIntoFeatureIds,
+            createdAt: (note && note.createdAt) || '',
+            updatedAt: (note && note.updatedAt) || ''
+          };
+        });
+      }
+
+      function downloadCsv(filename, csvText) {
+        downloadTextFile(filename, csvText, 'text/csv;charset=utf-8');
+      }
+
+      function safeProjectSlug(project, index, usedSlugs) {
+        const fallbackId = String((project && project.id) || index + 1).replace(/[^a-z0-9_-]+/gi, '').slice(0, 24) || String(index + 1);
+        const baseTitle = String((project && project.title) || `project-${fallbackId}`)
+          .normalize('NFKD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase()
+          .replace(/ß/g, 'ss')
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 64) || `project-${fallbackId}`;
+        let slug = baseTitle;
+        let suffix = 2;
+        while (usedSlugs.has(slug)) {
+          slug = `${baseTitle}-${fallbackId || suffix}`;
+          if (usedSlugs.has(slug)) slug = `${baseTitle}-${suffix++}`;
+        }
+        usedSlugs.add(slug);
+        return slug;
+      }
+
+      function addCsvZipFile(zip, files, path, rows, columns) {
+        zip.file(path, rowsToCsv(rows, columns));
+        files.push(path);
+      }
+
+      function buildFeatureNotesExportManifest(files, counts, exportedAt) {
+        return {
+          type: 'roadtrip-feature-notes-csv-export-v1',
+          exportedAt,
+          app: 'roadtrip',
+          projectCount: counts.projectCount || 0,
+          featureCount: counts.featureCount || 0,
+          plannedFeatureCount: counts.plannedFeatureCount || 0,
+          implementedFeatureCount: counts.implementedFeatureCount || 0,
+          noteCount: counts.noteCount || 0,
+          files: files.slice()
+        };
+      }
+
+      function exportActiveProjectFeatureNotesCsv() {
+        const projectId = ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '';
+        const project = getProjectById(projectId);
+        if (!project) return alert('Bitte zuerst ein aktives Projekt auswählen.');
+        const slug = safeProjectSlug(project, 0, new Set());
+        const features = getProjectFeaturesForCsv(projectId);
+        const notes = getProjectNotesForCsv(projectId);
+        downloadCsv(`roadtrip-${slug}-features-${dateStamp()}.csv`, rowsToCsv(buildFeatureCsvRows(features), FEATURE_CSV_COLUMNS));
+        downloadCsv(`roadtrip-${slug}-notes-${dateStamp()}.csv`, rowsToCsv(buildNotesCsvRows(notes), NOTES_CSV_COLUMNS));
+      }
+
+      async function exportAllProjectsFeatureNotesZip() {
+        try {
+          const JSZip = await ensureJSZipLoaded();
+          const zip = new JSZip();
+          const files = [];
+          const projects = Array.isArray(S.projects) ? S.projects : [];
+          const features = getVisibleFeatures(S.features);
+          const notes = Array.isArray(S.notes) ? S.notes : [];
+          const allFeatureRows = buildFeatureCsvRows(features);
+          const plannedFeatureRows = buildFeatureCsvRows(features.filter(isPlannedFeature));
+          const implementedFeatureRows = buildFeatureCsvRows(features.filter(isImplementedFeature));
+          const allNoteRows = buildNotesCsvRows(notes);
+
+          addCsvZipFile(zip, files, 'all-projects-features.csv', allFeatureRows, FEATURE_CSV_COLUMNS);
+          addCsvZipFile(zip, files, 'all-projects-planned-features.csv', plannedFeatureRows, FEATURE_CSV_COLUMNS);
+          addCsvZipFile(zip, files, 'all-projects-implemented-features.csv', implementedFeatureRows, FEATURE_CSV_COLUMNS);
+          addCsvZipFile(zip, files, 'all-projects-notes.csv', allNoteRows, NOTES_CSV_COLUMNS);
+
+          const usedSlugs = new Set();
+          projects.forEach((project, index) => {
+            const slug = safeProjectSlug(project, index, usedSlugs);
+            const projectFeatures = getProjectFeaturesForCsv(project.id);
+            const projectNotes = getProjectNotesForCsv(project.id);
+            addCsvZipFile(zip, files, `projects/${slug}/features.csv`, buildFeatureCsvRows(projectFeatures), FEATURE_CSV_COLUMNS);
+            addCsvZipFile(zip, files, `projects/${slug}/planned-features.csv`, buildFeatureCsvRows(projectFeatures.filter(isPlannedFeature)), FEATURE_CSV_COLUMNS);
+            addCsvZipFile(zip, files, `projects/${slug}/implemented-features.csv`, buildFeatureCsvRows(projectFeatures.filter(isImplementedFeature)), FEATURE_CSV_COLUMNS);
+            addCsvZipFile(zip, files, `projects/${slug}/notes.csv`, buildNotesCsvRows(projectNotes), NOTES_CSV_COLUMNS);
+          });
+
+          const exportedAt = new Date().toISOString();
+          const manifestFiles = ['manifest.json'].concat(files);
+          const manifest = buildFeatureNotesExportManifest(manifestFiles, {
+            projectCount: projects.length,
+            featureCount: allFeatureRows.length,
+            plannedFeatureCount: plannedFeatureRows.length,
+            implementedFeatureCount: implementedFeatureRows.length,
+            noteCount: allNoteRows.length
+          }, exportedAt);
+          zip.file('manifest.json', JSON.stringify(manifest, null, 2));
+          const blob = await zip.generateAsync({ type: 'blob' });
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = `roadtrip-feature-notes-export-${dateStamp()}.zip`;
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+        } catch (err) {
+          alert(err && err.message ? err.message : 'Feature-/Notes-CSV-ZIP-Export fehlgeschlagen.');
+        }
       }
 
       async function ensureJSZipLoaded() {
