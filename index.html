@@ -3026,8 +3026,6 @@
         if ($('btnBuildAnalysisBundleFallback')) $('btnBuildAnalysisBundleFallback').addEventListener('click', () => generateRoadtripAnalysisBundle('fallback'));
         if ($('btnBuildAnalysisBundleAll')) $('btnBuildAnalysisBundleAll').addEventListener('click', () => generateRoadtripAnalysisBundle('all'));
         if ($('btnDownloadAnalysisBundle')) $('btnDownloadAnalysisBundle').addEventListener('click', downloadRoadtripAnalysisBundle);
-        if ($('btnDownloadActiveProjectFeatureCsvImport')) $('btnDownloadActiveProjectFeatureCsvImport').addEventListener('click', exportActiveProjectFeatureCsv);
-        if ($('btnBuildFeatureCodeCsvPrompt')) $('btnBuildFeatureCodeCsvPrompt').addEventListener('click', buildFeatureCodeCsvComparisonPrompt);
         qq('[data-copy-analysis-bundle]').forEach(btn => btn.addEventListener('click', () => copyPrompt(btn.dataset.copyAnalysisBundle || '')));
         if ($('btnBuildHtmlPrompt')) $('btnBuildHtmlPrompt').addEventListener('click', buildHtmlPrompt);
         if ($('btnBuildProjectSummaryOnlyPrompt')) $('btnBuildProjectSummaryOnlyPrompt').addEventListener('click', buildProjectSummaryOnlyPrompt);
@@ -7609,82 +7607,6 @@
         ].filter(Boolean).join('\n');
       }
 
-      function buildFeatureCodeCsvComparisonPrompt() {
-        const projectId = ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : (ui.importDraft && ui.importDraft.projectId || '');
-        const project = getProjectById(projectId);
-        if (!project) return alert('Bitte zuerst ein aktives Projekt auswählen.');
-        const resultContract = buildRoadtripAnalysisResultSchema(projectId, 'planned-vs-implemented-match');
-        const prompt = [
-          '# Roadtrip Feature-/Code-Abgleich auf CSV-Basis',
-          '',
-          'Du prüfst ein einzelnes Roadtrip-Projekt. Du änderst keine Dateien und erzeugst keine Roadtrip-Daten direkt.',
-          '',
-          '## Einziger Kontext',
-          'Du kennst ausschließlich diese Eingaben:',
-          '1. diesen Prompt,',
-          '2. die angehängte Roadtrip-Feature-CSV des aktiven Projekts,',
-          '3. den angehängten aktuellen Code, die angehängte index.html oder ein angehängtes Repository-ZIP.',
-          '',
-          'Du darfst keinen anderen Kontext voraussetzen: keinen Sprintchat-Kontext, keinen Hauptchat-Kontext, keine früheren Screenshots, keine früheren Analyse-Chats, keinen Roadtrip-App-State außerhalb der CSV, keine mündlichen Entscheidungen und keine nicht angehängten Exporte.',
-          '',
-          '## Projekt',
-          '- projectId: ' + projectId,
-          '- projectTitle: ' + (project.title || 'Unbekanntes Projekt'),
-          '',
-          '## Aufgabe',
-          '- Lies die Roadtrip-Feature-CSV. Behandle featureId und pool als verbindliche CSV-Felder.',
-          '- Gleiche die CSV-Features gegen den aktuellen Code / die index.html / das Repository-ZIP ab.',
-          '- Nenne für jede Einschätzung konkrete Codeevidenz, z. B. Dateien, Funktionen, IDs, Textstellen oder nachvollziehbare Suchbefunde.',
-          '- Erfinde keine Features ohne Codeevidenz.',
-          '- Behalte Feature-IDs aus der CSV unverändert bei.',
-          '- Nimm die pool-Spalte ernst: planned und implemented müssen getrennt geprüft werden.',
-          '- Überschreibe implemented Features nicht und schlage keine Statusänderung ohne Human Review vor.',
-          '- Unklare Fälle bleiben Review-Fragen.',
-          '- Blockiert oder veraltet ist nur ein Review-Vorschlag, keine automatische Entscheidung.',
-          '- Keine automatische Mutation, kein CSV-Import, keine automatische Feature-Bereinigung.',
-          '',
-          '## Gruppierung planned Features',
-          'Ordne jedes relevante CSV-Feature mit pool=planned in plannedFeatureResults ein und klassifiziere defensiv:',
-          '- confirmed: im Code klar umgesetzt / implemented.',
-          '- partially implemented: im Code teilweise umgesetzt.',
-          '- planned: weiterhin offen oder im Code nicht nachweisbar.',
-          '- needs-human-review: unklar, widersprüchlich oder ohne ausreichende Evidenz.',
-          '- blocked oder probably-stale nur als Review-Vorschlag mit Begründung, nicht als endgültige Änderung.',
-          '',
-          '## Gruppierung implemented Features',
-          'Prüfe CSV-Features mit pool=implemented getrennt und ausschließlich review-only:',
-          '- Bestehende CSV-Zeilen mit `pool=implemented` sind Verifikationsziele, keine Creation Candidates.',
-          '- Gib bestehende implemented CSV-Features niemals in `implementedFeatureCandidates` aus.',
-          '- Behalte ihre CSV-`featureId` unverändert bei und dokumentiere den Befund in summary, openQuestions, duplicateReview oder anderen vorhandenen review-only Feldern des Delta-Vertrags.',
-          '- bestätigt / confirmed, wenn Codeevidenz passt.',
-          '- möglicherweise veraltet / probably-stale, wenn Codeevidenz fehlt oder widersprüchlich ist.',
-          '- mögliche Dublette, wenn sie mit planned oder implemented Einträgen überlappt; nutze dafür duplicateReview mit bestehenden Feature-IDs.',
-          '- unklar / needs-human-review, wenn die Evidenz nicht reicht; nutze dafür openQuestions oder summary.',
-          '- Keine implemented Features überschreiben und keine Statusänderung ohne Human Review vorschlagen.',
-          '',
-          '## Zusätzliche Codebefunde',
-          '- Erfasse neue im Code erkannte Feature-Kandidaten nur bei konkreter Codeevidenz in implementedFeatureCandidates.',
-          '- `implementedFeatureCandidates` ist ausschließlich für neu entdeckte Code-Features gedacht, die keine bestehende CSV-`featureId` haben.',
-          '- Existing CSV rows with `pool=implemented` are verification targets, not creation candidates. Do not emit existing implemented CSV features in `implementedFeatureCandidates`. Use `implementedFeatureCandidates` only for newly discovered code features that do not already have a CSV `featureId`.',
-          '- Erfasse potenzielle Dubletten zu bestehenden Features in duplicateReview.',
-          '- Erfasse offene Fragen und Risiken / unklare Evidenz in openQuestions oder in den jeweiligen rationale/evidence-Feldern.',
-          '',
-          '## Ausgabeformat für Roadtrip',
-          'Gib ausschließlich gültiges JSON zurück. Keine Markdown-Codefences, keine Einleitung, keine Kommentare.',
-          'Das JSON muss mit dem bestehenden Roadtrip-Review-Importvertrag `roadtrip-code-analysis-delta-v1` kompatibel sein. Roadtrip prüft dieses Ergebnis als Delta-/Cleanup-Review-Artefakt und wendet es nicht automatisch auf die Feature-Datenbank an.',
-          'Setze `humanReviewRequired` auf true und `analysisMode` auf `planned-vs-implemented-match`.',
-          'Nutze `plannedFeatureResults` für planned-CSV-Features, `implementedFeatureCandidates` ausschließlich für neue Code-Feature-Kandidaten ohne bestehende CSV-`featureId`, `duplicateReview` für mögliche Dubletten und `openQuestions`/`summary` für unklare oder veraltete Befunde zu bestehenden implemented CSV-Features.',
-          '',
-          '## Ergebnisvertrag / Beispielstruktur',
-          JSON.stringify(resultContract, null, 2)
-        ].join('\n');
-        ui.importDraft.analysisPrompt = prompt;
-        if ($('analysisPromptOutput')) $('analysisPromptOutput').value = prompt;
-        navigator.clipboard.writeText(prompt)
-          .then(() => alert('Feature-/Code-Abgleich-Prompt erzeugt und in Zwischenablage kopiert.'))
-          .catch(() => alert('Feature-/Code-Abgleich-Prompt erzeugt.'));
-      }
-
       function syncRoadtripAnalysisBundleInputs() {
         const state = getCodeAnalysisPromptPrepState();
         state.scope = $('codeAnalysisScope') ? $('codeAnalysisScope').value : state.scope;
@@ -9018,14 +8940,6 @@
               <div class="notice">Keine Bundle-Ausgabe wird automatisch importiert oder angewendet. <code>roadtrip-code-analysis-delta-v1</code> bleibt ein menschlich zu prüfendes Review-Artefakt.</div>
             </details>
           </details>
-          <div class="item" style="margin-bottom:12px;">
-            <div class="row-top"><strong>Feature-/Code-Abgleich per CSV</strong><span class="pill">Review-only</span></div>
-            <div class="mini" style="margin:8px 0;">Exportiere zuerst das Projekt-Feature-CSV. Hänge anschließend CSV und Code/HTML/ZIP im Chat oder bei Codex an und nutze den Prompt. Das Ergebnis wird im bestehenden Delta-/Cleanup-Review geprüft. Keine automatische Änderung.</div>
-            <div class="stack-row">
-              <button class="btn" id="btnDownloadActiveProjectFeatureCsvImport">Projekt-Feature-CSV herunterladen</button>
-              <button class="btn" id="btnBuildFeatureCodeCsvPrompt">Feature-/Code-Abgleich-Prompt erzeugen</button>
-            </div>
-          </div>
           <div class="field"><label for="htmlFileInput">Code-Datei / Projektdatei Upload</label><input id="htmlFileInput" type="file" accept=".html,.htm,.js,.ts,.jsx,.tsx,.css,.json,.md,.txt,text/*" /></div>
           <div class="field"><label for="htmlTextarea">Code / Repository-Auszug Paste</label><textarea id="htmlTextarea" style="min-height:170px">${escapeHtml(ui.importDraft.html || '')}</textarea></div>
           <div class="stack-row">
@@ -14546,15 +14460,6 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           noteCount: counts.noteCount || 0,
           files: files.slice()
         };
-      }
-
-      function exportActiveProjectFeatureCsv() {
-        const projectId = ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : (ui.importDraft && ui.importDraft.projectId || '');
-        const project = getProjectById(projectId);
-        if (!project) return alert('Bitte zuerst ein aktives Projekt auswählen.');
-        const slug = safeProjectSlug(project, 0, new Set());
-        const features = getProjectFeaturesForCsv(projectId);
-        downloadCsv(`roadtrip-${slug}-features-${dateStamp()}.csv`, rowsToCsv(buildFeatureCsvRows(features), FEATURE_CSV_COLUMNS));
       }
 
       function exportActiveProjectFeatureNotesCsv() {
