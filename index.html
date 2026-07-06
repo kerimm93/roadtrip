@@ -1992,7 +1992,7 @@
         showKanban: false,
         showAllProjects: false,
         projectEditMode: false,
-        importDraft: { html: '', prompt: '', analysisPrompt: '', cleanupPrompt: '', projectId: '' },
+        importDraft: { html: '', prompt: '', analysisPrompt: '', cleanupPrompt: '', projectId: '', analysisSourceMode: 'classic' },
         codeAnalysisPromptPrep: { scope: '', repoBranch: '', outputPrompt: '', mode: '', analysisMode: 'planned-feature-check', includeDescription: false, includePurposeWorkflow: false, includeCriteriaQuestions: false, includeSourceContext: false, includeFeatureFlow: false, deltaResultJson: '', deltaReview: null, deltaReviewAnalysisId: '', deltaReviewError: '' },
         chatWorkflow: { projectId: '', sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', sprintStartJson: '', mainChatBootstrapJson: '', prompt: '', mode: '', sprintExecutionMode: SPRINT_EXECUTION_MODES.codexControl },
         chatWorkflowByProject: {},
@@ -7609,6 +7609,19 @@
         ].filter(Boolean).join('\n');
       }
 
+      function setImportAnalysisSourceMode(mode) {
+        if (!ui.importDraft) ui.importDraft = { html: '', prompt: '', analysisPrompt: '', cleanupPrompt: '', projectId: '' };
+        ui.importDraft.analysisSourceMode = mode === 'csv-comparison-transform' ? 'csv-comparison-transform' : 'classic';
+      }
+
+      function getImportAnalysisSourceMode() {
+        return ui.importDraft && ui.importDraft.analysisSourceMode === 'csv-comparison-transform' ? 'csv-comparison-transform' : 'classic';
+      }
+
+      function isRoadtripCodeAnalysisDelta(parsed) {
+        return !!(parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.type === 'roadtrip-code-analysis-delta-v1');
+      }
+
       function getImportAnalysisSelectedProjectId() {
         const importProjectId = ui.importDraft && ui.importDraft.projectId && ui.importDraft.projectId !== ALL_PROJECTS_KEY ? ui.importDraft.projectId : '';
         if (importProjectId) return importProjectId;
@@ -7616,10 +7629,10 @@
       }
 
       function buildFeatureCodeCsvComparisonPrompt() {
+        setImportAnalysisSourceMode('csv-comparison-transform');
         const projectId = getImportAnalysisSelectedProjectId();
         const project = getProjectById(projectId);
         if (!project) return alert('Bitte zuerst ein aktives Projekt auswählen.');
-        const resultContract = buildRoadtripAnalysisResultSchema(projectId, 'planned-vs-implemented-match');
         const prompt = [
           '# Roadtrip Feature-/Code-Abgleich auf CSV-Basis',
           '',
@@ -7649,40 +7662,58 @@
           '- Blockiert oder veraltet ist nur ein Review-Vorschlag, keine automatische Entscheidung.',
           '- Keine automatische Mutation, kein CSV-Import, keine automatische Feature-Bereinigung.',
           '',
-          '## Gruppierung planned Features',
-          'Ordne jedes relevante CSV-Feature mit pool=planned in plannedFeatureResults ein und klassifiziere defensiv:',
-          '- confirmed: im Code klar umgesetzt / implemented.',
-          '- partially implemented: im Code teilweise umgesetzt.',
-          '- planned: weiterhin offen oder im Code nicht nachweisbar.',
-          '- needs-human-review: unklar, widersprüchlich oder ohne ausreichende Evidenz.',
-          '- blocked oder probably-stale nur als Review-Vorschlag mit Begründung, nicht als endgültige Änderung.',
+          '## Review-Proposals für planned Features',
+          '- Erzeuge für relevante CSV-Features mit pool=planned klassische proposals.',
+          '- Nutze match-existing, wenn das Feature im Code bereits passend bestätigt ist.',
+          '- Nutze update-existing nur bei eindeutiger Aktualisierung oder wenn ein planned Feature laut Codeevidenz umgesetzt/bestätigt werden sollte.',
+          '- Nutze probably-stale nur als Review-Vorschlag mit Begründung, nicht als endgültige Änderung.',
+          '- Unklare oder widersprüchliche Fälle gehören in openQuestions oder bekommen niedrige Confidence.',
           '',
-          '## Gruppierung implemented Features',
+          '## Review-Proposals für implemented Features',
           'Prüfe CSV-Features mit pool=implemented getrennt und ausschließlich review-only:',
           '- Bestehende CSV-Zeilen mit `pool=implemented` sind Verifikationsziele, keine Creation Candidates.',
-          '- Gib bestehende implemented CSV-Features niemals in `implementedFeatureCandidates` aus.',
-          '- Behalte ihre CSV-`featureId` unverändert bei und dokumentiere den Befund in summary, openQuestions, duplicateReview oder anderen vorhandenen review-only Feldern des Delta-Vertrags.',
-          '- bestätigt / confirmed, wenn Codeevidenz passt.',
-          '- möglicherweise veraltet / probably-stale, wenn Codeevidenz fehlt oder widersprüchlich ist.',
-          '- mögliche Dublette, wenn sie mit planned oder implemented Einträgen überlappt; nutze dafür duplicateReview mit bestehenden Feature-IDs.',
-          '- unklar / needs-human-review, wenn die Evidenz nicht reicht; nutze dafür openQuestions oder summary.',
+          '- Gib bestehende implemented CSV-Features niemals als new-implemented-feature aus.',
+          '- Behalte ihre CSV-`featureId` unverändert in targetFeatureId oder duplicateFeatureId bei, wenn du eine proposal erzeugst.',
+          '- Nutze match-existing, wenn Codeevidenz passt.',
+          '- Nutze probably-stale, wenn Codeevidenz fehlt oder widersprüchlich ist; das ist nur ein Review-Vorschlag.',
+          '- Nutze duplicate-of nur bei echter Dublette mit bestehenden Feature-IDs.',
+          '- Unklare Fälle gehören in openQuestions oder bekommen niedrige Confidence.',
           '- Keine implemented Features überschreiben und keine Statusänderung ohne Human Review vorschlagen.',
           '',
           '## Zusätzliche Codebefunde',
-          '- Erfasse neue im Code erkannte Feature-Kandidaten nur bei konkreter Codeevidenz in implementedFeatureCandidates.',
-          '- `implementedFeatureCandidates` ist ausschließlich für neu entdeckte Code-Features gedacht, die keine bestehende CSV-`featureId` haben.',
-          '- Existing CSV rows with `pool=implemented` are verification targets, not creation candidates. Do not emit existing implemented CSV features in `implementedFeatureCandidates`. Use `implementedFeatureCandidates` only for newly discovered code features that do not already have a CSV `featureId`.',
-          '- Erfasse potenzielle Dubletten zu bestehenden Features in duplicateReview.',
-          '- Erfasse offene Fragen und Risiken / unklare Evidenz in openQuestions oder in den jeweiligen rationale/evidence-Feldern.',
+          '- Erfasse neue im Code erkannte Feature-Kandidaten nur bei konkreter Codeevidenz als new-implemented-feature.',
+          '- new-implemented-feature ist ausschließlich für neu entdeckte Code-Features gedacht, die keine bestehende CSV-`featureId` haben.',
+          '- Existing CSV rows with `pool=implemented` are verification targets, not creation candidates. Do not emit existing implemented CSV features as new-implemented-feature.',
+          '- Erfasse potenzielle Dubletten zu bestehenden Features als duplicate-of.',
+          '- Erfasse offene Fragen und Risiken / unklare Evidenz in openQuestions oder in rationale-Feldern.',
           '',
           '## Ausgabeformat für Roadtrip',
           'Gib ausschließlich gültiges JSON zurück. Keine Markdown-Codefences, keine Einleitung, keine Kommentare.',
-          'Das JSON muss mit dem bestehenden Roadtrip-Review-Importvertrag `roadtrip-code-analysis-delta-v1` kompatibel sein. Roadtrip prüft dieses Ergebnis als Delta-/Cleanup-Review-Artefakt und wendet es nicht automatisch auf die Feature-Datenbank an.',
-          'Setze `humanReviewRequired` auf true und `analysisMode` auf `planned-vs-implemented-match`.',
-          'Nutze `plannedFeatureResults` für planned-CSV-Features, `implementedFeatureCandidates` ausschließlich für neue Code-Feature-Kandidaten ohne bestehende CSV-`featureId`, `duplicateReview` für mögliche Dubletten und `openQuestions`/`summary` für unklare oder veraltete Befunde zu bestehenden implemented CSV-Features.',
+          'Ziel ist Roadtrips klassisches Cleanup-Review-Format. Roadtrip lädt dieses Ergebnis später manuell als Cleanup-Vorschläge; es wird nichts automatisch angewendet.',
+          'Feature-IDs aus der CSV müssen in targetFeatureId oder duplicateFeatureId erhalten bleiben, wenn sie sich auf bestehende CSV-/Roadtrip-Features beziehen.',
+          '`pool=implemented` ist ein Verifikationsziel und kein neuer implementedFeatureCandidates-Pool. Bestehende implemented Features nicht als neue Features ausgeben.',
+          'Unklare Fälle als probably-stale mit niedriger/mittlerer Confidence oder in openQuestions markieren; nicht raten.',
           '',
-          '## Ergebnisvertrag / Beispielstruktur',
-          JSON.stringify(resultContract, null, 2)
+          '## Klassischer Cleanup-Review-Vertrag',
+          '{',
+          '  "summary": "",',
+          '  "proposals": [',
+          '    {',
+          '      "type": "match-existing|update-existing|new-implemented-feature|duplicate-of|probably-stale",',
+          '      "targetFeatureId": "",',
+          '      "duplicateFeatureId": "",',
+          '      "incomingTitle": "",',
+          '      "resolvedTitle": "",',
+          '      "resolvedDescription": "",',
+          '      "resolvedCategory": "UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges",',
+          '      "resolvedStatus": "detected|confirmed",',
+          '      "changeSummary": "",',
+          '      "confidence": "hoch|mittel|niedrig",',
+          '      "rationale": ""',
+          '    }',
+          '  ],',
+          '  "openQuestions": []',
+          '}'
         ].join('\n');
         ui.importDraft.analysisPrompt = prompt;
         if ($('analysisPromptOutput')) $('analysisPromptOutput').value = prompt;
@@ -9026,7 +9057,7 @@
           </details>
           <div class="item" style="margin-bottom:12px;">
             <div class="row-top"><strong>Feature-/Code-Abgleich per CSV</strong><span class="pill">Review-only</span></div>
-            <div class="mini" style="margin:8px 0;">Exportiere zuerst das Projekt-Feature-CSV. Standard ist eine Safe-CSV ohne private Detailfelder. Hänge anschließend CSV und Code/HTML/ZIP im Chat oder bei Codex an und nutze den Prompt. Das Ergebnis wird im bestehenden Delta-/Cleanup-Review geprüft. Keine automatische Änderung.</div>
+            <div class="mini" style="margin:8px 0;">Exportiere zuerst das Projekt-Feature-CSV. Standard ist eine Safe-CSV ohne private Detailfelder. Hänge anschließend CSV und Code/HTML/ZIP im Chat oder bei Codex an und nutze den Prompt. Das Ergebnis wird im klassischen Cleanup-Review geprüft oder per Cleanup-Prompt in klassische Review-Vorschläge transformiert. Keine automatische Änderung.</div>
             <div class="stack-row">
               <button class="btn" id="btnDownloadActiveProjectFeatureCsvImport">Projekt-Feature-CSV herunterladen</button>
               <button class="btn" id="btnBuildFeatureCodeCsvPrompt">Feature-/Code-Abgleich-Prompt erzeugen</button>
@@ -9059,7 +9090,7 @@
             <button class="btn" id="btnImportProjectSummaryOnlyJson">Projekt-Summary übernehmen</button>
             <button class="btn" id="btnFeatureFromPrompt">Fallback: Zeilen importieren</button>
           </div>
-          <div class="mini" style="margin-top:6px;">Nutze das, wenn du ein neues Analyse-JSON aus neuem Code hast.</div>
+          <div class="mini" style="margin-top:6px;">Normaler Analysepfad: Code prüfen lassen und danach Cleanup erzeugen. CSV-Abgleichspfad: CSV + Code wurden bereits extern abgeglichen; Cleanup wandelt nur noch in Review-Vorschläge um. Aktueller Modus: ${getImportAnalysisSourceMode() === 'csv-comparison-transform' ? 'CSV-Transform' : 'klassisch'}.</div>
           <div class="field" style="margin-top:12px;">
             <label for="cleanupPromptOutput">Cleanup-Prompt Ausgabe</label>
             <textarea id="cleanupPromptOutput" style="min-height:180px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(ui.importDraft.cleanupPrompt || '')}</textarea>
@@ -11260,6 +11291,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       }
 
       function analyzeHtmlLocal() {
+        setImportAnalysisSourceMode('classic');
         const html = $('htmlTextarea').value.trim();
         const projectId = $('htmlProjectSelect').value;
         ui.importDraft.html = $('htmlTextarea').value;
@@ -11353,6 +11385,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       }
 
       async function buildHtmlPrompt() {
+        setImportAnalysisSourceMode('classic');
         const projectId = $('htmlProjectSelect').value;
         ui.importDraft.projectId = projectId;
         if (!projectId) return alert('Bitte zuerst ein Projekt wählen.');
@@ -11433,6 +11466,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       }
 
       async function buildProjectSummaryOnlyPrompt() {
+        setImportAnalysisSourceMode('classic');
         const projectId = $('htmlProjectSelect').value;
         ui.importDraft.projectId = projectId;
         if (!projectId) return alert('Bitte zuerst ein Projekt wählen.');
@@ -12019,7 +12053,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           throw new Error('invalid-analysis-json');
         }
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('unsupported-top-level-structure');
-        if (parsed.type === 'roadtrip-code-analysis-delta-v1') throw new Error('code-analysis-delta-review-only');
+        if (isRoadtripCodeAnalysisDelta(parsed)) throw new Error('code-analysis-delta-review-only');
         const p = S.projects.find(x => x.id === projectId);
         if (!p) throw new Error('project-not-found');
         const featureSource = Array.isArray(parsed.features) ? parsed.features
@@ -12211,8 +12245,78 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         ].join('\n');
       }
 
+      function buildCsvComparisonTransformCleanupPrompt(projectId, rawComparisonJson) {
+        const projectTitle = getProjectTitle(projectId) || 'Unbekanntes Projekt';
+        const existingFeatures = buildFeatureListForCleanupPrompt(projectId);
+        return [
+          'AUFGABE',
+          'Du bekommst bereits ein Ergebnis eines CSV-basierten Roadtrip Feature-/Code-Abgleichs.',
+          'Führe keinen neuen Feature-/Code-Abgleich durch.',
+          'Analysiere keinen Code erneut.',
+          'Transformiere ausschließlich das vorhandene CSV-Abgleichs-/Delta-Ergebnis in Roadtrips klassisches Cleanup-Review-Format.',
+          '',
+          'EINZIGER KONTEXT',
+          'Du kennst ausschließlich:',
+          '1. diesen Prompt,',
+          '2. das unten eingefügte CSV-Abgleichs-/Delta-Ergebnis,',
+          '3. die unten aufgeführten bestehenden Roadtrip-Features aus dem aktiven Projekt.',
+          'Du darfst keinen Sprintchat-Kontext, Hauptchat-Kontext, frühere Screenshots, separate Analysechats, mündliche Entscheidungen oder nicht eingefügte Dateien voraussetzen.',
+          'Wenn Informationen fehlen, nutze review-only/openQuestions statt zu raten.',
+          '',
+          'PROJEKT',
+          '- projectId: ' + projectId,
+          '- projectTitle: ' + projectTitle,
+          '',
+          'BESTEHENDE FEATURES (ID | Titel | Status | Kategorie | Beschreibung; planned Details eingerückt, falls vorhanden)',
+          existingFeatures,
+          '',
+          'VORHANDENES CSV-ABGLEICHS-/DELTA-ERGEBNIS',
+          rawComparisonJson || '{}',
+          '',
+          'REGELN',
+          '- Gib ausschließlich gültiges JSON zurück.',
+          '- Keine Markdown-Codefences.',
+          '- Keine Einleitung.',
+          '- Keine Kommentare.',
+          '- Erhalte Feature-IDs aus dem CSV-/Abgleichsergebnis in targetFeatureId oder duplicateFeatureId, wenn möglich.',
+          '- pool=implemented-Zeilen sind Verifikationsziele, keine neuen implementedFeatureCandidates.',
+          '- Bestehende implemented Features nicht überschreiben.',
+          '- Keine automatischen Änderungen.',
+          '- Keine Fantasie-Features ohne Evidenz.',
+          '- Unklare Fälle als review-only, probably-stale mit niedriger/mittlerer Confidence oder in openQuestions markieren.',
+          '- Nutze update-existing nur, wenn ein bestehendes Feature eindeutig aktualisiert werden soll.',
+          '- Nutze match-existing, wenn das Feature bereits passend vorhanden/bestätigt ist.',
+          '- Nutze new-implemented-feature nur, wenn das Abgleichsergebnis ein wirklich neues, nicht bereits in CSV/Roadtrip vorhandenes Code-Feature mit Evidenz enthält.',
+          '- Nutze duplicate-of nur bei echter Dublette; setze targetFeatureId und duplicateFeatureId, wenn möglich.',
+          '- Nutze probably-stale nur als Review-Vorschlag, nicht als Löschung.',
+          '',
+          'AUSGABEFORMAT JSON',
+          '{',
+          '  "summary": "",',
+          '  "proposals": [',
+          '    {',
+          '      "type": "match-existing|update-existing|new-implemented-feature|duplicate-of|probably-stale",',
+          '      "targetFeatureId": "",',
+          '      "duplicateFeatureId": "",',
+          '      "incomingTitle": "",',
+          '      "resolvedTitle": "",',
+          '      "resolvedDescription": "",',
+          '      "resolvedCategory": "UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges",',
+          '      "resolvedStatus": "detected|confirmed",',
+          '      "changeSummary": "",',
+          '      "confidence": "hoch|mittel|niedrig",',
+          '      "rationale": ""',
+          '    }',
+          '  ],',
+          '  "openQuestions": []',
+          '}'
+        ].join('\n');
+      }
+
       function startCleanupReview(projectId, incomingFeatures, rawAnalysisJson, mode) {
-        const prompt = buildCleanupPrompt(projectId, incomingFeatures, mode);
+        const prompt = mode === 'csv-comparison-transform'
+          ? buildCsvComparisonTransformCleanupPrompt(projectId, rawAnalysisJson)
+          : buildCleanupPrompt(projectId, incomingFeatures, mode);
         ui.cleanupReview.projectId = projectId;
         ui.cleanupReview.incomingFeatures = incomingFeatures.slice();
         ui.cleanupReview.rawAnalysisJson = rawAnalysisJson || '';
@@ -12230,6 +12334,11 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           .catch(() => alert('Cleanup-Prompt erzeugt.\nJSON mit Vorschlägen einfügen und "Cleanup-Vorschläge laden" klicken.'));
       }
 
+      function startCsvComparisonTransformCleanup(projectId, rawComparisonJson) {
+        setImportAnalysisSourceMode('csv-comparison-transform');
+        startCleanupReview(projectId, [], rawComparisonJson, 'csv-comparison-transform');
+      }
+
       function buildCleanupPromptFromPromptOutput() {
         const text = $('promptOutput') ? $('promptOutput').value.trim() : '';
         if (!text) return alert('Kein JSON/Prompt-Text vorhanden.');
@@ -12238,6 +12347,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         let extractedJson = null;
         try { extractedJson = extractJsonObjectFromText(text); } catch (err) { extractedJson = null; }
         if (!extractedJson) return alert('Kein Analyse-JSON erkannt. Für Cleanup wird ein JSON mit Features benötigt.');
+        if (getImportAnalysisSourceMode() === 'csv-comparison-transform') return startCsvComparisonTransformCleanup(projectId, extractedJson);
         try {
           const prepared = parseAnalysisJsonForCleanup(extractedJson, projectId);
           applyProjectMetadataFromAnalysis(projectId, prepared.parsed);
@@ -12245,7 +12355,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           save();
           startCleanupReview(projectId, prepared.parsedFeatures, extractedJson, 'import-cleanup');
         } catch (err) {
-          if (err && err.message === 'code-analysis-delta-review-only') return alert('Codeanalyse-Delta erkannt. Dieser Sprint behandelt den neuen Vertrag bewusst nur als Review-Artefakt; es wurden keine Features verändert.');
+          if (err && err.message === 'code-analysis-delta-review-only') return startCsvComparisonTransformCleanup(projectId, extractedJson);
           if (err && err.message === 'missing-features-array') return alert("Analyse-JSON erkannt, aber es enthält kein 'features'-Array.");
           if (err && err.message === 'empty-features-array') return alert("Analyse-JSON erkannt, aber es wurden keine Features zurückgegeben.");
           if (err && err.message === 'unsupported-top-level-structure') return alert('Analyse-JSON erkannt, aber die Top-Level-Struktur wird nicht unterstützt.');
@@ -12273,6 +12383,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         let extractedJson = null;
         try { extractedJson = extractJsonObjectFromText(text); } catch (err) { extractedJson = null; }
         if (!extractedJson) return alert('Kein Analyse-JSON erkannt. Für direkten Import nutze bei Bedarf den Fallback-Button.');
+        if (getImportAnalysisSourceMode() === 'csv-comparison-transform') return startCsvComparisonTransformCleanup(projectId, extractedJson);
         try {
           const prepared = parseAnalysisJsonForCleanup(extractedJson, projectId);
           applyProjectMetadataFromAnalysis(projectId, prepared.parsed);
@@ -12280,7 +12391,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           save();
           startCleanupReview(projectId, prepared.parsedFeatures, extractedJson, 'import-cleanup');
         } catch (err) {
-          if (err && err.message === 'code-analysis-delta-review-only') return alert('Codeanalyse-Delta erkannt. Dieser Sprint behandelt den neuen Vertrag bewusst nur als Review-Artefakt; es wurden keine Features verändert.');
+          if (err && err.message === 'code-analysis-delta-review-only') return startCsvComparisonTransformCleanup(projectId, extractedJson);
           if (err && err.message === 'missing-features-array') return alert("Analyse-JSON erkannt, aber es enthält kein 'features'-Array.");
           if (err && err.message === 'empty-features-array') return alert("Analyse-JSON erkannt, aber es wurden keine Features zurückgegeben.");
           if (err && err.message === 'unsupported-top-level-structure') return alert('Analyse-JSON erkannt, aber die Top-Level-Struktur wird nicht unterstützt.');
