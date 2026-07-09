@@ -2002,7 +2002,7 @@
         multiProjectImport: { rawText: '', prompt: '', resultJson: '', summary: '', updates: [], unmatchedNotes: [], visible: false },
         noteReview: { proposals: [], projectId: '', rawText: '', visible: false },
         noteFeaturePipelineByProject: {},
-        cleanupReview: { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', visible: false, versionLogged: false },
+        cleanupReview: { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', openQuestions: [], clarificationPrompt: '', visible: false, versionLogged: false },
         showCompletedSprintsByProject: {},
         projectMomentumCollapsedByProject: {},
         projectMomentumPromptByProject: {},
@@ -3037,6 +3037,8 @@
         if ($('btnBuildProjectDedupePrompt')) $('btnBuildProjectDedupePrompt').addEventListener('click', buildProjectDedupePrompt);
         if ($('btnLoadCleanupReview')) $('btnLoadCleanupReview').addEventListener('click', loadCleanupReviewProposals);
         if ($('btnClearCleanupReview')) $('btnClearCleanupReview').addEventListener('click', clearCleanupReview);
+        if ($('btnBuildCleanupMainChatClarificationPrompt')) $('btnBuildCleanupMainChatClarificationPrompt').addEventListener('click', buildCleanupReviewMainChatClarificationPrompt);
+        if ($('btnCopyCleanupMainChatClarificationPrompt')) $('btnCopyCleanupMainChatClarificationPrompt').addEventListener('click', () => copyPrompt('cleanupMainChatClarificationPromptOutput'));
         if ($('btnCopyAnalysisPrompt')) $('btnCopyAnalysisPrompt').addEventListener('click', () => copyPrompt('analysisPromptOutput'));
         if ($('btnCopyCleanupPrompt')) $('btnCopyCleanupPrompt').addEventListener('click', () => copyPrompt('cleanupPromptOutput'));
         if ($('btnFeatureFromPrompt')) $('btnFeatureFromPrompt').addEventListener('click', importFeatureLinesFromPrompt);
@@ -7656,17 +7658,31 @@
           '- Erfinde keine Features ohne Codeevidenz.',
           '- Behalte Feature-IDs aus der CSV unverändert bei.',
           '- Nimm die pool-Spalte ernst: planned und implemented müssen getrennt geprüft werden.',
+          '- Codeanalyse erzeugt nur Evidenz, keine Datenbank-Wahrheit und keine automatische Statuswahrheit.',
+          '- Planned Features dürfen nur bei sehr eindeutiger, konkreter Codeevidenz als enge Confirm-Kandidaten behandelt werden.',
+          '- Teilumsetzung, Vorbereitung, TODOs, UI-Text, Button, Placeholder, Kommentar oder Hilfetext allein reichen nicht automatisch für implemented/confirmed.',
+          '- Spätere Workbench-, Design-, Dedupe- oder Roadmap-Scope-Themen nicht als implemented bestätigen.',
           '- Überschreibe implemented Features nicht und schlage keine Statusänderung ohne Human Review vor.',
-          '- Unklare Fälle bleiben Review-Fragen.',
+          '- Unklare Fälle bleiben Review-Fragen und gehören nach openQuestions.',
           '- Blockiert oder veraltet ist nur ein Review-Vorschlag, keine automatische Entscheidung.',
           '- Keine automatische Mutation, kein CSV-Import, keine automatische Feature-Bereinigung.',
           '',
+          '## Evidenz-Kategorien zuerst trennen',
+          '- confirmedEvidence: nur sehr eindeutige, konkrete Implementierungsevidenz.',
+          '- partialEvidence: Teilumsetzung, vorbereitet, UI-only, Kommentar-only, Placeholder-only, TODO oder Hilfetext-only.',
+          '- missingEvidence: keine nachvollziehbare Codeevidenz.',
+          '- duplicateCandidates: mögliche echte Dubletten mit konkreten IDs.',
+          '- newCodeFeatureCandidates: wirklich neue Codefeatures ohne bestehende CSV-featureId.',
+          '- openQuestions: alles Unklare, Widersprüchliche oder projektkontextabhängige.',
+          '',
           '## Review-Proposals für planned Features',
-          '- Erzeuge für relevante CSV-Features mit pool=planned klassische proposals.',
-          '- Nutze match-existing, wenn das Feature im Code bereits passend bestätigt ist.',
-          '- Nutze update-existing nur bei eindeutiger Aktualisierung oder wenn ein planned Feature laut Codeevidenz umgesetzt/bestätigt werden sollte.',
-          '- Nutze probably-stale nur als Review-Vorschlag mit Begründung, nicht als endgültige Änderung.',
-          '- Unklare oder widersprüchliche Fälle gehören in openQuestions oder bekommen niedrige Confidence.',
+          '- Erzeuge für relevante CSV-Features mit pool=planned klassische proposals, aber konservativ.',
+          '- Nutze match-existing, wenn Codeevidenz zum bestehenden Feature passt und keine Datenänderung nötig ist.',
+          '- Nutze update-existing nicht als Default für Codeevidenz; nur bei eindeutiger, konkret begründeter Aktualisierung.',
+          '- planned→implemented/confirmed nur bei sehr enger, expliziter Implementierungsevidenz und confidence=hoch.',
+          '- Teilweise Evidenz bleibt partialEvidence/openQuestions oder review-only; sie ist keine volle Umsetzung.',
+          '- Nutze probably-stale nur als Review-Vorschlag mit Begründung, nicht als Löschung oder Statusänderung.',
+          '- Unklare oder widersprüchliche Fälle gehören in openQuestions oder bekommen niedrige/mittlere Confidence.',
           '',
           '## Review-Proposals für implemented Features',
           'Prüfe CSV-Features mit pool=implemented getrennt und ausschließlich review-only:',
@@ -7681,9 +7697,10 @@
           '',
           '## Zusätzliche Codebefunde',
           '- Erfasse neue im Code erkannte Feature-Kandidaten nur bei konkreter Codeevidenz als new-implemented-feature.',
+          '- Existing CSV rows mit Feature-ID dürfen nie als neue Features ausgegeben werden.',
           '- new-implemented-feature ist ausschließlich für neu entdeckte Code-Features gedacht, die keine bestehende CSV-`featureId` haben.',
           '- Existing CSV rows with `pool=implemented` are verification targets, not creation candidates. Do not emit existing implemented CSV features as new-implemented-feature.',
-          '- Erfasse potenzielle Dubletten zu bestehenden Features als duplicate-of.',
+          '- Erfasse potenzielle Dubletten zu bestehenden Features nur bei echter Dublette als duplicate-of und mit konkreten IDs.',
           '- Erfasse offene Fragen und Risiken / unklare Evidenz in openQuestions oder in rationale-Feldern.',
           '',
           '## Ausgabeformat für Roadtrip',
@@ -12275,6 +12292,11 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           '',
           'REGELN',
           '- Gib ausschließlich gültiges JSON zurück.',
+          '- Defensive Grundregel: lieber zu vorsichtig als zu mutig.',
+          '- Führe keinen neuen Codeabgleich durch und analysiere keinen Code erneut.',
+          '- Transformiere nur das vorhandene CSV-Abgleichsergebnis; fehlende Informationen nicht ergänzen oder erraten.',
+          '- Keine Massenüberführung von planned nach implemented/confirmed.',
+          '- Teilumsetzung, Vorbereitung, UI-only, Button-only, Placeholder-only, Kommentar-only oder Hilfetext-only ist keine volle Umsetzung.',
           '- Keine Markdown-Codefences.',
           '- Keine Einleitung.',
           '- Keine Kommentare.',
@@ -12284,11 +12306,15 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           '- Keine automatischen Änderungen.',
           '- Keine Fantasie-Features ohne Evidenz.',
           '- Unklare Fälle als review-only, probably-stale mit niedriger/mittlerer Confidence oder in openQuestions markieren.',
-          '- Nutze update-existing nur, wenn ein bestehendes Feature eindeutig aktualisiert werden soll.',
-          '- Nutze match-existing, wenn das Feature bereits passend vorhanden/bestätigt ist.',
-          '- Nutze new-implemented-feature nur, wenn das Abgleichsergebnis ein wirklich neues, nicht bereits in CSV/Roadtrip vorhandenes Code-Feature mit Evidenz enthält.',
-          '- Nutze duplicate-of nur bei echter Dublette; setze targetFeatureId und duplicateFeatureId, wenn möglich.',
-          '- Nutze probably-stale nur als Review-Vorschlag, nicht als Löschung.',
+          '- match-existing bedeutet: Codeevidenz passt zum bestehenden Feature; keine Datenänderung, kein Poolwechsel, keine automatische Statusverschiebung, review-only geeignet.',
+          '- update-existing bedeutet: Nur verwenden, wenn konkrete Felder sinnvoll und klar begründet aktualisiert werden müssen; nicht als Default für Codeevidenz.',
+          '- Wenn nur Evidenz gefunden wurde, aber keine klare Feldänderung nötig ist: match-existing, nicht update-existing.',
+          '- Beschreibungen nicht durch kurze Analyseformulierungen ersetzen; keine aggressive Beschreibungskürzung.',
+          '- new-implemented-feature bedeutet: nur wirklich neue Codefeatures ohne bestehende CSV-featureId und ohne bestehendes Roadtrip-Ziel.',
+          '- Bestehende CSV-Zeilen mit pool=implemented oder irgendeiner Feature-ID niemals als new-implemented-feature ausgeben.',
+          '- duplicate-of bedeutet: echte Dublette; muss targetFeatureId und möglichst duplicateFeatureId enthalten; keine Löschung, keine Zusammenführung.',
+          '- probably-stale bedeutet: Review-Hinweis bei fehlender/widersprüchlicher Evidenz; keine Löschung und keine Statusänderung.',
+          '- Unklare Fälle nicht entscheiden; in openQuestions oder als review-only Vorschlag mit niedriger/mittlerer Confidence ausgeben.',
           '',
           'AUSGABEFORMAT JSON',
           '{',
@@ -12322,6 +12348,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         ui.cleanupReview.rawAnalysisJson = rawAnalysisJson || '';
         ui.cleanupReview.mode = mode || 'import-cleanup';
         ui.cleanupReview.summary = '';
+        ui.cleanupReview.openQuestions = [];
+        ui.cleanupReview.clarificationPrompt = '';
         ui.cleanupReview.proposals = [];
         ui.cleanupReview.visible = true;
         ui.cleanupReview.versionLogged = false;
@@ -12464,7 +12492,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           return alert('Kein gültiges JSON erkannt: ' + e.message);
         }
         const proposals = Array.isArray(parsed.proposals) ? parsed.proposals : [];
-        if (!proposals.length) return alert('Keine Vorschläge im JSON gefunden (Schlüssel: "proposals").');
+        const parsedOpenQuestions = Array.isArray(parsed.openQuestions) ? parsed.openQuestions.map(q => String(q || '').trim()).filter(Boolean).slice(0, 30) : [];
+        if (!proposals.length && !parsedOpenQuestions.length) return alert('Keine Vorschläge oder openQuestions im JSON gefunden.');
         const validTypes = ['match-existing', 'update-existing', 'new-implemented-feature', 'new-feature', 'duplicate-of', 'probably-stale'];
         const validConfidence = ['hoch', 'mittel', 'niedrig'];
         const fallbackType = ui.cleanupReview.mode === 'project-dedupe' ? 'update-existing' : 'new-implemented-feature';
@@ -12484,6 +12513,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           _done: false
         }));
         ui.cleanupReview.summary = String(parsed.summary || '').trim();
+        ui.cleanupReview.openQuestions = parsedOpenQuestions;
+        ui.cleanupReview.clarificationPrompt = '';
         ui.cleanupReview.visible = true;
         if (
           !ui.cleanupReview.versionLogged &&
@@ -12556,10 +12587,106 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         return null;
       }
 
+
+      function isCsvComparisonTransformMode(mode) {
+        return mode === 'csv-comparison-transform';
+      }
+
+      function hasCsvWeakEvidenceLanguage(proposal) {
+        const text = normalizeText([
+          proposal && proposal.rationale,
+          proposal && proposal.changeSummary
+        ].filter(Boolean).join(' '));
+        return /unklar|teilweise|vorbereitet|partial|maybe|vermutlich|wahrscheinlich|placeholder|todo|kommentar|button|ui-text|hilfetext|nicht eindeutig|helptext|comment|prepared|ui only|ui-only/.test(text);
+      }
+
+      function hasCsvStrongImplementationLanguage(proposal) {
+        const rawText = [proposal && proposal.rationale, proposal && proposal.changeSummary].filter(Boolean).join(' ');
+        const normalizedTokenText = rawText.toLowerCase().replace(/[^a-z0-9]+/g, '');
+        const text = normalizeText(rawText);
+        return normalizedTokenText.includes('confirmedevidence') || /(konkrete|eindeutige|explizite|vollstaendige|vollständige|starke).*(implementierung|umsetzung|codeevidenz)|implementiert.*(funktion|workflow|persist|event|handler|logik)|voll umgesetzt|confirmed evidence|confirmed-evidence|confirmed_evidence|confirmedevidence/.test(text);
+      }
+
+      function shouldAllowCsvConfirmedStatusUpdate(proposal, targetFeature) {
+        if (!proposal || !targetFeature) return false;
+        if (!isCsvComparisonTransformMode(ui.cleanupReview.mode)) return true;
+        if (proposal.confidence !== 'hoch') return false;
+        if (normalizeCleanupProposalStatus(proposal.resolvedStatus, ui.cleanupReview.mode) !== 'confirmed') return false;
+        if (hasCsvWeakEvidenceLanguage(proposal)) return false;
+        return hasCsvStrongImplementationLanguage(proposal);
+      }
+
+      function shouldAllowCsvPlannedToImplementedUpdate(proposal, targetFeature) {
+        if (!proposal || !targetFeature) return false;
+        if (!isCsvComparisonTransformMode(ui.cleanupReview.mode)) return true;
+        if (targetFeature.pool !== 'planned') return false;
+        if (proposal.type !== 'update-existing') return false;
+        return shouldAllowCsvConfirmedStatusUpdate(proposal, targetFeature);
+      }
+
+      function shouldAllowCsvStatusUpdate(proposal, targetFeature, nextStatus) {
+        if (!proposal || !targetFeature || !nextStatus) return false;
+        if (!isCsvComparisonTransformMode(ui.cleanupReview.mode)) return true;
+        const currentStatus = String(targetFeature.status || '').trim();
+        if (!nextStatus || nextStatus === currentStatus) return false;
+        if (nextStatus === 'confirmed') return shouldAllowCsvConfirmedStatusUpdate(proposal, targetFeature);
+        if (hasCsvWeakEvidenceLanguage(proposal)) return false;
+        if (proposal.confidence !== 'hoch') return false;
+        const text = normalizeText(String(proposal.changeSummary || '') + ' ' + String(proposal.rationale || ''));
+        if (!/status|resolvedstatus|detected|teilstatus|review|prüf|pruef|verifikation|verification/.test(text)) return false;
+        if (targetFeature.pool === 'implemented' && currentStatus === 'confirmed' && nextStatus !== 'confirmed') return false;
+        return true;
+      }
+
+      function shouldAllowCsvDescriptionReplacement(proposal, targetFeature) {
+        if (!proposal || !targetFeature) return false;
+        if (!isCsvComparisonTransformMode(ui.cleanupReview.mode)) return true;
+        const nextDescription = String(proposal.resolvedDescription || '').trim();
+        const existingDescription = String(targetFeature.description || '').trim();
+        if (!nextDescription || nextDescription === existingDescription) return false;
+        if (nextDescription.length < Math.max(80, Math.floor(existingDescription.length * 0.75))) return false;
+        if (hasCsvWeakEvidenceLanguage(proposal)) return false;
+        return hasCsvStrongImplementationLanguage(proposal) || /beschreibung|description|details|präzisiert|praezisiert|ergänzt|ergaenzt/i.test(String(proposal.changeSummary || '') + ' ' + String(proposal.rationale || ''));
+      }
+
+
+      function shouldAllowCsvFieldReplacement(proposal, fieldName) {
+        if (!isCsvComparisonTransformMode(ui.cleanupReview.mode)) return true;
+        const text = normalizeText(String(proposal && proposal.changeSummary || '') + ' ' + String(proposal && proposal.rationale || ''));
+        if (hasCsvWeakEvidenceLanguage(proposal)) return false;
+        if (fieldName === 'title') return /titel|title|benennung|name/.test(text);
+        if (fieldName === 'category') return /kategorie|category/.test(text);
+        return true;
+      }
+
+      function csvProposalHasExistingFeatureReference(proposal) {
+        if (!proposal) return false;
+        const pid = ui.cleanupReview.projectId || '';
+        const ids = [proposal.targetFeatureId, proposal.duplicateFeatureId].map(v => String(v || '').trim()).filter(Boolean);
+        return ids.some(id => S.features.some(f => f.id === id && (!pid || f.projectId === pid)));
+      }
+
+
+      function wouldRejectCsvNewImplementedFeatureOnAccept(proposal) {
+        if (!isCsvComparisonTransformMode(ui.cleanupReview.mode)) return false;
+        if (!proposal) return false;
+        if (normalizeCleanupProposalType(proposal.type, ui.cleanupReview.mode) !== 'new-implemented-feature') return false;
+        if (resolveCleanupTargetFeature(proposal) || csvProposalHasExistingFeatureReference(proposal)) return true;
+        if (proposal.confidence !== 'hoch') return true;
+        if (hasCsvWeakEvidenceLanguage(proposal)) return true;
+        if (!hasCsvStrongImplementationLanguage(proposal)) return true;
+        return false;
+      }
+
       function applyCleanupProposalToFeature(feature, proposal) {
         const changes = [];
         const mode = ui.cleanupReview.mode || 'import-cleanup';
-        if (isImplementedCleanupMode(mode) && feature.pool !== 'implemented') {
+        const proposalType = normalizeCleanupProposalType(proposal.type, mode);
+        const csvTransformMode = isCsvComparisonTransformMode(mode);
+        const csvReviewOnlyType = csvTransformMode && ['match-existing', 'probably-stale', 'duplicate-of'].includes(proposalType);
+        if (csvReviewOnlyType) return changes;
+        const allowCsvPoolEscalation = !csvTransformMode || shouldAllowCsvPlannedToImplementedUpdate(proposal, feature) || feature.pool === 'implemented';
+        if (isImplementedCleanupMode(mode) && feature.pool !== 'implemented' && allowCsvPoolEscalation) {
           feature.pool = 'implemented';
           changes.push('pool');
         }
@@ -12568,7 +12695,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           changes.push('reviewStatus');
         }
         const nextTitle = proposal.resolvedTitle || proposal.incomingTitle;
-        if (nextTitle && nextTitle !== feature.title) {
+        if (nextTitle && nextTitle !== feature.title && shouldAllowCsvFieldReplacement(proposal, 'title')) {
           if (confirm('Titel ändern von:\n"' + feature.title + '"\nauf:\n"' + nextTitle + '"?')) {
             feature.title = nextTitle;
             changes.push('title');
@@ -12577,13 +12704,14 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const nextDescription = String(proposal.resolvedDescription || '').trim();
         const existingDescription = String(feature.description || '').trim();
         if (nextDescription && nextDescription !== existingDescription) {
-          if (confirm('Beschreibung ersetzen?\nAlt: ' + shorten(existingDescription || '—', 120) + '\nNeu: ' + shorten(nextDescription, 120))) {
+          const allowDescriptionReplacement = shouldAllowCsvDescriptionReplacement(proposal, feature);
+          if (allowDescriptionReplacement && confirm('Beschreibung ersetzen?\nAlt: ' + shorten(existingDescription || '—', 120) + '\nNeu: ' + shorten(nextDescription, 120))) {
             feature.description = nextDescription;
             changes.push('description');
           }
         }
         const nextCategory = proposal.resolvedCategory;
-        if (nextCategory && FEATURE_CATEGORIES.includes(nextCategory) && nextCategory !== feature.category) {
+        if (nextCategory && FEATURE_CATEGORIES.includes(nextCategory) && nextCategory !== feature.category && shouldAllowCsvFieldReplacement(proposal, 'category')) {
           if (confirm('Kategorie ändern von "' + feature.category + '" auf "' + nextCategory + '"?')) {
             feature.category = nextCategory;
             changes.push('category');
@@ -12592,7 +12720,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const nextStatus = isImplementedCleanupMode(mode)
           ? normalizeCleanupProposalStatus(proposal.resolvedStatus, mode)
           : resolveStatusForPool(proposal.resolvedStatus, feature.pool || 'planned');
-        if (nextStatus && isValidFeatureStatus(nextStatus, feature.pool || 'planned') && nextStatus !== feature.status) {
+        const allowCsvStatusChange = !csvTransformMode || shouldAllowCsvStatusUpdate(proposal, feature, nextStatus);
+        if (nextStatus && isValidFeatureStatus(nextStatus, feature.pool || 'planned') && nextStatus !== feature.status && allowCsvStatusChange) {
           if (confirm('Status ändern von "' + feature.status + '" auf "' + nextStatus + '"?')) {
             feature.status = nextStatus;
             changes.push('status');
@@ -12607,6 +12736,14 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         if (!proposal || proposal._done) return;
         const feature = resolveCleanupTargetFeature(proposal);
         if (!feature) return alert('Ziel-Feature nicht gefunden. Bitte als "neu" übernehmen oder ignorieren.');
+        const normalizedType = normalizeCleanupProposalType(proposal.type, ui.cleanupReview.mode);
+        if (isCsvComparisonTransformMode(ui.cleanupReview.mode) && ['match-existing', 'probably-stale', 'duplicate-of'].includes(normalizedType)) {
+          proposal._done = true;
+          proposal._reviewedOnly = true;
+          save();
+          renderView();
+          return;
+        }
         applyCleanupProposalToFeature(feature, proposal);
         proposal._done = true;
         save();
@@ -12617,6 +12754,23 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const proposal = ui.cleanupReview.proposals.find(p => p._idx === idx);
         if (!proposal || proposal._done) return;
         const projectId = ui.cleanupReview.projectId || '';
+        if (isCsvComparisonTransformMode(ui.cleanupReview.mode)) {
+          const existingTarget = resolveCleanupTargetFeature(proposal);
+          if (existingTarget || csvProposalHasExistingFeatureReference(proposal)) {
+            proposal._done = true;
+            proposal._reviewedOnly = true;
+            save();
+            renderView();
+            return alert('CSV-Transform: Bestehende Feature-Referenz erkannt. Kein neues Feature angelegt; Vorschlag wurde nur als geprüft markiert.');
+          }
+          if (normalizeCleanupProposalType(proposal.type, ui.cleanupReview.mode) !== 'new-implemented-feature' || proposal.confidence !== 'hoch' || hasCsvWeakEvidenceLanguage(proposal) || !hasCsvStrongImplementationLanguage(proposal)) {
+            proposal._done = true;
+            proposal._reviewedOnly = true;
+            save();
+            renderView();
+            return alert('CSV-Transform: Evidenz ist nicht eindeutig genug für ein neues implemented Feature. Vorschlag wurde nur als geprüft markiert.');
+          }
+        }
         const title = proposal.resolvedTitle || proposal.incomingTitle;
         if (!title) return alert('Kein Titel vorhanden.');
         S.features.push(ensureFeatureDefaults({
@@ -12644,6 +12798,13 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       function markCleanupProposalAsDuplicate(idx) {
         const proposal = ui.cleanupReview.proposals.find(p => p._idx === idx);
         if (!proposal || proposal._done) return;
+        if (isCsvComparisonTransformMode(ui.cleanupReview.mode)) {
+          proposal._done = true;
+          proposal._reviewedOnly = true;
+          save();
+          renderView();
+          return alert('CSV-Transform-Dubletten sind nur Klärungs-/Review-Hinweise. Es wurde nichts gelöscht oder zusammengeführt.');
+        }
         const targetFeature = resolveCleanupTargetFeature(proposal);
         const duplicateFeatureId = String(proposal.duplicateFeatureId || '').trim();
         const duplicateFeature = duplicateFeatureId ? S.features.find(f => f.id === duplicateFeatureId) : null;
@@ -12688,8 +12849,80 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         renderView();
       }
 
+
+      function isCleanupProposalUnclearForMainChat(proposal) {
+        if (!proposal) return false;
+        const type = normalizeCleanupProposalType(proposal.type, ui.cleanupReview.mode);
+        const target = resolveCleanupTargetFeature(proposal);
+        const proposedStatus = normalizeCleanupProposalStatus(proposal.resolvedStatus, ui.cleanupReview.mode);
+        if (proposal.confidence !== 'hoch') return true;
+        if (['probably-stale', 'duplicate-of'].includes(type)) return true;
+        if (type === 'update-existing' && target && target.pool === 'planned' && ['confirmed', 'detected'].includes(proposedStatus)) return true;
+        if (isCsvComparisonTransformMode(ui.cleanupReview.mode) && type === 'update-existing' && target && proposedStatus !== String(target.status || '').trim() && !shouldAllowCsvStatusUpdate(proposal, target, proposedStatus)) return true;
+        if (wouldRejectCsvNewImplementedFeatureOnAccept(proposal)) return true;
+        return hasCsvWeakEvidenceLanguage(proposal);
+      }
+
+      function buildCleanupReviewMainChatClarificationPrompt() {
+        const proposals = (ui.cleanupReview.proposals || []).filter(isCleanupProposalUnclearForMainChat).slice(0, 25);
+        const questions = Array.isArray(ui.cleanupReview.openQuestions) ? ui.cleanupReview.openQuestions.slice(0, 25) : [];
+        if (!proposals.length && !questions.length) return alert('Keine unklaren Befunde oder openQuestions im aktuellen Cleanup-Review gefunden.');
+        const projectId = ui.cleanupReview.projectId || '';
+        const projectTitle = getProjectTitle(projectId) || 'Unbekanntes Projekt';
+        const lines = [
+          '# Roadtrip Hauptchat-Klärung: unklare CSV-Codeanalyse-Befunde',
+          '',
+          'Du klärst Projektkontext. Du analysierst keinen Code erneut. Nutze nur die kompakten Befunde unten; fordere bei Bedarf eine menschliche Entscheidung an.',
+          '',
+          '## Projekt',
+          '- projectId: ' + projectId,
+          '- projectTitle: ' + projectTitle,
+          '',
+          '## Ziel',
+          'Kläre pro Kandidat: wirklich umgesetzt, nur vorbereitet/teilweise, späterer Scope, Duplikat, planned lassen, als implemented bestätigen oder als obsolete/probably-stale markieren. Gib keine automatische Roadtrip-Mutation aus.',
+          '',
+          '## Kandidaten'
+        ];
+        if (proposals.length) {
+          proposals.forEach((proposal, index) => {
+            const target = resolveCleanupTargetFeature(proposal);
+            const type = normalizeCleanupProposalType(proposal.type, ui.cleanupReview.mode);
+            const title = proposal.resolvedTitle || proposal.incomingTitle || (target && target.title) || '—';
+            const featureId = proposal.targetFeatureId || (target && target.id) || '';
+            const currentPool = target ? (target.pool || '—') : 'kein bestehendes Ziel';
+            const currentStatus = target ? (target.status || '—') : '—';
+            const finding = proposal.rationale || proposal.changeSummary || proposal.resolvedDescription || '—';
+            lines.push(
+              '',
+              '### Kandidat ' + (index + 1),
+              '- Feature-ID: ' + (featureId || '—'),
+              '- Titel: ' + title,
+              '- Aktueller Pool/Status: ' + currentPool + ' / ' + currentStatus,
+              '- Proposal-Typ: ' + type,
+              '- Confidence: ' + (proposal.confidence || '—'),
+              '- Codebefund/Rationale/ChangeSummary: ' + shorten(finding, 700),
+              '- Klärungsfrage: Ist dieses Feature wirklich umgesetzt, nur vorbereitet/teilweise, späterer Scope, Dublette, weiterhin planned oder probably-stale/obsolete?'
+            );
+          });
+        } else {
+          lines.push('', 'Keine Proposal-Kandidaten ausgewählt.');
+        }
+        if (questions.length) {
+          lines.push('', '## Offene Fragen aus dem Abgleich');
+          questions.forEach((q, i) => lines.push('- Q' + (i + 1) + ': ' + shorten(q, 500)));
+        }
+        lines.push('', '## Erwartete Antwort', 'Gib eine kompakte Liste mit Entscheidungsempfehlung pro Kandidat/Frage zurück. Kein Code, keine komplette CSV, kein Rückimport-JSON.');
+        const prompt = lines.join('\n');
+        ui.cleanupReview.clarificationPrompt = prompt;
+        if ($('cleanupMainChatClarificationPromptOutput')) $('cleanupMainChatClarificationPromptOutput').value = prompt;
+        renderView();
+        navigator.clipboard.writeText(prompt)
+          .then(() => alert('Hauptchat-Klärungsprompt erzeugt und kopiert.'))
+          .catch(() => alert('Hauptchat-Klärungsprompt erzeugt.'));
+      }
+
       function clearCleanupReview() {
-        ui.cleanupReview = { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', visible: false, versionLogged: false };
+        ui.cleanupReview = { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', openQuestions: [], clarificationPrompt: '', visible: false, versionLogged: false };
         renderView();
       }
 
@@ -12719,7 +12952,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           const reviewOnlyAction = (normalizedType === 'match-existing' || normalizedType === 'probably-stale')
             ? `<button class="btn btn-secondary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als geprüft abhaken</button>`
             : '';
-          const dangerAction = normalizedType === 'duplicate-of' && hasDuplicate
+          const dangerAction = normalizedType === 'duplicate-of' && hasDuplicate && !isCsvComparisonTransformMode(ui.cleanupReview.mode)
             ? `<button class="btn btn-danger" data-cleanup-mark-duplicate="${proposal._idx}"${disabledAttr}>Dublette in Papierkorb verschieben</button>`
             : '';
           return `
@@ -12752,9 +12985,18 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
               </div>
               <div class="stack-row cleanup-review-prompt">
                 <button class="btn btn-primary" id="btnLoadCleanupReview">Cleanup-Vorschläge laden</button>
+                ${ui.cleanupReview.mode === 'csv-comparison-transform' ? '<button class="btn btn-secondary" id="btnBuildCleanupMainChatClarificationPrompt">Hauptchat-Klärungsprompt für unklare Befunde bauen</button>' : ''}
                 <button class="btn" id="btnClearCleanupReview">Cleanup schließen</button>
               </div>
               ${ui.cleanupReview.summary ? `<div class="mini cleanup-review-summary-text">Summary: ${escapeHtml(ui.cleanupReview.summary)}</div>` : ''}
+              ${ui.cleanupReview.openQuestions && ui.cleanupReview.openQuestions.length ? `<div class="mini cleanup-review-note-muted">Open Questions: ${escapeHtml(ui.cleanupReview.openQuestions.length)}</div>` : ''}
+              ${ui.cleanupReview.mode === 'csv-comparison-transform' ? `
+                <div class="field">
+                  <label for="cleanupMainChatClarificationPromptOutput">Hauptchat-Klärungsprompt</label>
+                  <textarea id="cleanupMainChatClarificationPromptOutput" class="cleanup-review-textarea" placeholder="Kompakter Klärungsprompt für unklare CSV-Codeanalyse-Befunde">${escapeHtml(ui.cleanupReview.clarificationPrompt || '')}</textarea>
+                  <button class="btn btn-secondary" id="btnCopyCleanupMainChatClarificationPrompt">Klärungsprompt kopieren</button>
+                </div>
+              ` : ''}
             </section>
             <section class="cleanup-review-stage" aria-label="Review">
               <div class="cleanup-review-stage-head">
@@ -12839,6 +13081,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         if (textareaId === 'analysisPromptOutput') ui.importDraft.analysisPrompt = text;
         else if (textareaId === 'cleanupPromptOutput') ui.importDraft.cleanupPrompt = text;
         else if (textareaId === 'codeAnalysisPromptOutput') getCodeAnalysisPromptPrepState().outputPrompt = text;
+        else if (textareaId === 'cleanupMainChatClarificationPromptOutput') ui.cleanupReview.clarificationPrompt = text;
         else if (textareaId === 'projectMomentumPromptOutput') {
           const projectId = ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '';
           if (projectId) getProjectMomentumPromptState(projectId).prompt = text;
