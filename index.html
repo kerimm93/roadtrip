@@ -12515,6 +12515,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           type: normalizeCleanupProposalType(validTypes.includes(p.type) ? p.type : fallbackType, ui.cleanupReview.mode),
           targetFeatureId: String(p.targetFeatureId || '').trim(),
           duplicateFeatureId: String(p.duplicateFeatureId || '').trim(),
+          featureId: String(p.featureId || '').trim(),
+          sourceFeatureId: String(p.sourceFeatureId || '').trim(),
           incomingTitle: String(p.incomingTitle || '').trim(),
           resolvedTitle: String(p.resolvedTitle || '').trim(),
           resolvedDescription: String(p.resolvedDescription || '').trim(),
@@ -12587,8 +12589,11 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       function resolveCleanupTargetFeature(proposal) {
         if (!proposal) return null;
         const pid = ui.cleanupReview.projectId || '';
-        if (proposal.targetFeatureId) {
-          const byId = S.features.find(x => x.id === proposal.targetFeatureId && (!pid || x.projectId === pid));
+        const targetIds = [proposal.targetFeatureId, proposal.featureId, proposal.sourceFeatureId]
+          .map(v => String(v || '').trim())
+          .filter(Boolean);
+        for (const id of targetIds) {
+          const byId = S.features.find(x => x.id === id && (!pid || x.projectId === pid));
           if (byId) return byId;
         }
         if (proposal.resolvedTitle) {
@@ -12691,7 +12696,12 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       function csvProposalHasExistingFeatureReference(proposal) {
         if (!proposal) return false;
         const pid = ui.cleanupReview.projectId || '';
-        const ids = [proposal.targetFeatureId, proposal.duplicateFeatureId].map(v => String(v || '').trim()).filter(Boolean);
+        const ids = [
+          proposal.targetFeatureId,
+          proposal.duplicateFeatureId,
+          proposal.featureId,
+          proposal.sourceFeatureId
+        ].map(v => String(v || '').trim()).filter(Boolean);
         return ids.some(id => S.features.some(f => f.id === id && (!pid || f.projectId === pid)));
       }
 
@@ -12773,7 +12783,14 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           renderView();
           return;
         }
-        applyCleanupProposalToFeature(feature, proposal);
+        const changes = applyCleanupProposalToFeature(feature, proposal);
+        if (isCsvComparisonTransformMode(ui.cleanupReview.mode) && !changes.length) {
+          proposal._done = true;
+          proposal._reviewedOnly = true;
+          save();
+          renderView();
+          return alert('CSV-Transform: Keine sichere Änderung wurde angewendet. Der Vorschlag wurde nur als geprüft markiert.');
+        }
         proposal._done = true;
         save();
         renderView();
@@ -12918,7 +12935,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
             const target = resolveCleanupTargetFeature(proposal);
             const type = normalizeCleanupProposalType(proposal.type, ui.cleanupReview.mode);
             const title = proposal.resolvedTitle || proposal.incomingTitle || (target && target.title) || '—';
-            const featureId = proposal.targetFeatureId || (target && target.id) || '';
+            const featureId = proposal.targetFeatureId || (target && target.id) || proposal.featureId || proposal.sourceFeatureId || '';
             const currentPool = target ? (target.pool || '—') : 'kein bestehendes Ziel';
             const currentStatus = target ? (target.status || '—') : '—';
             const finding = proposal.rationale || proposal.changeSummary || proposal.resolvedDescription || '—';
