@@ -12615,7 +12615,11 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           proposal && proposal.rationale,
           proposal && proposal.changeSummary
         ].filter(Boolean).join(' '));
-        return /kein(?:e|en|er|es)?\s+(?:(?:konkrete?n?|vollstaendige?n?|vollständige?n?)\s+)?(?:codeevidenz|evidenz|implementierung|umsetzung)|fehlende?\s+(?:codeevidenz|evidenz|implementierung|umsetzung)|nicht\s+(?:umgesetzt|implementiert|nachweisbar|bestaetigt|bestätigt)|kein(?:e|en|er|es)?\s+(?:nachweis|beleg|codebeleg)|no\s+(?:code\s+)?evidence|missing\s+(?:code\s+)?evidence|not\s+(?:implemented|confirmed|verifiable)|cannot\s+confirm|no\s+implementation\s+evidence/.test(text);
+        const negatedEvidenceQualifier = '(?:konkrete?n?|vollstaendige?n?|vollständige?n?|eindeutige?n?|explizite?n?|starke?n?|klare?n?|belastbare?n?|verlaessliche?n?|verlässliche?n?|nachweisbare?n?)';
+        const negatedProofQualifier = '(?:konkret(?:e|er|en|es)?|vollstaendig(?:e|er|en|es)?|vollständig(?:e|er|en|es)?|eindeutig(?:e|er|en|es)?|explizit(?:e|er|en|es)?|stark(?:e|er|en|es)?|klar(?:e|er|en|es)?|belastbar(?:e|er|en|es)?|verlaesslich(?:e|er|en|es)?|verlässlich(?:e|er|en|es)?|nachweisbar(?:e|er|en|es)?)';
+        const negatedEvidencePattern = new RegExp('kein(?:e|en|er|es)?\\s+(?:' + negatedEvidenceQualifier + '\\s+)?(?:codeevidenz|evidenz|implementierung|umsetzung)');
+        const negatedProofPattern = new RegExp('kein(?:e|en|er|es)?\\s+(?:' + negatedProofQualifier + '\\s+)?(?:nachweis|beleg|codebeleg)');
+        return negatedEvidencePattern.test(text) || negatedProofPattern.test(text) || /fehlende?\s+(?:codeevidenz|evidenz|implementierung|umsetzung)|nicht\s+(?:umgesetzt|implementiert|nachweisbar|bestaetigt|bestätigt)|no\s+(?:code\s+)?evidence|missing\s+(?:code\s+)?evidence|not\s+(?:implemented|confirmed|verifiable)|cannot\s+confirm|no\s+implementation\s+evidence/.test(text);
       }
 
       function hasCsvWeakEvidenceLanguage(proposal) {
