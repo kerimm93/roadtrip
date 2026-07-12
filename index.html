@@ -2002,7 +2002,7 @@
         multiProjectImport: { rawText: '', prompt: '', resultJson: '', summary: '', updates: [], unmatchedNotes: [], visible: false },
         noteReview: { proposals: [], projectId: '', rawText: '', visible: false },
         noteFeaturePipelineByProject: {},
-        cleanupReview: { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', openQuestions: [], clarificationPrompt: '', visible: false, versionLogged: false },
+        cleanupReview: { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', openQuestions: [], clarificationPrompt: '', mainChatReturnJson: '', dedupePrompt: '', dedupeReturnJson: '', visible: false, versionLogged: false },
         showCompletedSprintsByProject: {},
         projectMomentumCollapsedByProject: {},
         projectMomentumPromptByProject: {},
@@ -3039,6 +3039,10 @@
         if ($('btnClearCleanupReview')) $('btnClearCleanupReview').addEventListener('click', clearCleanupReview);
         if ($('btnBuildCleanupMainChatClarificationPrompt')) $('btnBuildCleanupMainChatClarificationPrompt').addEventListener('click', buildCleanupReviewMainChatClarificationPrompt);
         if ($('btnCopyCleanupMainChatClarificationPrompt')) $('btnCopyCleanupMainChatClarificationPrompt').addEventListener('click', () => copyPrompt('cleanupMainChatClarificationPromptOutput'));
+        if ($('cleanupMainChatReturnJsonInput')) $('cleanupMainChatReturnJsonInput').addEventListener('input', e => { ui.cleanupReview.mainChatReturnJson = e.target.value; });
+        if ($('cleanupDedupeReturnJsonInput')) $('cleanupDedupeReturnJsonInput').addEventListener('input', e => { ui.cleanupReview.dedupeReturnJson = e.target.value; });
+        if ($('btnBuildCleanupDedupePrompt')) $('btnBuildCleanupDedupePrompt').addEventListener('click', buildCleanupReviewDedupePrompt);
+        if ($('btnCopyCleanupDedupePrompt')) $('btnCopyCleanupDedupePrompt').addEventListener('click', () => copyPrompt('cleanupDedupePromptOutput'));
         if ($('btnCopyAnalysisPrompt')) $('btnCopyAnalysisPrompt').addEventListener('click', () => copyPrompt('analysisPromptOutput'));
         if ($('btnCopyCleanupPrompt')) $('btnCopyCleanupPrompt').addEventListener('click', () => copyPrompt('cleanupPromptOutput'));
         if ($('btnFeatureFromPrompt')) $('btnFeatureFromPrompt').addEventListener('click', importFeatureLinesFromPrompt);
@@ -3046,6 +3050,8 @@
         qq('[data-cleanup-accept-new]').forEach(btn => btn.addEventListener('click', () => acceptCleanupProposalAsNew(+btn.dataset.cleanupAcceptNew)));
         qq('[data-cleanup-review-only]').forEach(btn => btn.addEventListener('click', () => markCleanupProposalAsReviewed(+btn.dataset.cleanupReviewOnly)));
         qq('[data-cleanup-mark-duplicate]').forEach(btn => btn.addEventListener('click', () => markCleanupProposalAsDuplicate(+btn.dataset.cleanupMarkDuplicate)));
+        qq('[data-cleanup-queue-mainchat]').forEach(btn => btn.addEventListener('click', () => queueCleanupProposalForMainChat(+btn.dataset.cleanupQueueMainchat)));
+        qq('[data-cleanup-queue-dedupe]').forEach(btn => btn.addEventListener('click', () => queueCleanupProposalForDedupe(+btn.dataset.cleanupQueueDedupe)));
         qq('[data-import-dup-ignore]').forEach(btn => btn.addEventListener('click', () => ignoreImportedFeatureDuplicate(btn.dataset.importDupIgnore || '')));
         qq('[data-import-dup-fill]').forEach(btn => btn.addEventListener('click', () => fillImportedFeatureDuplicateEmptyFields(btn.dataset.importDupFill || '')));
         qq('[data-import-dup-adopt]').forEach(btn => btn.addEventListener('click', () => adoptImportedFeatureDuplicateCandidate(btn.dataset.importDupAdopt || '')));
@@ -8971,7 +8977,7 @@
           </div>
           ${renderPullRequestMarkdownImportSection()}
           <details class="item" style="margin-bottom:12px;">
-            <summary style="font-weight:700;cursor:pointer;">Codex-Codeanalyse vorbereiten</summary>
+            <summary style="font-weight:700;cursor:pointer;">Erweiterte / ältere Codex-Codeanalyse (Legacy)</summary>
             <div class="mini" style="margin:8px 0 10px;">Erzeugt einen kompakten Soll-/Ist-Analyseprompt. Das Delta-JSON bleibt Review-Artefakt und wird nicht automatisch auf Features angewendet.</div>
             <div class="field">
               <label for="codeAnalysisMode">Analysemodus</label>
@@ -12525,11 +12531,16 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           confidence: validConfidence.includes(String(p.confidence || '').trim()) ? String(p.confidence || '').trim() : 'mittel',
           rationale: String(p.rationale || '').trim(),
           changeSummary: String(p.changeSummary || '').trim(),
-          _done: false
+          _done: false,
+          _queuedMainChat: false,
+          _queuedDedupe: false
         }));
         ui.cleanupReview.summary = String(parsed.summary || '').trim();
         ui.cleanupReview.openQuestions = parsedOpenQuestions;
         ui.cleanupReview.clarificationPrompt = '';
+        ui.cleanupReview.mainChatReturnJson = '';
+        ui.cleanupReview.dedupePrompt = '';
+        ui.cleanupReview.dedupeReturnJson = '';
         ui.cleanupReview.visible = true;
         if (
           !ui.cleanupReview.versionLogged &&
@@ -12733,7 +12744,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           feature.pool = 'implemented';
           changes.push('pool');
         }
-        if (isImplementedCleanupMode(mode) && feature.reviewStatus !== 'needs-review') {
+        if (!csvTransformMode && isImplementedCleanupMode(mode) && feature.reviewStatus !== 'needs-review') {
           feature.reviewStatus = 'needs-review';
           changes.push('reviewStatus');
         }
@@ -12770,8 +12781,80 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
             changes.push('status');
           }
         }
+        if (csvTransformMode && changes.length && isImplementedCleanupMode(mode) && feature.reviewStatus !== 'needs-review') {
+          feature.reviewStatus = 'needs-review';
+          changes.push('reviewStatus');
+        }
         if (changes.length) feature.updatedAt = new Date().toISOString();
         return changes;
+      }
+
+
+      function findCleanupProjectFeatureById(id) {
+        const pid = ui.cleanupReview.projectId || '';
+        const featureId = String(id || '').trim();
+        if (!featureId) return null;
+        return S.features.find(f => f.id === featureId && (!pid || f.projectId === pid)) || null;
+      }
+
+      function getCleanupProposalAllowedChangeKeys(proposal) {
+        const feature = resolveCleanupTargetFeature(proposal);
+        if (!proposal || !feature) return [];
+        const mode = ui.cleanupReview.mode || 'import-cleanup';
+        const proposalType = normalizeCleanupProposalType(proposal.type, mode);
+        const csvTransformMode = isCsvComparisonTransformMode(mode);
+        if (csvTransformMode && ['match-existing', 'probably-stale', 'duplicate-of'].includes(proposalType)) return [];
+        const changes = [];
+        const allowCsvPoolEscalation = !csvTransformMode || shouldAllowCsvPlannedToImplementedUpdate(proposal, feature) || feature.pool === 'implemented';
+        if (isImplementedCleanupMode(mode) && feature.pool !== 'implemented' && allowCsvPoolEscalation) changes.push('pool');
+        if (!csvTransformMode && isImplementedCleanupMode(mode) && feature.reviewStatus !== 'needs-review') changes.push('reviewStatus');
+        const nextTitle = proposal.resolvedTitle || proposal.incomingTitle;
+        if (nextTitle && nextTitle !== feature.title && shouldAllowCsvFieldReplacement(proposal, 'title')) changes.push('title');
+        const nextDescription = String(proposal.resolvedDescription || '').trim();
+        const existingDescription = String(feature.description || '').trim();
+        if (nextDescription && nextDescription !== existingDescription && shouldAllowCsvDescriptionReplacement(proposal, feature)) changes.push('description');
+        const nextCategory = proposal.resolvedCategory;
+        if (nextCategory && FEATURE_CATEGORIES.includes(nextCategory) && nextCategory !== feature.category && shouldAllowCsvFieldReplacement(proposal, 'category')) changes.push('category');
+        const nextStatus = isImplementedCleanupMode(mode) ? normalizeCleanupProposalStatus(proposal.resolvedStatus, mode) : resolveStatusForPool(proposal.resolvedStatus, feature.pool || 'planned');
+        if (nextStatus && isValidFeatureStatus(nextStatus, feature.pool || 'planned') && nextStatus !== feature.status && (!csvTransformMode || shouldAllowCsvStatusUpdate(proposal, feature, nextStatus))) changes.push('status');
+        return Array.from(new Set(changes));
+      }
+
+      function classifyCleanupDuplicateSemantics(proposal) {
+        if (!proposal || normalizeCleanupProposalType(proposal.type, ui.cleanupReview.mode) !== 'duplicate-of') return { kind: 'none', label: '' };
+        const target = findCleanupProjectFeatureById(proposal.targetFeatureId || proposal.featureId || proposal.sourceFeatureId);
+        const duplicate = findCleanupProjectFeatureById(proposal.duplicateFeatureId);
+        if (target && duplicate && target.id !== duplicate.id) return { kind: 'existing-db-duplicate', label: 'Bestehende Features sind vermutlich Dubletten', target, duplicate };
+        if (resolveCleanupTargetFeature(proposal) || target || duplicate) return { kind: 'import-duplicate', label: 'Import-Kandidat existiert vermutlich bereits', target: resolveCleanupTargetFeature(proposal) || target || duplicate };
+        return { kind: 'unclear-duplicate', label: 'Dublettenlage unklar – bitte klären' };
+      }
+
+      function canAcceptCleanupProposalAsNewSafely(proposal) {
+        if (!proposal) return false;
+        if (!isCsvComparisonTransformMode(ui.cleanupReview.mode)) return true;
+        return normalizeCleanupProposalType(proposal.type, ui.cleanupReview.mode) === 'new-implemented-feature' && !wouldRejectCsvNewImplementedFeatureOnAccept(proposal);
+      }
+
+      function queueCleanupProposalForMainChat(idx) {
+        const proposal = ui.cleanupReview.proposals.find(p => p._idx === idx);
+        if (!proposal || proposal._done) return;
+        proposal._done = true;
+        proposal._queuedMainChat = true;
+        proposal._reviewedOnly = true;
+        save();
+        renderView();
+      }
+
+      function queueCleanupProposalForDedupe(idx) {
+        const proposal = ui.cleanupReview.proposals.find(p => p._idx === idx);
+        if (!proposal || proposal._done) return;
+        const semantics = classifyCleanupDuplicateSemantics(proposal);
+        if (semantics.kind !== 'existing-db-duplicate') return alert('Dedupe-Prompt ist nur für zwei eindeutig bestehende Feature-IDs vorgesehen. Bitte für Hauptchat-Abklärung vormerken.');
+        proposal._done = true;
+        proposal._queuedDedupe = true;
+        proposal._reviewedOnly = true;
+        save();
+        renderView();
       }
 
       function acceptCleanupProposalAsUpdate(idx) {
@@ -12915,24 +12998,21 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       }
 
       function buildCleanupReviewMainChatClarificationPrompt() {
-        const proposals = (ui.cleanupReview.proposals || []).filter(isCleanupProposalUnclearForMainChat).slice(0, 25);
-        const questions = Array.isArray(ui.cleanupReview.openQuestions) ? ui.cleanupReview.openQuestions.slice(0, 25) : [];
-        if (!proposals.length && !questions.length) return alert('Keine unklaren Befunde oder openQuestions im aktuellen Cleanup-Review gefunden.');
+        const proposals = (ui.cleanupReview.proposals || []).filter(p => p._queuedMainChat).slice(0, 25);
+        const questions = Array.isArray(ui.cleanupReview.openQuestions) ? ui.cleanupReview.openQuestions.slice(0, 10) : [];
+        if (!proposals.length && !questions.length) return alert('Keine explizit für Hauptchat vorgemerkten Fälle oder openQuestions im aktuellen Cleanup-Review gefunden.');
         const projectId = ui.cleanupReview.projectId || '';
         const projectTitle = getProjectTitle(projectId) || 'Unbekanntes Projekt';
         const lines = [
-          '# Roadtrip Hauptchat-Klärung: unklare CSV-Codeanalyse-Befunde',
+          '# Roadtrip Hauptchat-Klärung: vorgemerkte CSV-Codeanalyse-Befunde',
           '',
-          'Du klärst Projektkontext. Du analysierst keinen Code erneut. Nutze nur die kompakten Befunde unten; fordere bei Bedarf eine menschliche Entscheidung an.',
+          'Zweck: Bereite menschliche Entscheidungen für unklare CSV-Codeanalyse-Review-Fälle vor. Analysiere keinen Code erneut und löse keine automatischen Roadtrip-Mutationen aus.',
           '',
           '## Projekt',
           '- projectId: ' + projectId,
           '- projectTitle: ' + projectTitle,
           '',
-          '## Ziel',
-          'Kläre pro Kandidat: wirklich umgesetzt, nur vorbereitet/teilweise, späterer Scope, Duplikat, planned lassen, als implemented bestätigen oder als obsolete/probably-stale markieren. Gib keine automatische Roadtrip-Mutation aus.',
-          '',
-          '## Kandidaten'
+          '## Vorgemerkte Fälle'
         ];
         if (proposals.length) {
           proposals.forEach((proposal, index) => {
@@ -12945,24 +13025,25 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
             const finding = proposal.rationale || proposal.changeSummary || proposal.resolvedDescription || '—';
             lines.push(
               '',
-              '### Kandidat ' + (index + 1),
+              '### Fall ' + (index + 1),
               '- Feature-ID: ' + (featureId || '—'),
               '- Titel: ' + title,
-              '- Aktueller Pool/Status: ' + currentPool + ' / ' + currentStatus,
+              '- Aktueller Pool: ' + currentPool,
+              '- Aktueller Status: ' + currentStatus,
               '- Proposal-Typ: ' + type,
               '- Confidence: ' + (proposal.confidence || '—'),
               '- Codebefund/Rationale/ChangeSummary: ' + shorten(finding, 700),
-              '- Klärungsfrage: Ist dieses Feature wirklich umgesetzt, nur vorbereitet/teilweise, späterer Scope, Dublette, weiterhin planned oder probably-stale/obsolete?'
+              '- Klärungsfrage: Welche menschliche Entscheidung ist fachlich sicher: als geprüft abhaken, bestehendes Feature vorsichtig ergänzen, später separat behandeln, als Import-Dublette einstufen oder als nicht belastbar zurückstellen?'
             );
           });
         } else {
-          lines.push('', 'Keine Proposal-Kandidaten ausgewählt.');
+          lines.push('', 'Keine Proposal-Fälle explizit vorgemerkt.');
         }
         if (questions.length) {
-          lines.push('', '## Offene Fragen aus dem Abgleich');
+          lines.push('', '## Zusätzliche offene Fragen aus dem Import-Ergebnis');
           questions.forEach((q, i) => lines.push('- Q' + (i + 1) + ': ' + shorten(q, 500)));
         }
-        lines.push('', '## Erwartete Antwort', 'Gib eine kompakte Liste mit Entscheidungsempfehlung pro Kandidat/Frage zurück. Kein Code, keine komplette CSV, kein Rückimport-JSON.');
+        lines.push('', '## Antworterwartung', 'Gib eine kompakte Entscheidungsempfehlung pro Fall/Frage zurück. Kein Code, keine komplette CSV, keine automatische Löschung, kein automatisches Merge, keine Archivierung und keine Aufforderung zu Roadtrip-Mutationen.');
         const prompt = lines.join('\n');
         ui.cleanupReview.clarificationPrompt = prompt;
         if ($('cleanupMainChatClarificationPromptOutput')) $('cleanupMainChatClarificationPromptOutput').value = prompt;
@@ -12972,8 +13053,53 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           .catch(() => alert('Hauptchat-Klärungsprompt erzeugt.'));
       }
 
+      function buildCleanupReviewDedupePrompt() {
+        const proposals = (ui.cleanupReview.proposals || []).filter(p => p._queuedDedupe && classifyCleanupDuplicateSemantics(p).kind === 'existing-db-duplicate').slice(0, 25);
+        if (!proposals.length) return alert('Keine eindeutig bestehenden Datenbank-Dubletten für den Dedupe-Prompt vorgemerkt.');
+        const projectId = ui.cleanupReview.projectId || '';
+        const projectTitle = getProjectTitle(projectId) || 'Unbekanntes Projekt';
+        const lines = [
+          '# Roadtrip Dedupe-Prompt: bestehende Feature-Dubletten',
+          '',
+          'Zweck: Bereite eine menschliche Entscheidungsempfehlung für bereits existierende Roadtrip-Feature-Paare vor.',
+          'Wichtig: Keine automatische Löschung, kein automatisches Merge, keine automatische Archivierung.',
+          '',
+          '## Projekt',
+          '- projectId: ' + projectId,
+          '- projectTitle: ' + projectTitle,
+          '',
+          '## Vorgemerkte Dublettenpaare'
+        ];
+        proposals.forEach((proposal, index) => {
+          const semantics = classifyCleanupDuplicateSemantics(proposal);
+          const a = semantics.target;
+          const b = semantics.duplicate;
+          const reason = proposal.rationale || proposal.changeSummary || '—';
+          lines.push(
+            '',
+            '### Paar ' + (index + 1),
+            '- Feature A ID: ' + a.id,
+            '- Feature A Titel: ' + (a.title || '—'),
+            '- Feature A Pool/Status: ' + (a.pool || '—') + ' / ' + (a.status || '—'),
+            '- Feature B ID: ' + b.id,
+            '- Feature B Titel: ' + (b.title || '—'),
+            '- Feature B Pool/Status: ' + (b.pool || '—') + ' / ' + (b.status || '—'),
+            '- Dubletten-Grund/Rationale: ' + shorten(reason, 700),
+            '- Aufgabe: Empfiehl eine menschliche Dedupe-Entscheidung, ohne automatische Datenänderung auszulösen.'
+          );
+        });
+        lines.push('', '## Antworterwartung', 'Gib pro Paar eine kurze Empfehlung: behalten/prüfen/zusammenführen lassen/weiter beobachten. Kein Code, keine komplette CSV, keine automatische Roadtrip-Aktion.');
+        const prompt = lines.join('\n');
+        ui.cleanupReview.dedupePrompt = prompt;
+        if ($('cleanupDedupePromptOutput')) $('cleanupDedupePromptOutput').value = prompt;
+        renderView();
+        navigator.clipboard.writeText(prompt)
+          .then(() => alert('Dedupe-Prompt erzeugt und kopiert.'))
+          .catch(() => alert('Dedupe-Prompt erzeugt.'));
+      }
+
       function clearCleanupReview() {
-        ui.cleanupReview = { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', openQuestions: [], clarificationPrompt: '', visible: false, versionLogged: false };
+        ui.cleanupReview = { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', openQuestions: [], clarificationPrompt: '', mainChatReturnJson: '', dedupePrompt: '', dedupeReturnJson: '', visible: false, versionLogged: false };
         renderView();
       }
 
@@ -12982,111 +13108,122 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const proposals = ui.cleanupReview.proposals || [];
         const typeLabel = { 'match-existing': 'Unverändert / bereits vorhanden', 'update-existing': 'Update', 'new-implemented-feature': 'Neu', 'new-feature': 'Neu', 'duplicate-of': 'Dublette / vermutlich bereits vorhanden', 'probably-stale': 'Möglicherweise veraltet' };
         const modeLabel = ui.cleanupReview.mode === 'project-dedupe' ? 'Feature-Bereinigung' : (ui.cleanupReview.mode === 'csv-comparison-transform' ? 'CSV-Transform-Cleanup' : 'Import-Cleanup');
+        const csvMode = isCsvComparisonTransformMode(ui.cleanupReview.mode);
         const cleanupStats = proposals.reduce((acc, proposal) => {
           const normalizedType = normalizeCleanupProposalType(proposal.type, ui.cleanupReview.mode);
-          if (normalizedType === 'new-feature' || normalizedType === 'new-implemented-feature') acc.newCount += 1;
-          if (normalizedType === 'update-existing') acc.updateCount += 1;
+          const allowedChanges = getCleanupProposalAllowedChangeKeys(proposal);
+          if ((normalizedType === 'new-feature' || normalizedType === 'new-implemented-feature') && canAcceptCleanupProposalAsNewSafely(proposal)) acc.newCount += 1;
+          if (normalizedType === 'update-existing' && allowedChanges.length) acc.updateCount += 1;
           if (normalizedType === 'duplicate-of') acc.duplicateCount += 1;
+          if (proposal._queuedMainChat) acc.mainChatQueued += 1;
+          if (proposal._queuedDedupe) acc.dedupeQueued += 1;
           if (proposal._done && !proposal._ignored && !proposal._reviewedOnly) acc.acceptedCount += 1;
           return acc;
-        }, { newCount: 0, updateCount: 0, duplicateCount: 0, acceptedCount: 0 });
-        const openCount = proposals.filter(p => !p._done).length;
-        const reviewCounter = `${cleanupStats.newCount} neu · ${cleanupStats.updateCount} Updates · ${cleanupStats.duplicateCount} Dubletten · ${cleanupStats.acceptedCount} übernommen`;
-        const renderCleanupActions = (proposal, normalizedType, hasTarget, hasDuplicate) => {
+        }, { newCount: 0, updateCount: 0, duplicateCount: 0, acceptedCount: 0, mainChatQueued: 0, dedupeQueued: 0 });
+        const directOpenCount = proposals.filter(p => !p._done).length;
+        const reviewCounter = `${cleanupStats.newCount} echte neue · ${cleanupStats.updateCount} echte Updates · ${cleanupStats.duplicateCount} Dubletten · ${cleanupStats.acceptedCount} übernommen`;
+        const renderFeatureMini = (label, feature) => feature ? `
+          <div class="mini cleanup-review-note-info">${escapeHtml(label)}: ${escapeHtml(feature.id)} · ${escapeHtml(feature.title || '—')} · Pool ${escapeHtml(feature.pool || '—')} · Status ${escapeHtml(feature.status || '—')}</div>
+        ` : '';
+        const renderCleanupActions = (proposal, normalizedType, hasTarget, duplicateSemantics) => {
           const disabledAttr = proposal._done ? ' disabled' : '';
+          const allowedChanges = getCleanupProposalAllowedChangeKeys(proposal);
+          const canUpdate = hasTarget && allowedChanges.length > 0;
+          const canNew = canAcceptCleanupProposalAsNewSafely(proposal);
+          const unclear = isCleanupProposalUnclearForMainChat(proposal) || duplicateSemantics.kind === 'unclear-duplicate';
+          if (csvMode) {
+            if (normalizedType === 'match-existing') {
+              return `<div class="stack-row cleanup-review-actions"><button class="btn btn-primary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als geprüft abhaken</button><button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button></div>`;
+            }
+            if (normalizedType === 'update-existing') {
+              const primary = canUpdate
+                ? `<button class="btn btn-primary" data-cleanup-accept-update="${proposal._idx}"${disabledAttr}>Bestehendes Feature aktualisieren</button>`
+                : (unclear ? `<button class="btn btn-primary" data-cleanup-queue-mainchat="${proposal._idx}"${disabledAttr}>Vormerken für Hauptchat-Abklärung</button>` : `<button class="btn btn-primary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als geprüft abhaken</button>`);
+              return `<div class="stack-row cleanup-review-actions">${primary}<button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button></div>`;
+            }
+            if (normalizedType === 'new-implemented-feature') {
+              const primary = canNew
+                ? `<button class="btn btn-primary" data-cleanup-accept-new="${proposal._idx}"${disabledAttr}>Neues Feature anlegen</button>`
+                : (unclear ? `<button class="btn btn-primary" data-cleanup-queue-mainchat="${proposal._idx}"${disabledAttr}>Vormerken für Hauptchat-Abklärung</button>` : `<button class="btn btn-primary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als geprüft abhaken</button>`);
+              return `<div class="stack-row cleanup-review-actions">${primary}<button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button></div>`;
+            }
+            if (normalizedType === 'probably-stale') {
+              const primary = isCleanupProposalUnclearForMainChat(proposal)
+                ? `<button class="btn btn-primary" data-cleanup-queue-mainchat="${proposal._idx}"${disabledAttr}>Vormerken für Hauptchat-Abklärung</button>`
+                : `<button class="btn btn-primary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als Hinweis geprüft abhaken</button>`;
+              return `<div class="stack-row cleanup-review-actions">${primary}<button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button></div>`;
+            }
+            if (normalizedType === 'duplicate-of') {
+              if (duplicateSemantics.kind === 'existing-db-duplicate') {
+                return `<div class="stack-row cleanup-review-actions"><button class="btn btn-primary" data-cleanup-queue-dedupe="${proposal._idx}"${disabledAttr}>Vormerken für Dedupe-Prompt</button><button class="btn btn-secondary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als Dublette geprüft abhaken</button><button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button></div>`;
+              }
+              if (duplicateSemantics.kind === 'import-duplicate') {
+                const primary = canUpdate
+                  ? `<button class="btn btn-primary" data-cleanup-accept-update="${proposal._idx}"${disabledAttr}>Bestehendes Feature ergänzen</button>`
+                  : `<button class="btn btn-primary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als geprüft abhaken</button>`;
+                return `<div class="stack-row cleanup-review-actions">${primary}<button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button></div>`;
+              }
+              return `<div class="stack-row cleanup-review-actions"><button class="btn btn-primary" data-cleanup-queue-mainchat="${proposal._idx}"${disabledAttr}>Vormerken für Hauptchat-Abklärung</button><button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button></div>`;
+            }
+          }
           const primaryAction = hasTarget
             ? `<button class="btn btn-primary" data-cleanup-accept-update="${proposal._idx}"${disabledAttr}>Bestehendes Feature aktualisieren</button>`
             : `<button class="btn btn-primary" data-cleanup-accept-new="${proposal._idx}"${disabledAttr}>Als neues Feature anlegen</button>`;
-          const secondaryAction = hasTarget
-            ? `<button class="btn btn-secondary" data-cleanup-accept-new="${proposal._idx}"${disabledAttr}>Trotzdem als neues Feature anlegen</button>`
-            : '';
-          const reviewOnlyAction = (normalizedType === 'match-existing' || normalizedType === 'probably-stale')
-            ? `<button class="btn btn-secondary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als geprüft abhaken</button>`
-            : '';
-          const dangerAction = normalizedType === 'duplicate-of' && hasDuplicate && !isCsvComparisonTransformMode(ui.cleanupReview.mode)
-            ? `<button class="btn btn-danger" data-cleanup-mark-duplicate="${proposal._idx}"${disabledAttr}>Dublette in Papierkorb verschieben</button>`
-            : '';
-          return `
-            <div class="stack-row cleanup-review-actions">
-              ${primaryAction}
-              ${secondaryAction}
-              ${reviewOnlyAction}
-              ${dangerAction}
-              <button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button>
-            </div>
-          `;
+          const secondaryAction = hasTarget ? `<button class="btn btn-secondary" data-cleanup-accept-new="${proposal._idx}"${disabledAttr}>Trotzdem als neues Feature anlegen</button>` : '';
+          const reviewOnlyAction = (normalizedType === 'match-existing' || normalizedType === 'probably-stale') ? `<button class="btn btn-secondary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als geprüft abhaken</button>` : '';
+          const dangerAction = normalizedType === 'duplicate-of' && duplicateSemantics.duplicate && !csvMode ? `<button class="btn btn-danger" data-cleanup-mark-duplicate="${proposal._idx}"${disabledAttr}>Dublette in Papierkorb verschieben</button>` : '';
+          return `<div class="stack-row cleanup-review-actions">${primaryAction}${secondaryAction}${reviewOnlyAction}${dangerAction}<button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button></div>`;
         };
         return `
           <details class="cleanup-review-shell" open>
-            <summary class="cleanup-review-summary">Cleanup-Review (${modeLabel}) · ${openCount} offen</summary>
+            <summary class="cleanup-review-summary">Cleanup-Review (${modeLabel}) · ${directOpenCount} direkte Fälle offen</summary>
             <section class="cleanup-review-stage" aria-label="Quelle">
-              <div class="cleanup-review-stage-head">
-                <h3 class="cleanup-review-stage-title">Quelle</h3>
-                <span class="section-label">Cleanup-JSON</span>
-              </div>
-              <div class="field">
-                <label for="cleanupReviewJsonInput">Cleanup-JSON einfügen</label>
-                <textarea id="cleanupReviewJsonInput" class="cleanup-review-textarea" placeholder='{"proposals":[...]}'></textarea>
-              </div>
+              <div class="cleanup-review-stage-head"><h3 class="cleanup-review-stage-title">Quelle</h3><span class="section-label">Cleanup-JSON</span></div>
+              <div class="field"><label for="cleanupReviewJsonInput">Cleanup-JSON einfügen</label><textarea id="cleanupReviewJsonInput" class="cleanup-review-textarea" placeholder='{"proposals":[...]}'></textarea></div>
             </section>
             <section class="cleanup-review-stage" aria-label="Prompt und Import">
-              <div class="cleanup-review-stage-head">
-                <h3 class="cleanup-review-stage-title">Prompt+Import</h3>
-                <span class="section-label">Prüfen & übernehmen</span>
-              </div>
+              <div class="cleanup-review-stage-head"><h3 class="cleanup-review-stage-title">Prompt+Import</h3><span class="section-label">Prüfen & übernehmen</span></div>
               <div class="stack-row cleanup-review-prompt">
                 <button class="btn btn-primary" id="btnLoadCleanupReview">Cleanup-Vorschläge laden</button>
-                ${ui.cleanupReview.mode === 'csv-comparison-transform' ? '<button class="btn btn-secondary" id="btnBuildCleanupMainChatClarificationPrompt">Hauptchat-Klärungsprompt für unklare Befunde bauen</button>' : ''}
+                ${csvMode ? '<button class="btn btn-secondary" id="btnBuildCleanupMainChatClarificationPrompt">Hauptchat-Klärungsprompt erzeugen</button><button class="btn btn-secondary" id="btnBuildCleanupDedupePrompt">Dedupe-Prompt erzeugen</button>' : ''}
                 <button class="btn" id="btnClearCleanupReview">Cleanup schließen</button>
               </div>
               ${ui.cleanupReview.summary ? `<div class="mini cleanup-review-summary-text">Summary: ${escapeHtml(ui.cleanupReview.summary)}</div>` : ''}
               ${ui.cleanupReview.openQuestions && ui.cleanupReview.openQuestions.length ? `<div class="mini cleanup-review-note-muted">Open Questions: ${escapeHtml(ui.cleanupReview.openQuestions.length)}</div>` : ''}
-              ${ui.cleanupReview.mode === 'csv-comparison-transform' ? `
-                <div class="field">
-                  <label for="cleanupMainChatClarificationPromptOutput">Hauptchat-Klärungsprompt</label>
-                  <textarea id="cleanupMainChatClarificationPromptOutput" class="cleanup-review-textarea" placeholder="Kompakter Klärungsprompt für unklare CSV-Codeanalyse-Befunde">${escapeHtml(ui.cleanupReview.clarificationPrompt || '')}</textarea>
-                  <button class="btn btn-secondary" id="btnCopyCleanupMainChatClarificationPrompt">Klärungsprompt kopieren</button>
-                </div>
+              ${csvMode ? `
+                <div class="notice notice-info">Direkte Aktionen bearbeiten nur sichere Fälle. Hauptchat- und Dedupe-Queues sind bewusst zurückgestellte Folgearbeit. Vollständig eingeordnet ist das Review erst, wenn direkte Fälle bearbeitet und Queues bewusst behandelt oder zurückgestellt wurden.</div>
+                <div class="stack-row"><span class="pill pill-outline">${directOpenCount} offene direkte Review-Fälle</span><span class="pill pill-info">${cleanupStats.mainChatQueued} Hauptchat vorgemerkt</span><span class="pill pill-info">${cleanupStats.dedupeQueued} Dedupe vorgemerkt</span></div>
+                <div class="field"><label for="cleanupMainChatClarificationPromptOutput">Hauptchat-Klärungsprompt</label><textarea id="cleanupMainChatClarificationPromptOutput" class="cleanup-review-textarea" placeholder="Prompt aus explizit vorgemerkten Hauptchat-Fällen">${escapeHtml(ui.cleanupReview.clarificationPrompt || '')}</textarea><button class="btn btn-secondary" id="btnCopyCleanupMainChatClarificationPrompt">Klärungsprompt kopieren</button></div>
+                <div class="field"><label for="cleanupMainChatReturnJsonInput">Hauptchat-Rückgabe-JSON (später einfügen)</label><textarea id="cleanupMainChatReturnJsonInput" class="cleanup-review-textarea" placeholder='{"decisions":[]}' >${escapeHtml(ui.cleanupReview.mainChatReturnJson || '')}</textarea></div>
+                <div class="field"><label for="cleanupDedupePromptOutput">Dedupe-Prompt</label><textarea id="cleanupDedupePromptOutput" class="cleanup-review-textarea" placeholder="Prompt aus explizit vorgemerkten bestehenden Datenbank-Dubletten">${escapeHtml(ui.cleanupReview.dedupePrompt || '')}</textarea><button class="btn btn-secondary" id="btnCopyCleanupDedupePrompt">Dedupe-Prompt kopieren</button></div>
+                <div class="field"><label for="cleanupDedupeReturnJsonInput">Dedupe-Rückgabe-JSON (später einfügen)</label><textarea id="cleanupDedupeReturnJsonInput" class="cleanup-review-textarea" placeholder='{"dedupeDecisions":[]}' >${escapeHtml(ui.cleanupReview.dedupeReturnJson || '')}</textarea></div>
               ` : ''}
             </section>
             <section class="cleanup-review-stage" aria-label="Review">
-              <div class="cleanup-review-stage-head">
-                <h3 class="cleanup-review-stage-title">Review</h3>
-                <span class="pill pill-outline cleanup-review-counter">${reviewCounter}</span>
-              </div>
-              ${proposals.length ? `
-                <div class="list cleanup-review-list">
-                  ${proposals.map(p => {
-                    const normalizedType = normalizeCleanupProposalType(p.type, ui.cleanupReview.mode);
-                    const targetFeature = resolveCleanupTargetFeature(p);
-                    const duplicateFeature = p.duplicateFeatureId ? S.features.find(f => f.id === p.duplicateFeatureId) : null;
-                    const hasTarget = !!targetFeature;
-                    const hasDuplicate = !!duplicateFeature;
-                    const statusLabel = p._ignored ? 'ignoriert' : (p._reviewedOnly ? 'geprüft' : 'übernommen');
-                    const statusClass = p._ignored ? 'pill-outline' : (p._reviewedOnly ? 'pill-info' : 'pill-success');
-                    return `
-                    <div class="item cleanup-review-card ${p._done ? 'is-done' : ''}">
-                      <div class="row-top">
-                        <strong>${escapeHtml(p.resolvedTitle || p.incomingTitle || '—')}</strong>
-                        <span class="pill pill-outline">${typeLabel[normalizedType] || p.type}</span>
-                      </div>
-                      ${p.incomingTitle ? `<div class="mini">Import: ${escapeHtml(p.incomingTitle)}</div>` : ''}
-                      ${p.targetFeatureId ? `<div class="mini">Ziel-ID: ${escapeHtml(p.targetFeatureId)}</div>` : ''}
-                      ${p.duplicateFeatureId ? `<div class="mini">Duplikat-ID: ${escapeHtml(p.duplicateFeatureId)}</div>` : ''}
-                      ${p.duplicateFeatureId ? `<div class="mini">Duplikat-Titel: ${escapeHtml(((S.features.find(f => f.id === p.duplicateFeatureId) || {}).title) || '—')}</div>` : ''}
-                      ${p.resolvedDescription ? `<div class="item-desc">${escapeHtml(p.resolvedDescription)}</div>` : ''}
-                      <div class="mini">Confidence: ${escapeHtml(p.confidence)}</div>
-                      ${p.changeSummary ? `<div class="mini">Änderung: ${escapeHtml(p.changeSummary)}</div>` : ''}
-                      ${p.rationale ? `<div class="mini cleanup-review-note-muted">Grund: ${escapeHtml(p.rationale)}</div>` : ''}
-                      ${hasTarget ? `<div class="mini">Ziel: ${escapeHtml(targetFeature.title || '—')}</div>` : `<div class="mini cleanup-review-note-info">Kein bestehendes Feature erkannt – kann als neues Feature übernommen werden.</div>`}
-                      ${normalizedType === 'duplicate-of' && !hasDuplicate ? '<div class="mini cleanup-review-note-muted">Keine konkrete Dublette zugeordnet.</div>' : ''}
-                      ${p._done ? `<div class="mini"><span class="pill ${statusClass}">${statusLabel}</span></div>` : ''}
-                      ${renderCleanupActions(p, normalizedType, hasTarget, hasDuplicate)}
-                    </div>
-                  `;
-                  }).join('')}
-                </div>
-              ` : '<div class="notice">Keine Vorschläge geladen. Erzeuge den Cleanup-Prompt und füge das KI-JSON oben ein.</div>'}
+              <div class="cleanup-review-stage-head"><h3 class="cleanup-review-stage-title">Review</h3><span class="pill pill-outline cleanup-review-counter">${reviewCounter}</span></div>
+              ${proposals.length ? `<div class="list cleanup-review-list">${proposals.map(p => {
+                const normalizedType = normalizeCleanupProposalType(p.type, ui.cleanupReview.mode);
+                const targetFeature = resolveCleanupTargetFeature(p);
+                const duplicateSemantics = classifyCleanupDuplicateSemantics(p);
+                const hasTarget = !!targetFeature;
+                const statusLabel = p._ignored ? 'ignoriert' : (p._queuedMainChat ? 'für Hauptchat vorgemerkt' : (p._queuedDedupe ? 'für Dedupe vorgemerkt' : (p._reviewedOnly ? 'geprüft' : 'übernommen')));
+                const statusClass = p._ignored ? 'pill-outline' : (p._reviewedOnly ? 'pill-info' : 'pill-success');
+                return `<div class="item cleanup-review-card ${p._done ? 'is-done' : ''}">
+                  <div class="row-top"><strong>${escapeHtml(p.resolvedTitle || p.incomingTitle || '—')}</strong><span class="pill pill-outline">${escapeHtml(typeLabel[normalizedType] || p.type)}</span></div>
+                  ${normalizedType === 'duplicate-of' && duplicateSemantics.label ? `<div class="mini"><span class="pill pill-info">${escapeHtml(duplicateSemantics.label)}</span></div>` : ''}
+                  ${p.incomingTitle ? `<div class="mini">Import: ${escapeHtml(p.incomingTitle)}</div>` : ''}
+                  ${p.targetFeatureId ? `<div class="mini">Ziel-ID: ${escapeHtml(p.targetFeatureId)}</div>` : ''}
+                  ${p.duplicateFeatureId ? `<div class="mini">Duplikat-ID: ${escapeHtml(p.duplicateFeatureId)}</div>` : ''}
+                  ${duplicateSemantics.kind === 'existing-db-duplicate' ? renderFeatureMini('Feature A', duplicateSemantics.target) + renderFeatureMini('Feature B', duplicateSemantics.duplicate) : ''}
+                  ${p.resolvedDescription ? `<div class="item-desc">${escapeHtml(p.resolvedDescription)}</div>` : ''}
+                  <div class="mini">Confidence: ${escapeHtml(p.confidence)}</div>
+                  ${p.changeSummary ? `<div class="mini">Änderung: ${escapeHtml(p.changeSummary)}</div>` : ''}
+                  ${p.rationale ? `<div class="mini cleanup-review-note-muted">Grund: ${escapeHtml(p.rationale)}</div>` : ''}
+                  ${hasTarget ? `<div class="mini">Ziel: ${escapeHtml(targetFeature.title || '—')} · Pool ${escapeHtml(targetFeature.pool || '—')} · Status ${escapeHtml(targetFeature.status || '—')}</div>` : `<div class="mini cleanup-review-note-info">Kein bestehendes Feature als sicheres Ziel erkannt.</div>`}
+                  ${p._done ? `<div class="mini"><span class="pill ${statusClass}">${statusLabel}</span></div>` : ''}
+                  ${renderCleanupActions(p, normalizedType, hasTarget, duplicateSemantics)}
+                </div>`;
+              }).join('')}</div>` : '<div class="notice">Keine Vorschläge geladen. Erzeuge den Cleanup-Prompt und füge das KI-JSON oben ein.</div>'}
             </section>
           </details>
         `;
@@ -13133,6 +13270,9 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         else if (textareaId === 'cleanupPromptOutput') ui.importDraft.cleanupPrompt = text;
         else if (textareaId === 'codeAnalysisPromptOutput') getCodeAnalysisPromptPrepState().outputPrompt = text;
         else if (textareaId === 'cleanupMainChatClarificationPromptOutput') ui.cleanupReview.clarificationPrompt = text;
+        else if (textareaId === 'cleanupDedupePromptOutput') ui.cleanupReview.dedupePrompt = text;
+        else if (textareaId === 'cleanupMainChatReturnJsonInput') ui.cleanupReview.mainChatReturnJson = text;
+        else if (textareaId === 'cleanupDedupeReturnJsonInput') ui.cleanupReview.dedupeReturnJson = text;
         else if (textareaId === 'projectMomentumPromptOutput') {
           const projectId = ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '';
           if (projectId) getProjectMomentumPromptState(projectId).prompt = text;
