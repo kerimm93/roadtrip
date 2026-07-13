@@ -5054,9 +5054,33 @@
         return getSprintExecutionMode(projectId) !== SPRINT_EXECUTION_MODES.direct;
       }
 
+      function buildCodexContextContractLines(options = {}) {
+        const lines = [
+          'Wichtiger Kontextvertrag für Codex:',
+          'Du hast keinen direkten Zugriff auf Review-Kommentare, Codeanalyse-Chats, Hauptchat-Kontext, Sprintchat-Kontext, Screenshots oder frühere Handoffs, außer sie stehen ausdrücklich in diesem Prompt.',
+          'Codeanalyse-Agent und Coding-Agent sind getrennte Kontexte.',
+          'Behandle diesen Prompt zusammen mit dem Repository-Code als deinen vollständigen Arbeitskontext.',
+          'Wenn dieser Auftrag auf Review-Kommentare oder Analysebefunde reagiert, sind die relevanten Befunde unten vollständig wiederholt.',
+          'Setze nichts um, das nur aus nicht beigefügtem Review-Kontext ableitbar wäre.',
+          'Wenn Kontext fehlt, markiere es im Handoff als offene Frage.'
+        ];
+        if (options.reviewFinding) {
+          lines.push(
+            '',
+            'Dieser Nachziehprompt reagiert auf einen Review-/Analysebefund.',
+            'Der ausführende Coding-Agent kennt den ursprünglichen Review-Kommentar nicht.',
+            'Deshalb ist der relevante Befund hier vollständig wiederholt.',
+            'Arbeite ausschließlich auf Basis dieses Prompts und des aktuellen Repository-Codes.'
+          );
+        }
+        return lines;
+      }
+
       function buildSprintExecutionGuardrail(mode) {
         if (mode === SPRINT_EXECUTION_MODES.direct) return '';
         return [
+          ...buildCodexContextContractLines(),
+          '',
           'Wichtig:',
           'Du sollst die App nicht selbst bearbeiten.',
           'Du sollst keine Dateien verändern.',
@@ -7626,6 +7650,49 @@
         return ui.importDraft && ui.importDraft.analysisSourceMode === 'csv-comparison-transform' ? 'csv-comparison-transform' : 'classic';
       }
 
+
+      function getLosslessFeatureFieldPromptContractLines() {
+        return [
+          '## Verlustfreier Umgang mit bestehenden Feature-Feldern',
+          'Die in diesem Prompt angezeigten Feature-Texte können aus Platz- oder Token-Gründen gekürzte Vorschauen sein. Behandle keinen angezeigten Text automatisch als vollständigen Datenbankwert.',
+          '',
+          'Ein Text gilt zwingend als unvollständig, wenn mindestens eines dieser Merkmale vorkommt: `…`, `...`, `[...]`, `[gekürzt]`, `gekürzt`, `Kurzfassung`, `Preview`, `Vorschau`, `truncated` oder ein erkennbar abgebrochenes Wort / nicht abgeschlossener Satz am Textende.',
+          'Unvollständige oder möglicherweise gekürzte Texte dürfen niemals als neuer Wert für `resolvedTitle`, `resolvedDescription`, `purpose`, `workflowContext`, `acceptanceCriteria`, `sourceContext` oder andere persistierbare Feature-Felder ausgegeben werden.',
+          '',
+          'Für bestehende Features mit `targetFeatureId`:',
+          '- Codeevidenz begründet zunächst nur einen Review-Befund, keine Textänderung.',
+          '- `resolvedDescription` muss standardmäßig `""` sein.',
+          '- Im Modus `csv-comparison-transform` muss `resolvedDescription` für bestehende Features immer `""` sein.',
+          '- `csv-comparison-transform` darf vorhandene Beschreibungstexte weder umformulieren noch kürzen noch aus Vorschautexten rekonstruieren.',
+          '- `purpose` und `workflowContext` werden in diesem Vertrag nicht geändert oder aus anderen Feldern rekonstruiert.',
+          '- Für `match-existing`, `duplicate-of` und `probably-stale` müssen alle nicht tatsächlich zu ändernden `resolved*`-Felder leer bleiben.',
+          '- Eine Beschreibung darf nicht deshalb als Update ausgegeben werden, weil sie im Eingabetext vorhanden ist oder zum Codebefund passt.',
+          '- Wenn keine vollständige, ungekürzte und eindeutig bessere Ersatzbeschreibung als eigener vollständiger Quelltext vorliegt, bleibt `resolvedDescription` leer.',
+          '- Ein fehlender vollständiger Ersatztext führt zu `match-existing`, `probably-stale`, einem review-only-Hinweis oder `openQuestions`, niemals zu einer verkürzten Ersatzbeschreibung.',
+          '',
+          'Für neue Codefeatures:',
+          '- Nur bei `new-implemented-feature` darf `resolvedDescription` neu formuliert werden.',
+          '- Sie muss vollständig, eigenständig verständlich und frei von Kürzungs- oder Vorschauzeichen sein.',
+          '',
+          'Trennung von Evidenz und Datenänderung:',
+          '- Codeevidenz gehört ausschließlich in `rationale`.',
+          '- Ein Review-Hinweis gehört in `changeSummary`.',
+          '- `resolvedTitle`, `resolvedDescription`, `resolvedCategory` und `resolvedStatus` enthalten nur tatsächliche, ausdrücklich vorgeschlagene Datenänderungen.',
+          '- Ein Feld darf nicht nur deshalb befüllt werden, um den aktuellen Wert zu wiederholen.',
+          '- Wenn keine echte Feldänderung vorgeschlagen wird, bleibt das jeweilige `resolved*`-Feld leer.',
+          '',
+          'Status- und Poolschutz:',
+          '- `confirmedEvidence` beschreibt die Stärke der Codeevidenz und ist nicht automatisch Datenbankstatus `confirmed`.',
+          '- Bei einem Feature mit `pool=planned` darf Codeevidenz allein nicht zu `resolvedStatus: "confirmed"` führen.',
+          '- Ein planned Feature mit eindeutiger Implementierungsevidenz bleibt zunächst ein review-only Confirm-Kandidat.',
+          '- Ohne einen ausdrücklich getrennt ausgewiesenen und manuell zu bestätigenden Pool-/Statuswechsel bleibt `resolvedStatus` leer.',
+          '- Teilumsetzung, vorbereiteter Code, UI-Fragmente, Hilfetexte, Kommentare oder indirekte Infrastruktur führen niemals zu einem Statuswechsel.',
+          '',
+          'Abschließende Selbstprüfung: Vor der Ausgabe jedes persistierbaren Felds prüfen: 1. Kürzungs-/Vorschauzeichen? 2. Nur Präfix einer längeren bestehenden Beschreibung? 3. Aus gekürzter Anzeige rekonstruiert? 4. Eigentlich nur Codeevidenz/Zusammenfassung? 5. Vollständiger Ersatztext in ungekürzter Eingabequelle vorhanden?',
+          'Wenn eine dieser Fragen mit Ja beantwortet wird oder nicht sicher beantwortet werden kann, muss das Feld `""` sein. Nutze stattdessen `rationale`, `changeSummary` oder `openQuestions`.'
+        ];
+      }
+
       function isRoadtripCodeAnalysisDelta(parsed) {
         return !!(parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.type === 'roadtrip-code-analysis-delta-v1');
       }
@@ -7708,6 +7775,8 @@
           '- Existing CSV rows with `pool=implemented` are verification targets, not creation candidates. Do not emit existing implemented CSV features as new-implemented-feature.',
           '- Erfasse potenzielle Dubletten zu bestehenden Features nur bei echter Dublette als duplicate-of und mit konkreten IDs.',
           '- Erfasse offene Fragen und Risiken / unklare Evidenz in openQuestions oder in rationale-Feldern.',
+          '',
+          ...getLosslessFeatureFieldPromptContractLines(),
           '',
           '## Ausgabeformat für Roadtrip',
           'Gib ausschließlich gültiges JSON zurück. Keine Markdown-Codefences, keine Einleitung, keine Kommentare.',
@@ -12247,6 +12316,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           '- confidence darf nur sein: hoch|mittel|niedrig',
           '- rationale: kurzer nachvollziehbarer Grund.',
           '',
+          ...getLosslessFeatureFieldPromptContractLines(),
+          '',
           'AUSGABEFORMAT JSON',
           '{',
           '  "proposals": [',
@@ -12321,6 +12392,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           '- duplicate-of bedeutet: echte Dublette; muss targetFeatureId und möglichst duplicateFeatureId enthalten; keine Löschung, keine Zusammenführung.',
           '- probably-stale bedeutet: Review-Hinweis bei fehlender/widersprüchlicher Evidenz; keine Löschung und keine Statusänderung.',
           '- Unklare Fälle nicht entscheiden; in openQuestions oder als review-only Vorschlag mit niedriger/mittlerer Confidence ausgeben.',
+          '',
+          ...getLosslessFeatureFieldPromptContractLines(),
           '',
           'AUSGABEFORMAT JSON',
           '{',
@@ -12649,12 +12722,71 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         return normalizedTokenText.includes('confirmedevidence') || /(konkrete|eindeutige|explizite|vollstaendige|vollständige|starke).*(implementierung|umsetzung|codeevidenz)|implementiert.*(funktion|workflow|persist|event|handler|logik)|voll umgesetzt|confirmed evidence|confirmed-evidence|confirmed_evidence|confirmedevidence/.test(text);
       }
 
+
+      function hasLosslessFieldTruncationSignal(value) {
+        const text = String(value || '').trim();
+        if (!text) return false;
+        return /…|\.\.\.|\[\.\.\.\]|\[gekürzt\]|gekürzt|kurzfassung|preview|vorschau|truncated/i.test(text);
+      }
+
+      function isShorterPrefixOfExistingField(proposedValue, existingValue) {
+        const proposed = String(proposedValue || '').replace(/\s+/g, ' ').trim();
+        const existing = String(existingValue || '').replace(/\s+/g, ' ').trim();
+        if (!proposed || !existing || proposed.length >= existing.length) return false;
+        if (proposed.length < 12) return false;
+        return existing.toLowerCase().startsWith(proposed.toLowerCase());
+      }
+
+      function getCleanupProposalEffectiveTitle(proposal) {
+        return String((proposal && (proposal.resolvedTitle || proposal.incomingTitle)) || '').trim();
+      }
+
+      function getCleanupProposalLosslessFieldBlocks(proposal, targetFeature) {
+        const blocks = [];
+        if (!proposal || !targetFeature) return blocks;
+        const mode = ui.cleanupReview.mode || 'import-cleanup';
+        const proposalType = normalizeCleanupProposalType(proposal.type, mode);
+        const csvTransformMode = isCsvComparisonTransformMode(mode);
+        const reviewOnlyTypes = ['match-existing', 'duplicate-of', 'probably-stale'];
+        const addBlock = (field, reason) => {
+          if (!blocks.some(block => block.field === field && block.reason === reason)) blocks.push({ field, reason });
+        };
+        const checkTextField = (field, currentValue, proposedValue) => {
+          const proposed = String(proposedValue || '').trim();
+          const current = String(currentValue || '').trim();
+          if (!proposed || proposed === current) return;
+          if (csvTransformMode && reviewOnlyTypes.includes(proposalType)) addBlock(field, 'CSV-Transform-Review-Hinweis darf keine resolved*-Felder anwenden.');
+          if (field === 'description' && csvTransformMode && targetFeature) addBlock(field, 'CSV-Transform darf bestehende Feature-Beschreibungen nicht ersetzen.');
+          if (hasLosslessFieldTruncationSignal(proposed)) addBlock(field, 'Änderung blockiert: Der vorgeschlagene Text scheint eine gekürzte Vorschau des bestehenden Feldes zu sein.');
+          if (isShorterPrefixOfExistingField(proposed, current)) addBlock(field, 'Änderung blockiert: Der vorgeschlagene Text ist nur ein kürzeres Präfix des bestehenden Feldes.');
+          if (current && proposed.length < Math.floor(current.length * 0.55) && hasLosslessFieldTruncationSignal(proposed)) addBlock(field, 'Warnung: vorgeschlagene Beschreibung ist deutlich kürzer oder enthält Kürzungssignale.');
+        };
+        checkTextField('title', targetFeature.title, getCleanupProposalEffectiveTitle(proposal));
+        checkTextField('description', targetFeature.description, proposal.resolvedDescription || '');
+        const categoryText = String(proposal.resolvedCategory || '').trim();
+        if (categoryText && FEATURE_CATEGORIES.includes(categoryText) && categoryText !== String(targetFeature.category || '').trim() && hasLosslessFieldTruncationSignal(categoryText)) addBlock('category', 'Kategorieänderung blockiert: vorgeschlagener Wert enthält Kürzungssignale.');
+        const proposedStatus = normalizeCleanupProposalStatus(proposal.resolvedStatus, mode);
+        if (csvTransformMode && targetFeature.pool === 'planned' && proposedStatus === 'confirmed') addBlock('status', 'Statusänderung blockiert: Codeevidenz allein darf planned Features nicht automatisch auf confirmed setzen.');
+        return blocks;
+      }
+
+      function isCleanupFieldBlockedByLosslessGuard(proposal, targetFeature, field) {
+        return getCleanupProposalLosslessFieldBlocks(proposal, targetFeature).some(block => block.field === field);
+      }
+
+      function getCleanupProposalLosslessWarningText(proposal, targetFeature) {
+        const blocks = getCleanupProposalLosslessFieldBlocks(proposal, targetFeature);
+        if (!blocks.length) return '';
+        return blocks.map(block => block.reason).filter(Boolean).join(' ');
+      }
+
       function shouldAllowCsvConfirmedStatusUpdate(proposal, targetFeature) {
         if (!proposal || !targetFeature) return false;
         if (!isCsvComparisonTransformMode(ui.cleanupReview.mode)) return true;
         if (proposal.confidence !== 'hoch') return false;
         if (normalizeCleanupProposalStatus(proposal.resolvedStatus, ui.cleanupReview.mode) !== 'confirmed') return false;
         if (hasCsvWeakEvidenceLanguage(proposal)) return false;
+        if (targetFeature && targetFeature.pool === 'planned') return false;
         return hasCsvStrongImplementationLanguage(proposal);
       }
 
@@ -12683,6 +12815,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       function shouldAllowCsvDescriptionReplacement(proposal, targetFeature) {
         if (!proposal || !targetFeature) return false;
         if (!isCsvComparisonTransformMode(ui.cleanupReview.mode)) return true;
+        if (targetFeature) return false;
         const nextDescription = String(proposal.resolvedDescription || '').trim();
         const existingDescription = String(targetFeature.description || '').trim();
         if (!nextDescription || nextDescription === existingDescription) return false;
@@ -12703,6 +12836,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         if (!isCsvComparisonTransformMode(ui.cleanupReview.mode)) return true;
         const text = normalizeText(String(proposal && proposal.changeSummary || '') + ' ' + String(proposal && proposal.rationale || ''));
         if (hasCsvWeakEvidenceLanguage(proposal)) return false;
+        if (fieldName === 'description') return false;
         if (fieldName === 'title') return /titel|title|benennung|name/.test(text);
         if (fieldName === 'category') return /kategorie|category/.test(text);
         return true;
@@ -12748,8 +12882,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           feature.reviewStatus = 'needs-review';
           changes.push('reviewStatus');
         }
-        const nextTitle = proposal.resolvedTitle || proposal.incomingTitle;
-        if (nextTitle && nextTitle !== feature.title && shouldAllowCsvFieldReplacement(proposal, 'title')) {
+        const nextTitle = getCleanupProposalEffectiveTitle(proposal);
+        if (nextTitle && nextTitle !== feature.title && shouldAllowCsvFieldReplacement(proposal, 'title') && !isCleanupFieldBlockedByLosslessGuard(proposal, feature, 'title')) {
           if (confirm('Titel ändern von:\n"' + feature.title + '"\nauf:\n"' + nextTitle + '"?')) {
             feature.title = nextTitle;
             changes.push('title');
@@ -12758,14 +12892,14 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const nextDescription = String(proposal.resolvedDescription || '').trim();
         const existingDescription = String(feature.description || '').trim();
         if (nextDescription && nextDescription !== existingDescription) {
-          const allowDescriptionReplacement = shouldAllowCsvDescriptionReplacement(proposal, feature);
+          const allowDescriptionReplacement = shouldAllowCsvDescriptionReplacement(proposal, feature) && !isCleanupFieldBlockedByLosslessGuard(proposal, feature, 'description');
           if (allowDescriptionReplacement && confirm('Beschreibung ersetzen?\nAlt: ' + shorten(existingDescription || '—', 120) + '\nNeu: ' + shorten(nextDescription, 120))) {
             feature.description = nextDescription;
             changes.push('description');
           }
         }
         const nextCategory = proposal.resolvedCategory;
-        if (nextCategory && FEATURE_CATEGORIES.includes(nextCategory) && nextCategory !== feature.category && shouldAllowCsvFieldReplacement(proposal, 'category')) {
+        if (nextCategory && FEATURE_CATEGORIES.includes(nextCategory) && nextCategory !== feature.category && shouldAllowCsvFieldReplacement(proposal, 'category') && !isCleanupFieldBlockedByLosslessGuard(proposal, feature, 'category')) {
           if (confirm('Kategorie ändern von "' + feature.category + '" auf "' + nextCategory + '"?')) {
             feature.category = nextCategory;
             changes.push('category');
@@ -12775,7 +12909,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           ? normalizeCleanupProposalStatus(proposal.resolvedStatus, mode)
           : resolveStatusForPool(proposal.resolvedStatus, feature.pool || 'planned');
         const allowCsvStatusChange = !csvTransformMode || shouldAllowCsvStatusUpdate(proposal, feature, nextStatus);
-        if (nextStatus && isValidFeatureStatus(nextStatus, feature.pool || 'planned') && nextStatus !== feature.status && allowCsvStatusChange) {
+        if (nextStatus && isValidFeatureStatus(nextStatus, feature.pool || 'planned') && nextStatus !== feature.status && allowCsvStatusChange && !isCleanupFieldBlockedByLosslessGuard(proposal, feature, 'status')) {
           if (confirm('Status ändern von "' + feature.status + '" auf "' + nextStatus + '"?')) {
             feature.status = nextStatus;
             changes.push('status');
@@ -12808,15 +12942,15 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const allowCsvPoolEscalation = !csvTransformMode || shouldAllowCsvPlannedToImplementedUpdate(proposal, feature) || feature.pool === 'implemented';
         if (isImplementedCleanupMode(mode) && feature.pool !== 'implemented' && allowCsvPoolEscalation) changes.push('pool');
         if (!csvTransformMode && isImplementedCleanupMode(mode) && feature.reviewStatus !== 'needs-review') changes.push('reviewStatus');
-        const nextTitle = proposal.resolvedTitle || proposal.incomingTitle;
-        if (nextTitle && nextTitle !== feature.title && shouldAllowCsvFieldReplacement(proposal, 'title')) changes.push('title');
+        const nextTitle = getCleanupProposalEffectiveTitle(proposal);
+        if (nextTitle && nextTitle !== feature.title && shouldAllowCsvFieldReplacement(proposal, 'title') && !isCleanupFieldBlockedByLosslessGuard(proposal, feature, 'title')) changes.push('title');
         const nextDescription = String(proposal.resolvedDescription || '').trim();
         const existingDescription = String(feature.description || '').trim();
-        if (nextDescription && nextDescription !== existingDescription && shouldAllowCsvDescriptionReplacement(proposal, feature)) changes.push('description');
+        if (nextDescription && nextDescription !== existingDescription && shouldAllowCsvDescriptionReplacement(proposal, feature) && !isCleanupFieldBlockedByLosslessGuard(proposal, feature, 'description')) changes.push('description');
         const nextCategory = proposal.resolvedCategory;
-        if (nextCategory && FEATURE_CATEGORIES.includes(nextCategory) && nextCategory !== feature.category && shouldAllowCsvFieldReplacement(proposal, 'category')) changes.push('category');
+        if (nextCategory && FEATURE_CATEGORIES.includes(nextCategory) && nextCategory !== feature.category && shouldAllowCsvFieldReplacement(proposal, 'category') && !isCleanupFieldBlockedByLosslessGuard(proposal, feature, 'category')) changes.push('category');
         const nextStatus = isImplementedCleanupMode(mode) ? normalizeCleanupProposalStatus(proposal.resolvedStatus, mode) : resolveStatusForPool(proposal.resolvedStatus, feature.pool || 'planned');
-        if (nextStatus && isValidFeatureStatus(nextStatus, feature.pool || 'planned') && nextStatus !== feature.status && (!csvTransformMode || shouldAllowCsvStatusUpdate(proposal, feature, nextStatus))) changes.push('status');
+        if (nextStatus && isValidFeatureStatus(nextStatus, feature.pool || 'planned') && nextStatus !== feature.status && (!csvTransformMode || shouldAllowCsvStatusUpdate(proposal, feature, nextStatus)) && !isCleanupFieldBlockedByLosslessGuard(proposal, feature, 'status')) changes.push('status');
         return Array.from(new Set(changes));
       }
 
@@ -13005,6 +13139,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const projectTitle = getProjectTitle(projectId) || 'Unbekanntes Projekt';
         const lines = [
           '# Roadtrip Hauptchat-Klärung: vorgemerkte CSV-Codeanalyse-Befunde',
+          '',
+          ...buildCodexContextContractLines({ reviewFinding: true }),
           '',
           'Zweck: Bereite menschliche Entscheidungen für unklare CSV-Codeanalyse-Review-Fälle vor. Analysiere keinen Code erneut und löse keine automatischen Roadtrip-Mutationen aus.',
           '',
@@ -13208,6 +13344,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
                 const duplicateSemantics = classifyCleanupDuplicateSemantics(p);
                 const hasTarget = !!targetFeature;
                 const statusLabel = p._ignored ? 'ignoriert' : (p._queuedMainChat ? 'für Hauptchat vorgemerkt' : (p._queuedDedupe ? 'für Dedupe vorgemerkt' : (p._reviewedOnly ? 'geprüft' : 'übernommen')));
+                const losslessWarning = getCleanupProposalLosslessWarningText(p, targetFeature);
                 const statusClass = p._ignored ? 'pill-outline' : (p._reviewedOnly ? 'pill-info' : 'pill-success');
                 return `<div class="item cleanup-review-card ${p._done ? 'is-done' : ''}">
                   <div class="row-top"><strong>${escapeHtml(p.resolvedTitle || p.incomingTitle || '—')}</strong><span class="pill pill-outline">${escapeHtml(typeLabel[normalizedType] || p.type)}</span></div>
@@ -13217,6 +13354,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
                   ${p.duplicateFeatureId ? `<div class="mini">Duplikat-ID: ${escapeHtml(p.duplicateFeatureId)}</div>` : ''}
                   ${duplicateSemantics.kind === 'existing-db-duplicate' ? renderFeatureMini('Feature A', duplicateSemantics.target) + renderFeatureMini('Feature B', duplicateSemantics.duplicate) : ''}
                   ${p.resolvedDescription ? `<div class="item-desc">${escapeHtml(p.resolvedDescription)}</div>` : ''}
+                  ${losslessWarning ? `<div class="notice notice-warning">${escapeHtml(losslessWarning)}</div>` : ''}
                   <div class="mini">Confidence: ${escapeHtml(p.confidence)}</div>
                   ${p.changeSummary ? `<div class="mini">Änderung: ${escapeHtml(p.changeSummary)}</div>` : ''}
                   ${p.rationale ? `<div class="mini cleanup-review-note-muted">Grund: ${escapeHtml(p.rationale)}</div>` : ''}
