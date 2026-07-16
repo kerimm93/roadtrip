@@ -3039,8 +3039,12 @@
         if ($('btnClearCleanupReview')) $('btnClearCleanupReview').addEventListener('click', clearCleanupReview);
         if ($('btnBuildCleanupMainChatClarificationPrompt')) $('btnBuildCleanupMainChatClarificationPrompt').addEventListener('click', buildCleanupReviewMainChatClarificationPrompt);
         if ($('btnCopyCleanupMainChatClarificationPrompt')) $('btnCopyCleanupMainChatClarificationPrompt').addEventListener('click', () => copyPrompt('cleanupMainChatClarificationPromptOutput'));
-        if ($('cleanupMainChatReturnJsonInput')) $('cleanupMainChatReturnJsonInput').addEventListener('input', e => { ui.cleanupReview.mainChatReturnJson = e.target.value; });
-        if ($('cleanupDedupeReturnJsonInput')) $('cleanupDedupeReturnJsonInput').addEventListener('input', e => { ui.cleanupReview.dedupeReturnJson = e.target.value; });
+        if ($('cleanupMainChatReturnJsonInput')) $('cleanupMainChatReturnJsonInput').addEventListener('input', e => { ui.cleanupReview.mainChatReturnJson = e.target.value; ui.cleanupReview.mainChatDecisionPreview = null; });
+        if ($('cleanupDedupeReturnJsonInput')) $('cleanupDedupeReturnJsonInput').addEventListener('input', e => { ui.cleanupReview.dedupeReturnJson = e.target.value; ui.cleanupReview.dedupeDecisionPreview = null; });
+        if ($('btnCheckCleanupMainChatReturnJson')) $('btnCheckCleanupMainChatReturnJson').addEventListener('click', checkCleanupMainChatReturnJson);
+        if ($('btnResetCleanupMainChatReturnJson')) $('btnResetCleanupMainChatReturnJson').addEventListener('click', resetCleanupMainChatReturnJson);
+        if ($('btnCheckCleanupDedupeReturnJson')) $('btnCheckCleanupDedupeReturnJson').addEventListener('click', checkCleanupDedupeReturnJson);
+        if ($('btnResetCleanupDedupeReturnJson')) $('btnResetCleanupDedupeReturnJson').addEventListener('click', resetCleanupDedupeReturnJson);
         if ($('btnBuildCleanupDedupePrompt')) $('btnBuildCleanupDedupePrompt').addEventListener('click', buildCleanupReviewDedupePrompt);
         if ($('btnCopyCleanupDedupePrompt')) $('btnCopyCleanupDedupePrompt').addEventListener('click', () => copyPrompt('cleanupDedupePromptOutput'));
         if ($('btnCopyAnalysisPrompt')) $('btnCopyAnalysisPrompt').addEventListener('click', () => copyPrompt('analysisPromptOutput'));
@@ -12607,7 +12611,9 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           changeSummary: String(p.changeSummary || '').trim(),
           _done: false,
           _queuedMainChat: false,
-          _queuedDedupe: false
+          _queuedDedupe: false,
+          _mainChatCaseId: '',
+          _dedupePairId: ''
         }));
         ui.cleanupReview.summary = String(parsed.summary || '').trim();
         ui.cleanupReview.openQuestions = parsedOpenQuestions;
@@ -12615,6 +12621,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         ui.cleanupReview.mainChatReturnJson = '';
         ui.cleanupReview.dedupePrompt = '';
         ui.cleanupReview.dedupeReturnJson = '';
+        ui.cleanupReview.mainChatDecisionPreview = null;
+        ui.cleanupReview.dedupeDecisionPreview = null;
         ui.cleanupReview.visible = true;
         if (
           !ui.cleanupReview.versionLogged &&
@@ -13003,6 +13011,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         if (!proposal || proposal._done) return;
         proposal._done = true;
         proposal._queuedMainChat = true;
+        proposal._mainChatCaseId = proposal._mainChatCaseId || buildCleanupReviewStableCaseId(proposal);
         proposal._reviewedOnly = true;
         save();
         renderView();
@@ -13015,6 +13024,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         if (semantics.kind !== 'existing-db-duplicate') return alert('Dedupe-Prompt ist nur für zwei eindeutig bestehende Feature-IDs vorgesehen. Bitte für Hauptchat-Abklärung vormerken.');
         proposal._done = true;
         proposal._queuedDedupe = true;
+        proposal._dedupePairId = proposal._dedupePairId || buildCleanupReviewStablePairId(proposal, semantics);
         proposal._reviewedOnly = true;
         save();
         renderView();
@@ -13160,18 +13170,282 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         return hasCsvWeakEvidenceLanguage(proposal);
       }
 
+      const CLEANUP_MAINCHAT_DECISION_SCHEMA_VERSION = 'roadtrip-mainchat-decisions-v1';
+      const CLEANUP_DEDUPE_DECISION_SCHEMA_VERSION = 'roadtrip-dedupe-decisions-v1';
+      const CLEANUP_MAINCHAT_DECISIONS = ['no-change', 'keep-open', 'defer', 'update-existing', 'promote-existing', 'split-feature', 'create-implemented-feature', 'mark-duplicate-candidate', 'needs-browser-test', 'needs-project-decision', 'reject-analysis-finding'];
+      const CLEANUP_DEDUPE_DECISIONS = ['keep-both', 'defer', 'merge-manually', 'mark-duplicate', 'not-a-duplicate', 'needs-project-decision'];
+      const CLEANUP_MAINCHAT_MUTATION_FREE_DECISIONS = ['no-change', 'keep-open', 'defer', 'needs-browser-test', 'needs-project-decision', 'reject-analysis-finding'];
+
+      function cleanupReviewSlug(value) {
+        return String(value || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 36) || 'case';
+      }
+
+      function buildCleanupReviewStableCaseId(proposal) {
+        const target = resolveCleanupTargetFeature(proposal);
+        const base = [proposal && proposal._idx, proposal && (proposal.targetFeatureId || proposal.featureId || proposal.sourceFeatureId), target && target.id, proposal && (proposal.incomingTitle || proposal.resolvedTitle)].filter(v => String(v || '').trim()).join('-');
+        return 'main-' + cleanupReviewSlug(base);
+      }
+
+      function buildCleanupReviewStableOpenQuestionCaseId(question, index) {
+        return 'main-open-' + cleanupReviewSlug((index + 1) + '-' + question);
+      }
+
+      function buildCleanupReviewStablePairId(proposal, semantics) {
+        const pair = semantics || classifyCleanupDuplicateSemantics(proposal);
+        return 'dedupe-' + cleanupReviewSlug([pair.target && pair.target.id, pair.duplicate && pair.duplicate.id, proposal && proposal._idx].filter(Boolean).join('-'));
+      }
+
+      function ensureCleanupReviewDecisionIds() {
+        const usedCaseIds = new Set();
+        const usedPairIds = new Set();
+        (ui.cleanupReview.proposals || []).forEach(proposal => {
+          if (proposal._queuedMainChat) {
+            let id = proposal._mainChatCaseId || buildCleanupReviewStableCaseId(proposal);
+            while (usedCaseIds.has(id)) id += '-' + cleanupReviewSlug(proposal._idx);
+            proposal._mainChatCaseId = id;
+            usedCaseIds.add(id);
+          }
+          if (proposal._queuedDedupe) {
+            const semantics = classifyCleanupDuplicateSemantics(proposal);
+            let id = proposal._dedupePairId || buildCleanupReviewStablePairId(proposal, semantics);
+            while (usedPairIds.has(id)) id += '-' + cleanupReviewSlug(proposal._idx);
+            proposal._dedupePairId = id;
+            usedPairIds.add(id);
+          }
+        });
+      }
+
+      function parseStrictCleanupDecisionJson(rawText) {
+        const source = String(rawText || '').trim();
+        if (!source) return { payload: null, errors: ['Eingabe ist leer.'] };
+        if (/^```|```$/m.test(source)) return { payload: null, errors: ['Markdown-Codefences sind nicht erlaubt. Bitte ausschließlich ein JSON-Objekt einfügen.'] };
+        if (!source.startsWith('{')) return { payload: null, errors: [source.startsWith('[') ? 'Top-Level-Arrays sind nicht erlaubt. Erwartet wird ein JSON-Objekt.' : 'Text vor dem JSON-Objekt ist nicht erlaubt.'] };
+        if (!source.endsWith('}')) return { payload: null, errors: ['Text nach dem JSON-Objekt ist nicht erlaubt.'] };
+        try {
+          const payload = JSON.parse(source);
+          if (!payload || Array.isArray(payload) || typeof payload !== 'object') return { payload: null, errors: ['Top-Level muss ein JSON-Objekt sein.'] };
+          return { payload, errors: [] };
+        } catch (err) {
+          return { payload: null, errors: ['JSON-Syntaxfehler: ' + err.message] };
+        }
+      }
+
+      function parseMainChatDecisionJson(rawText) { return parseStrictCleanupDecisionJson(rawText); }
+      function parseDedupeDecisionJson(rawText) { return parseStrictCleanupDecisionJson(rawText); }
+
+      function getCleanupReviewFeatureSnapshot() {
+        return JSON.stringify((S.features || []).map(f => ({ id: f.id, title: f.title, description: f.description, pool: f.pool, status: f.status, updatedAt: f.updatedAt })).sort((a, b) => String(a.id).localeCompare(String(b.id))));
+      }
+
+      function getCleanupReviewMainChatDecisionScope() {
+        ensureCleanupReviewDecisionIds();
+        return {
+          proposals: (ui.cleanupReview.proposals || []).filter(p => p._queuedMainChat).slice(0, 25),
+          questions: Array.isArray(ui.cleanupReview.openQuestions) ? ui.cleanupReview.openQuestions.slice(0, 10) : []
+        };
+      }
+
+      function getCleanupReviewDedupeDecisionScope() {
+        ensureCleanupReviewDecisionIds();
+        return (ui.cleanupReview.proposals || [])
+          .filter(p => p._queuedDedupe && classifyCleanupDuplicateSemantics(p).kind === 'existing-db-duplicate')
+          .slice(0, 25);
+      }
+
+      function buildMainChatDecisionContext(scope) {
+        const decisionScope = scope || getCleanupReviewMainChatDecisionScope();
+        const cases = new Map();
+        (decisionScope.proposals || []).forEach(p => {
+          const target = resolveCleanupTargetFeature(p);
+          const featureId = String(p.targetFeatureId || (target && target.id) || p.featureId || p.sourceFeatureId || '').trim();
+          cases.set(p._mainChatCaseId, { proposal: p, feature: target, featureId, label: p.resolvedTitle || p.incomingTitle || (target && target.title) || 'Vorgemerkter Fall' });
+        });
+        (decisionScope.questions || []).forEach((q, i) => cases.set(buildCleanupReviewStableOpenQuestionCaseId(q, i), { proposal: null, feature: null, featureId: '', label: q }));
+        return cases;
+      }
+
+      function buildDedupeDecisionContext(scope) {
+        const proposals = scope || getCleanupReviewDedupeDecisionScope();
+        const pairs = new Map();
+        (proposals || []).forEach(p => {
+          const semantics = classifyCleanupDuplicateSemantics(p);
+          if (semantics.kind === 'existing-db-duplicate') pairs.set(p._dedupePairId, { proposal: p, featureA: semantics.target, featureB: semantics.duplicate });
+        });
+        return pairs;
+      }
+
+      function addLosslessDecisionErrors(errors, label, value, existing) {
+        const proposed = String(value || '').trim();
+        if (!proposed) return;
+        if (hasLosslessFieldTruncationSignal(proposed)) errors.push(label + ' enthält ein Kürzungssignal.');
+        if (isShorterPrefixOfExistingField(proposed, existing || '')) errors.push(label + ' ist nur ein kürzeres Präfix des bestehenden Felds.');
+      }
+
+      function normalizeStringField(value) { return String(value || '').trim(); }
+
+      function validateMainChatDecisionPayload(payload) {
+        const errors = [];
+        const projectId = ui.cleanupReview.projectId || '';
+        const cases = buildMainChatDecisionContext();
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) errors.push('Payload muss ein JSON-Objekt sein.');
+        if (payload.schemaVersion !== CLEANUP_MAINCHAT_DECISION_SCHEMA_VERSION) errors.push('schemaVersion muss exakt ' + CLEANUP_MAINCHAT_DECISION_SCHEMA_VERSION + ' sein.');
+        if (payload.projectId !== projectId) errors.push('projectId muss exakt ' + projectId + ' sein.');
+        if (!Array.isArray(payload.decisions)) errors.push('decisions muss ein Array sein.');
+        const seen = new Set();
+        if (Array.isArray(payload.decisions)) payload.decisions.forEach((d, i) => {
+          const prefix = 'decisions[' + i + ']: ';
+          if (!d || typeof d !== 'object' || Array.isArray(d)) { errors.push(prefix + 'Eintrag muss ein Objekt sein.'); return; }
+          const caseId = normalizeStringField(d.caseId);
+          const ctx = cases.get(caseId);
+          if (!caseId || !ctx) errors.push(prefix + 'unbekannte caseId "' + caseId + '".');
+          if (seen.has(caseId)) errors.push(prefix + 'doppelte caseId "' + caseId + '".');
+          seen.add(caseId);
+          const decision = normalizeStringField(d.decision);
+          if (!CLEANUP_MAINCHAT_DECISIONS.includes(decision)) errors.push(prefix + 'unbekannte decision "' + decision + '".');
+          ['caseId','featureId','decision','summary','proposedTitle','proposedDescription','proposedCategory','proposedStatus','proposedPool','canonicalFeatureId','openQuestion'].forEach(field => { if (d[field] != null && typeof d[field] !== 'string') errors.push(prefix + field + ' muss ein String sein.'); });
+          if (d.splitProposal != null && (typeof d.splitProposal !== 'object' || Array.isArray(d.splitProposal))) errors.push(prefix + 'splitProposal muss null oder ein Objekt sein.');
+          const featureId = normalizeStringField(d.featureId);
+          const feature = featureId ? S.features.find(f => f.id === featureId && f.projectId === projectId) : null;
+          if (ctx && ctx.featureId && featureId !== ctx.featureId) errors.push(prefix + 'featureId muss exakt ' + ctx.featureId + ' sein.');
+          if (ctx && !ctx.featureId && featureId) errors.push(prefix + 'featureloser Fall darf keine fremde featureId einführen.');
+          if (featureId && !feature) errors.push(prefix + 'unbekannte Feature-ID "' + featureId + '".');
+          if (decision === 'keep-open' && normalizeStringField(d.proposedPool)) errors.push(prefix + 'keep-open darf kein proposedPool setzen.');
+          if (decision === 'no-change' && normalizeStringField(d.proposedDescription)) errors.push(prefix + 'no-change darf keine proposedDescription setzen.');
+          if (decision === 'update-existing' && (!featureId || !feature)) errors.push(prefix + 'update-existing benötigt eine bekannte Feature-ID.');
+          if (decision === 'promote-existing' && (!feature || feature.pool !== 'planned')) errors.push(prefix + 'promote-existing benötigt ein vorhandenes planned Feature.');
+          if (decision === 'create-implemented-feature' && featureId && feature) errors.push(prefix + 'create-implemented-feature darf keine fremde bestehende Feature-ID verwenden.');
+          const canonicalFeatureId = normalizeStringField(d.canonicalFeatureId);
+          if (canonicalFeatureId && (!ctx || canonicalFeatureId !== ctx.featureId)) errors.push(prefix + 'canonicalFeatureId muss leer oder die Feature-ID des aktiven Falls sein.');
+          addLosslessDecisionErrors(errors, prefix + 'proposedTitle', d.proposedTitle, feature && feature.title);
+          addLosslessDecisionErrors(errors, prefix + 'proposedDescription', d.proposedDescription, feature && feature.description);
+          addLosslessDecisionErrors(errors, prefix + 'proposedCategory', d.proposedCategory, feature && feature.category);
+          addLosslessDecisionErrors(errors, prefix + 'proposedStatus', d.proposedStatus, feature && feature.status);
+        });
+        return { valid: !errors.length, errors, context: cases };
+      }
+
+      function normalizeMainChatDecisionPayload(payload) {
+        return { schemaVersion: CLEANUP_MAINCHAT_DECISION_SCHEMA_VERSION, projectId: ui.cleanupReview.projectId || '', decisions: (payload.decisions || []).map(d => ({ caseId: normalizeStringField(d.caseId), featureId: normalizeStringField(d.featureId), decision: normalizeStringField(d.decision), summary: normalizeStringField(d.summary), proposedTitle: normalizeStringField(d.proposedTitle), proposedDescription: normalizeStringField(d.proposedDescription), proposedCategory: normalizeStringField(d.proposedCategory), proposedStatus: normalizeStringField(d.proposedStatus), proposedPool: normalizeStringField(d.proposedPool), canonicalFeatureId: normalizeStringField(d.canonicalFeatureId), splitProposal: d.splitProposal || null, openQuestion: normalizeStringField(d.openQuestion) })) };
+      }
+
+      function buildMainChatDecisionPreview(normalized, context) {
+        return (normalized.decisions || []).map(d => {
+          const ctx = context.get(d.caseId) || {};
+          const feature = ctx.feature || (d.featureId ? S.features.find(f => f.id === d.featureId) : null);
+          return { caseId: d.caseId, label: ctx.label || 'Fall', featureId: d.featureId, featureTitle: feature ? feature.title || '' : '', decision: d.decision, summary: d.summary, mutationClass: CLEANUP_MAINCHAT_MUTATION_FREE_DECISIONS.includes(d.decision) ? 'mutationsfrei' : 'noch nicht anwendbar / potenziell spätere Mutation', proposedFields: { proposedTitle: d.proposedTitle, proposedDescription: d.proposedDescription, proposedCategory: d.proposedCategory, proposedStatus: d.proposedStatus, proposedPool: d.proposedPool, canonicalFeatureId: d.canonicalFeatureId, openQuestion: d.openQuestion }, existing: feature ? { title: feature.title || '', description: feature.description || '', category: feature.category || '', status: feature.status || '', pool: feature.pool || '' } : {} };
+        });
+      }
+
+      function validateDedupeDecisionPayload(payload) {
+        const errors = [];
+        const projectId = ui.cleanupReview.projectId || '';
+        const pairs = buildDedupeDecisionContext();
+        if (payload.schemaVersion !== CLEANUP_DEDUPE_DECISION_SCHEMA_VERSION) errors.push('schemaVersion muss exakt ' + CLEANUP_DEDUPE_DECISION_SCHEMA_VERSION + ' sein.');
+        if (payload.projectId !== projectId) errors.push('projectId muss exakt ' + projectId + ' sein.');
+        if (!Array.isArray(payload.dedupeDecisions)) errors.push('dedupeDecisions muss ein Array sein.');
+        const seen = new Set();
+        if (Array.isArray(payload.dedupeDecisions)) payload.dedupeDecisions.forEach((d, i) => {
+          const prefix = 'dedupeDecisions[' + i + ']: ';
+          if (!d || typeof d !== 'object' || Array.isArray(d)) { errors.push(prefix + 'Eintrag muss ein Objekt sein.'); return; }
+          const pairId = normalizeStringField(d.pairId);
+          const ctx = pairs.get(pairId);
+          if (!pairId || !ctx) errors.push(prefix + 'unbekannte pairId "' + pairId + '".');
+          if (seen.has(pairId)) errors.push(prefix + 'doppelte pairId "' + pairId + '".');
+          seen.add(pairId);
+          ['pairId','featureAId','featureBId','decision','canonicalFeatureId','duplicateFeatureId','canonicalTitle','canonicalDescription','rationale'].forEach(field => { if (d[field] != null && typeof d[field] !== 'string') errors.push(prefix + field + ' muss ein String sein.'); });
+          if (d.archiveDuplicate != null && typeof d.archiveDuplicate !== 'boolean') errors.push(prefix + 'archiveDuplicate muss ein Boolean sein.');
+          const decision = normalizeStringField(d.decision);
+          if (!CLEANUP_DEDUPE_DECISIONS.includes(decision)) errors.push(prefix + 'unbekannte decision "' + decision + '".');
+          if (ctx) {
+            const a = ctx.featureA;
+            const b = ctx.featureB;
+            if (normalizeStringField(d.featureAId) !== a.id) errors.push(prefix + 'featureAId muss exakt ' + a.id + ' sein; vertauschte A/B-IDs sind ungültig.');
+            if (normalizeStringField(d.featureBId) !== b.id) errors.push(prefix + 'featureBId muss exakt ' + b.id + ' sein; vertauschte A/B-IDs sind ungültig.');
+            if (!S.features.some(f => f.id === a.id && f.projectId === projectId) || !S.features.some(f => f.id === b.id && f.projectId === projectId)) errors.push(prefix + 'beide Feature-IDs müssen im aktiven Projekt existieren.');
+            const allowed = ['', a.id, b.id];
+            const canonical = normalizeStringField(d.canonicalFeatureId);
+            const duplicate = normalizeStringField(d.duplicateFeatureId);
+            if (!allowed.includes(canonical)) errors.push(prefix + 'canonicalFeatureId darf nur leer, Feature A oder Feature B sein.');
+            if (!allowed.includes(duplicate)) errors.push(prefix + 'duplicateFeatureId darf nur leer, Feature A oder Feature B sein.');
+            if (canonical && duplicate && canonical === duplicate) errors.push(prefix + 'canonicalFeatureId und duplicateFeatureId dürfen nicht identisch sein.');
+            addLosslessDecisionErrors(errors, prefix + 'canonicalTitle', d.canonicalTitle, (canonical === b.id ? b : a).title);
+            addLosslessDecisionErrors(errors, prefix + 'canonicalDescription', d.canonicalDescription, (canonical === b.id ? b : a).description);
+          }
+        });
+        return { valid: !errors.length, errors, context: pairs };
+      }
+
+      function normalizeDedupeDecisionPayload(payload) {
+        return { schemaVersion: CLEANUP_DEDUPE_DECISION_SCHEMA_VERSION, projectId: ui.cleanupReview.projectId || '', dedupeDecisions: (payload.dedupeDecisions || []).map(d => ({ pairId: normalizeStringField(d.pairId), featureAId: normalizeStringField(d.featureAId), featureBId: normalizeStringField(d.featureBId), decision: normalizeStringField(d.decision), canonicalFeatureId: normalizeStringField(d.canonicalFeatureId), duplicateFeatureId: normalizeStringField(d.duplicateFeatureId), canonicalTitle: normalizeStringField(d.canonicalTitle), canonicalDescription: normalizeStringField(d.canonicalDescription), rationale: normalizeStringField(d.rationale), archiveDuplicate: d.archiveDuplicate === true })) };
+      }
+
+      function buildDedupeDecisionPreview(normalized, context) {
+        return (normalized.dedupeDecisions || []).map(d => {
+          const ctx = context.get(d.pairId) || {};
+          return { pairId: d.pairId, featureA: ctx.featureA ? { id: ctx.featureA.id, title: ctx.featureA.title || '' } : { id: d.featureAId, title: '' }, featureB: ctx.featureB ? { id: ctx.featureB.id, title: ctx.featureB.title || '' } : { id: d.featureBId, title: '' }, decision: d.decision, canonicalFeatureId: d.canonicalFeatureId, duplicateFeatureId: d.duplicateFeatureId, canonicalTitle: d.canonicalTitle, canonicalDescription: d.canonicalDescription, rationale: d.rationale, archiveDuplicate: d.archiveDuplicate };
+        });
+      }
+
+      function checkCleanupMainChatReturnJson() {
+        const before = getCleanupReviewFeatureSnapshot();
+        const parsed = parseMainChatDecisionJson(ui.cleanupReview.mainChatReturnJson || '');
+        if (parsed.errors.length) ui.cleanupReview.mainChatDecisionPreview = { valid: false, errors: parsed.errors, items: [] };
+        else {
+          const validation = validateMainChatDecisionPayload(parsed.payload);
+          if (!validation.valid) ui.cleanupReview.mainChatDecisionPreview = { valid: false, errors: validation.errors, items: [] };
+          else {
+            const normalized = normalizeMainChatDecisionPayload(parsed.payload);
+            ui.cleanupReview.mainChatDecisionPreview = { valid: true, errors: [], items: buildMainChatDecisionPreview(normalized, validation.context) };
+          }
+        }
+        if (before !== getCleanupReviewFeatureSnapshot()) ui.cleanupReview.mainChatDecisionPreview = { valid: false, errors: ['Interner Sicherheitsfehler: Feature-Daten wurden während der Preview-Prüfung verändert.'], items: [] };
+        renderView();
+      }
+
+      function checkCleanupDedupeReturnJson() {
+        const before = getCleanupReviewFeatureSnapshot();
+        const parsed = parseDedupeDecisionJson(ui.cleanupReview.dedupeReturnJson || '');
+        if (parsed.errors.length) ui.cleanupReview.dedupeDecisionPreview = { valid: false, errors: parsed.errors, items: [] };
+        else {
+          const validation = validateDedupeDecisionPayload(parsed.payload);
+          if (!validation.valid) ui.cleanupReview.dedupeDecisionPreview = { valid: false, errors: validation.errors, items: [] };
+          else {
+            const normalized = normalizeDedupeDecisionPayload(parsed.payload);
+            ui.cleanupReview.dedupeDecisionPreview = { valid: true, errors: [], items: buildDedupeDecisionPreview(normalized, validation.context) };
+          }
+        }
+        if (before !== getCleanupReviewFeatureSnapshot()) ui.cleanupReview.dedupeDecisionPreview = { valid: false, errors: ['Interner Sicherheitsfehler: Feature-Daten wurden während der Preview-Prüfung verändert.'], items: [] };
+        renderView();
+      }
+
+      function resetCleanupMainChatReturnJson() { ui.cleanupReview.mainChatReturnJson = ''; ui.cleanupReview.mainChatDecisionPreview = null; renderView(); }
+      function resetCleanupDedupeReturnJson() { ui.cleanupReview.dedupeReturnJson = ''; ui.cleanupReview.dedupeDecisionPreview = null; renderView(); }
+
+      function renderCleanupDecisionResult(result, type) {
+        if (!result) return '';
+        if (!result.valid) return '<div class="notice notice-warning"><strong>Rückgabe ungültig.</strong><ul>' + (result.errors || []).map(e => '<li>' + escapeHtml(e) + '</li>').join('') + '</ul></div>';
+        if (type === 'main') return '<div class="notice notice-success">Vorschau geprüft. In diesem Sprint werden keine Featuredaten verändert.</div>' + (result.items || []).map(item => '<div class="item"><div class="row-top"><strong>' + escapeHtml(item.caseId) + '</strong><span class="pill pill-info">' + escapeHtml(item.decision) + '</span></div><div class="mini">Fall: ' + escapeHtml(item.label) + (item.featureId ? ' · Feature ' + escapeHtml(item.featureId) + ' · ' + escapeHtml(item.featureTitle || '') : ' · ohne Feature-ID') + '</div><div class="mini">Einordnung: ' + escapeHtml(item.mutationClass) + '</div><div class="mini">Summary: ' + escapeHtml(item.summary || '—') + '</div><div class="mini">Vorschläge: ' + escapeHtml(JSON.stringify(item.proposedFields)) + '</div><div class="mini">Bestehend: ' + escapeHtml(JSON.stringify(item.existing)) + '</div></div>').join('') || '<div class="notice notice-success">Leeres decisions-Array ist gültig und mutationsfrei.</div>';
+        return '<div class="notice notice-success">Vorschau geprüft. Es wurde nichts zusammengeführt, archiviert, gelöscht oder als Duplicate markiert.</div>' + ((result.items || []).map(item => '<div class="item"><div class="row-top"><strong>' + escapeHtml(item.pairId) + '</strong><span class="pill pill-info">' + escapeHtml(item.decision) + '</span></div><div class="mini">Feature A: ' + escapeHtml(item.featureA.id) + ' · ' + escapeHtml(item.featureA.title || '') + '</div><div class="mini">Feature B: ' + escapeHtml(item.featureB.id) + ' · ' + escapeHtml(item.featureB.title || '') + '</div><div class="mini">Kanonisch: ' + escapeHtml(item.canonicalFeatureId || '—') + ' · Duplicate: ' + escapeHtml(item.duplicateFeatureId || '—') + ' · archiveDuplicate: ' + escapeHtml(String(!!item.archiveDuplicate)) + '</div><div class="mini">Rationale: ' + escapeHtml(item.rationale || '—') + '</div><div class="mini">Kanonischer Titel/Beschreibung: ' + escapeHtml(item.canonicalTitle || '—') + ' / ' + escapeHtml(item.canonicalDescription || '—') + '</div></div>').join('') || '<div class="notice notice-success">Leeres dedupeDecisions-Array ist gültig und mutationsfrei.</div>');
+      }
+
       function buildCleanupReviewMainChatClarificationPrompt() {
-        const proposals = (ui.cleanupReview.proposals || []).filter(p => p._queuedMainChat).slice(0, 25);
-        const questions = Array.isArray(ui.cleanupReview.openQuestions) ? ui.cleanupReview.openQuestions.slice(0, 10) : [];
+        const scope = getCleanupReviewMainChatDecisionScope();
+        const proposals = scope.proposals;
+        const questions = scope.questions;
         if (!proposals.length && !questions.length) return alert('Keine explizit für Hauptchat vorgemerkten Fälle oder openQuestions im aktuellen Cleanup-Review gefunden.');
         const projectId = ui.cleanupReview.projectId || '';
         const projectTitle = getProjectTitle(projectId) || 'Unbekanntes Projekt';
+        const cases = buildMainChatDecisionContext(scope);
         const lines = [
           '# Roadtrip Hauptchat-Klärung: vorgemerkte CSV-Codeanalyse-Befunde',
           '',
           ...buildCodexContextContractLines({ reviewFinding: true }),
           '',
           'Zweck: Bereite menschliche Entscheidungen für unklare CSV-Codeanalyse-Review-Fälle vor. Analysiere keinen Code erneut und löse keine automatischen Roadtrip-Mutationen aus.',
+          'ANTWORT: ausschließlich ein vollständiges JSON-Objekt. Keine Markdown-Codefences, kein Text vor/nach JSON, keine Tabellen, keine erfundenen IDs, keine Löschung, kein Merge, keine Archivierung.',
+          'Schema-Version exakt: ' + CLEANUP_MAINCHAT_DECISION_SCHEMA_VERSION,
+          'Erlaubte decision-Werte exakt: ' + CLEANUP_MAINCHAT_DECISIONS.join(', '),
+          'schemaVersion und projectId exakt übernehmen; nur ausgegebene caseId-Werte verwenden; bestehende Feature-IDs exakt übernehmen; Codeevidenz/Begründung in summary, nicht automatisch in persistierbare Vorschlagsfelder.',
           '',
           '## Projekt',
           '- projectId: ' + projectId,
@@ -13191,6 +13465,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
             lines.push(
               '',
               '### Fall ' + (index + 1),
+              '- caseId: ' + proposal._mainChatCaseId,
               '- Feature-ID: ' + (featureId || '—'),
               '- Titel: ' + title,
               '- Aktueller Pool: ' + currentPool,
@@ -13206,9 +13481,9 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         }
         if (questions.length) {
           lines.push('', '## Zusätzliche offene Fragen aus dem Import-Ergebnis');
-          questions.forEach((q, i) => lines.push('- Q' + (i + 1) + ': ' + shorten(q, 500)));
+          questions.forEach((q, i) => lines.push('- caseId: ' + buildCleanupReviewStableOpenQuestionCaseId(q, i) + ' · featureId: — · Frage: ' + shorten(q, 500)));
         }
-        lines.push('', '## Antworterwartung', 'Gib eine kompakte Entscheidungsempfehlung pro Fall/Frage zurück. Kein Code, keine komplette CSV, keine automatische Löschung, kein automatisches Merge, keine Archivierung und keine Aufforderung zu Roadtrip-Mutationen.');
+        lines.push('', '## JSON-Vertrag', JSON.stringify({ schemaVersion: CLEANUP_MAINCHAT_DECISION_SCHEMA_VERSION, projectId, decisions: Array.from(cases.entries()).map(([caseId, ctx]) => ({ caseId, featureId: ctx.featureId || '', decision: 'keep-open', summary: '', proposedTitle: '', proposedDescription: '', proposedCategory: '', proposedStatus: '', proposedPool: '', canonicalFeatureId: '', splitProposal: null, openQuestion: '' })) }, null, 2));
         const prompt = lines.join('\n');
         ui.cleanupReview.clarificationPrompt = prompt;
         if ($('cleanupMainChatClarificationPromptOutput')) $('cleanupMainChatClarificationPromptOutput').value = prompt;
@@ -13219,15 +13494,19 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       }
 
       function buildCleanupReviewDedupePrompt() {
-        const proposals = (ui.cleanupReview.proposals || []).filter(p => p._queuedDedupe && classifyCleanupDuplicateSemantics(p).kind === 'existing-db-duplicate').slice(0, 25);
+        const proposals = getCleanupReviewDedupeDecisionScope();
         if (!proposals.length) return alert('Keine eindeutig bestehenden Datenbank-Dubletten für den Dedupe-Prompt vorgemerkt.');
         const projectId = ui.cleanupReview.projectId || '';
         const projectTitle = getProjectTitle(projectId) || 'Unbekanntes Projekt';
+        const pairs = buildDedupeDecisionContext(proposals);
         const lines = [
           '# Roadtrip Dedupe-Prompt: bestehende Feature-Dubletten',
           '',
           'Zweck: Bereite eine menschliche Entscheidungsempfehlung für bereits existierende Roadtrip-Feature-Paare vor.',
-          'Wichtig: Keine automatische Löschung, kein automatisches Merge, keine automatische Archivierung.',
+          'ANTWORT: ausschließlich ein vollständiges JSON-Objekt. Keine Markdown-Codefences, kein Text vor/nach JSON, keine Tabellen, keine erfundenen IDs, keine Löschung, kein Merge, keine Archivierung.',
+          'Schema-Version exakt: ' + CLEANUP_DEDUPE_DECISION_SCHEMA_VERSION,
+          'Erlaubte decision-Werte exakt: ' + CLEANUP_DEDUPE_DECISIONS.join(', '),
+          'schemaVersion und projectId exakt übernehmen; nur ausgegebene pairId-Werte verwenden; Feature A/B IDs exakt in dieser Reihenfolge übernehmen; keine dritte kanonische ID.',
           '',
           '## Projekt',
           '- projectId: ' + projectId,
@@ -13243,6 +13522,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           lines.push(
             '',
             '### Paar ' + (index + 1),
+            '- pairId: ' + proposal._dedupePairId,
             '- Feature A ID: ' + a.id,
             '- Feature A Titel: ' + (a.title || '—'),
             '- Feature A Pool/Status: ' + (a.pool || '—') + ' / ' + (a.status || '—'),
@@ -13253,7 +13533,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
             '- Aufgabe: Empfiehl eine menschliche Dedupe-Entscheidung, ohne automatische Datenänderung auszulösen.'
           );
         });
-        lines.push('', '## Antworterwartung', 'Gib pro Paar eine kurze Empfehlung: behalten/prüfen/zusammenführen lassen/weiter beobachten. Kein Code, keine komplette CSV, keine automatische Roadtrip-Aktion.');
+        lines.push('', '## JSON-Vertrag', JSON.stringify({ schemaVersion: CLEANUP_DEDUPE_DECISION_SCHEMA_VERSION, projectId, dedupeDecisions: Array.from(pairs.entries()).map(([pairId, ctx]) => ({ pairId, featureAId: ctx.featureA.id, featureBId: ctx.featureB.id, decision: 'keep-both', canonicalFeatureId: '', duplicateFeatureId: '', canonicalTitle: '', canonicalDescription: '', rationale: '', archiveDuplicate: false })) }, null, 2));
         const prompt = lines.join('\n');
         ui.cleanupReview.dedupePrompt = prompt;
         if ($('cleanupDedupePromptOutput')) $('cleanupDedupePromptOutput').value = prompt;
@@ -13264,7 +13544,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       }
 
       function clearCleanupReview() {
-        ui.cleanupReview = { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', openQuestions: [], clarificationPrompt: '', mainChatReturnJson: '', dedupePrompt: '', dedupeReturnJson: '', visible: false, versionLogged: false };
+        ui.cleanupReview = { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', openQuestions: [], clarificationPrompt: '', mainChatReturnJson: '', mainChatDecisionPreview: null, dedupePrompt: '', dedupeReturnJson: '', dedupeDecisionPreview: null, visible: false, versionLogged: false };
         renderView();
       }
 
@@ -13360,9 +13640,9 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
                 <div class="notice notice-info">Direkte Aktionen bearbeiten nur sichere Fälle. Hauptchat- und Dedupe-Queues sind bewusst zurückgestellte Folgearbeit. Vollständig eingeordnet ist das Review erst, wenn direkte Fälle bearbeitet und Queues bewusst behandelt oder zurückgestellt wurden.</div>
                 <div class="stack-row"><span class="pill pill-outline">${directOpenCount} offene direkte Review-Fälle</span><span class="pill pill-info">${cleanupStats.mainChatQueued} Hauptchat vorgemerkt</span><span class="pill pill-info">${cleanupStats.dedupeQueued} Dedupe vorgemerkt</span></div>
                 <div class="field"><label for="cleanupMainChatClarificationPromptOutput">Hauptchat-Klärungsprompt</label><textarea id="cleanupMainChatClarificationPromptOutput" class="cleanup-review-textarea" placeholder="Prompt aus explizit vorgemerkten Hauptchat-Fällen">${escapeHtml(ui.cleanupReview.clarificationPrompt || '')}</textarea><button class="btn btn-secondary" id="btnCopyCleanupMainChatClarificationPrompt">Klärungsprompt kopieren</button></div>
-                <div class="field"><label for="cleanupMainChatReturnJsonInput">Hauptchat-Rückgabe-JSON (später einfügen)</label><textarea id="cleanupMainChatReturnJsonInput" class="cleanup-review-textarea" placeholder='{"decisions":[]}' >${escapeHtml(ui.cleanupReview.mainChatReturnJson || '')}</textarea></div>
+                <div class="field"><label for="cleanupMainChatReturnJsonInput">Hauptchat-Rückgabe-JSON</label><textarea id="cleanupMainChatReturnJsonInput" class="cleanup-review-textarea" placeholder='{"schemaVersion":"roadtrip-mainchat-decisions-v1","decisions":[]}' >${escapeHtml(ui.cleanupReview.mainChatReturnJson || '')}</textarea><div class="stack-row"><button class="btn btn-primary" id="btnCheckCleanupMainChatReturnJson">Hauptchat-Rückgabe prüfen</button><button class="btn btn-ghost" id="btnResetCleanupMainChatReturnJson">Hauptchat-Rückgabe zurücksetzen</button></div>${renderCleanupDecisionResult(ui.cleanupReview.mainChatDecisionPreview, 'main')}</div>
                 <div class="field"><label for="cleanupDedupePromptOutput">Dedupe-Prompt</label><textarea id="cleanupDedupePromptOutput" class="cleanup-review-textarea" placeholder="Prompt aus explizit vorgemerkten bestehenden Datenbank-Dubletten">${escapeHtml(ui.cleanupReview.dedupePrompt || '')}</textarea><button class="btn btn-secondary" id="btnCopyCleanupDedupePrompt">Dedupe-Prompt kopieren</button></div>
-                <div class="field"><label for="cleanupDedupeReturnJsonInput">Dedupe-Rückgabe-JSON (später einfügen)</label><textarea id="cleanupDedupeReturnJsonInput" class="cleanup-review-textarea" placeholder='{"dedupeDecisions":[]}' >${escapeHtml(ui.cleanupReview.dedupeReturnJson || '')}</textarea></div>
+                <div class="field"><label for="cleanupDedupeReturnJsonInput">Dedupe-Rückgabe-JSON</label><textarea id="cleanupDedupeReturnJsonInput" class="cleanup-review-textarea" placeholder='{"schemaVersion":"roadtrip-dedupe-decisions-v1","dedupeDecisions":[]}' >${escapeHtml(ui.cleanupReview.dedupeReturnJson || '')}</textarea><div class="stack-row"><button class="btn btn-primary" id="btnCheckCleanupDedupeReturnJson">Dedupe-Rückgabe prüfen</button><button class="btn btn-ghost" id="btnResetCleanupDedupeReturnJson">Dedupe-Rückgabe zurücksetzen</button></div>${renderCleanupDecisionResult(ui.cleanupReview.dedupeDecisionPreview, 'dedupe')}</div>
               ` : ''}
             </section>
             <section class="cleanup-review-stage" aria-label="Review">
