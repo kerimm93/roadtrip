@@ -2499,6 +2499,84 @@
         return stateSaved;
       }
 
+
+
+      async function saveAsync() {
+        if (!window.__roadtripSaveAlertState || typeof window.__roadtripSaveAlertState !== 'object') window.__roadtripSaveAlertState = { lastType: '', lastAt: 0 };
+        const classifySaveError = (err, stage) => {
+          const message = String((err && err.message) || '');
+          const lowered = message.toLowerCase();
+          const code = Number((err && err.code) || 0);
+          const quotaLike =
+            (err && err.name === 'QuotaExceededError') ||
+            code === 22 || code === 1014 ||
+            /quota|quota exceeded|exceeded the quota|storage full|disk full|not enough space/.test(lowered);
+          if (quotaLike) return 'quota-exceeded';
+          if (stage === 'verify-parse') return 'invalid-json-after-write';
+          if (stage === 'verify-read') return 'write-verify-failed';
+          return 'save-failed-unknown';
+        };
+        const maybeShowSaveAlert = (type) => {
+          const now = Date.now();
+          const cooldownMs = 12000;
+          const last = window.__roadtripSaveAlertState || { lastType: '', lastAt: 0 };
+          if (last.lastType === type && now - last.lastAt < cooldownMs) return;
+          window.__roadtripSaveAlertState = { lastType: type, lastAt: now };
+          alert(type === 'quota-exceeded' ? 'Browser-Speicher voll. Bitte sofort Notfall-Export erstellen.' : 'Lokales Speichern fehlgeschlagen. Ursache unklar. Bitte Notfall-Export erstellen, bevor du neu lädst.');
+        };
+        const prevSaveError = { type: S._lastSaveError, at: S._lastSaveErrorAt, message: S._lastSaveErrorMessage };
+        S._lastLocalSaveAt = new Date().toISOString();
+        ensureDefaults();
+        S._lastSaveError = '';
+        S._lastSaveErrorAt = '';
+        S._lastSaveErrorMessage = '';
+        const stateSnapshot = JSON.parse(JSON.stringify(S));
+        const saveSnapshotToLocalStorage = () => {
+          const payload = JSON.stringify(stateSnapshot);
+          if (!payload || payload.length < 10) throw new Error('suspiciously small payload');
+          localStorage.setItem(LKEY, payload);
+          const verifyRaw = localStorage.getItem(LKEY);
+          if (!verifyRaw) throw new Error('localStorage write verification failed');
+          try { JSON.parse(verifyRaw); } catch (verifyParseErr) { verifyParseErr._roadtripStage = 'verify-parse'; throw verifyParseErr; }
+          storageMeta.storageMode = 'localStorage';
+          storageMeta.lastLocalStorageFallbackAt = new Date().toISOString();
+          persistStorageMeta();
+          return true;
+        };
+        try {
+          if (!indexedDbUnavailable && ('indexedDB' in window)) {
+            try {
+              roadtripSaveQueue = roadtripSaveQueue.then(() => saveStateToIndexedDb(stateSnapshot));
+              await roadtripSaveQueue;
+              storageMeta.storageMode = 'indexedDB';
+              storageMeta.lastIndexedDbSaveAt = new Date().toISOString();
+              persistStorageMeta();
+            } catch (idbErr) {
+              console.error('[saveAsync] IndexedDB save failed:', idbErr);
+              indexedDbUnavailable = true;
+              saveSnapshotToLocalStorage();
+            }
+          } else {
+            saveSnapshotToLocalStorage();
+          }
+          try { localStorage.setItem(CONFIG_KEY, JSON.stringify(C)); } catch (configErr) { console.error('[saveAsync] Config save failed:', configErr); }
+          const lbl = $('lastSavedLabel');
+          if (lbl) lbl.textContent = 'Gespeichert: ' + formatDateTime(S._lastLocalSaveAt);
+          if (typeof updateStorageDisplay === 'function') updateStorageDisplay();
+          renderStats();
+          renderSidebarProjects();
+          return true;
+        } catch (e) {
+          S._lastSaveError = prevSaveError.type || '';
+          S._lastSaveErrorAt = prevSaveError.at || '';
+          S._lastSaveErrorMessage = prevSaveError.message || '';
+          const stage = (e && e._roadtripStage) || ((e && e.message === 'localStorage write verification failed') ? 'verify-read' : 'save');
+          const errorType = classifySaveError(e, stage);
+          maybeShowSaveAlert(errorType);
+          throw e;
+        }
+      }
+
       function getByteSize(value) {
         try {
           const payload = typeof value === 'string' ? value : JSON.stringify(value);
@@ -3039,9 +3117,10 @@
         if ($('btnClearCleanupReview')) $('btnClearCleanupReview').addEventListener('click', clearCleanupReview);
         if ($('btnBuildCleanupMainChatClarificationPrompt')) $('btnBuildCleanupMainChatClarificationPrompt').addEventListener('click', buildCleanupReviewMainChatClarificationPrompt);
         if ($('btnCopyCleanupMainChatClarificationPrompt')) $('btnCopyCleanupMainChatClarificationPrompt').addEventListener('click', () => copyPrompt('cleanupMainChatClarificationPromptOutput'));
-        if ($('cleanupMainChatReturnJsonInput')) $('cleanupMainChatReturnJsonInput').addEventListener('input', e => { ui.cleanupReview.mainChatReturnJson = e.target.value; ui.cleanupReview.mainChatDecisionPreview = null; });
+        if ($('cleanupMainChatReturnJsonInput')) $('cleanupMainChatReturnJsonInput').addEventListener('input', e => { ui.cleanupReview.mainChatReturnJson = e.target.value; invalidateCleanupMainChatDecisionPreview('Textarea wurde nach der Prüfung geändert. Bitte erneut prüfen.'); updateCleanupMainChatDecisionPreviewContainer(); });
         if ($('cleanupDedupeReturnJsonInput')) $('cleanupDedupeReturnJsonInput').addEventListener('input', e => { ui.cleanupReview.dedupeReturnJson = e.target.value; ui.cleanupReview.dedupeDecisionPreview = null; });
         if ($('btnCheckCleanupMainChatReturnJson')) $('btnCheckCleanupMainChatReturnJson').addEventListener('click', checkCleanupMainChatReturnJson);
+        bindCleanupMainChatDecisionPreviewControls();
         if ($('btnResetCleanupMainChatReturnJson')) $('btnResetCleanupMainChatReturnJson').addEventListener('click', resetCleanupMainChatReturnJson);
         if ($('btnCheckCleanupDedupeReturnJson')) $('btnCheckCleanupDedupeReturnJson').addEventListener('click', checkCleanupDedupeReturnJson);
         if ($('btnResetCleanupDedupeReturnJson')) $('btnResetCleanupDedupeReturnJson').addEventListener('click', resetCleanupDedupeReturnJson);
@@ -13328,12 +13407,227 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         return { schemaVersion: CLEANUP_MAINCHAT_DECISION_SCHEMA_VERSION, projectId: ui.cleanupReview.projectId || '', decisions: (payload.decisions || []).map(d => ({ caseId: normalizeStringField(d.caseId), featureId: normalizeStringField(d.featureId), decision: normalizeStringField(d.decision), summary: normalizeStringField(d.summary), proposedTitle: normalizeStringField(d.proposedTitle), proposedDescription: normalizeStringField(d.proposedDescription), proposedCategory: normalizeStringField(d.proposedCategory), proposedStatus: normalizeStringField(d.proposedStatus), proposedPool: normalizeStringField(d.proposedPool), canonicalFeatureId: normalizeStringField(d.canonicalFeatureId), splitProposal: d.splitProposal || null, openQuestion: normalizeStringField(d.openQuestion) })) };
       }
 
+      function getCleanupMainChatAllowedChanges(item, feature) {
+        const changes = [];
+        if (!item || !feature) return changes;
+        const fields = [
+          ['proposedTitle', 'title'],
+          ['proposedDescription', 'description'],
+          ['proposedCategory', 'category']
+        ];
+        fields.forEach(([payloadField, featureField]) => {
+          const value = normalizeStringField(item.proposedFields && item.proposedFields[payloadField]);
+          if (!value) return;
+          if (String(feature[featureField] || '') !== value) changes.push({ payloadField, field: featureField, oldValue: String(feature[featureField] || ''), newValue: value });
+        });
+        return changes;
+      }
+
       function buildMainChatDecisionPreview(normalized, context) {
         return (normalized.decisions || []).map(d => {
           const ctx = context.get(d.caseId) || {};
           const feature = ctx.feature || (d.featureId ? S.features.find(f => f.id === d.featureId) : null);
-          return { caseId: d.caseId, label: ctx.label || 'Fall', featureId: d.featureId, featureTitle: feature ? feature.title || '' : '', decision: d.decision, summary: d.summary, mutationClass: CLEANUP_MAINCHAT_MUTATION_FREE_DECISIONS.includes(d.decision) ? 'mutationsfrei' : 'noch nicht anwendbar / potenziell spätere Mutation', proposedFields: { proposedTitle: d.proposedTitle, proposedDescription: d.proposedDescription, proposedCategory: d.proposedCategory, proposedStatus: d.proposedStatus, proposedPool: d.proposedPool, canonicalFeatureId: d.canonicalFeatureId, openQuestion: d.openQuestion }, existing: feature ? { title: feature.title || '', description: feature.description || '', category: feature.category || '', status: feature.status || '', pool: feature.pool || '' } : {} };
+          const item = { caseId: d.caseId, label: ctx.label || 'Fall', featureId: d.featureId, featureTitle: feature ? feature.title || '' : '', decision: d.decision, summary: d.summary, mutationClass: CLEANUP_MAINCHAT_MUTATION_FREE_DECISIONS.includes(d.decision) ? 'mutationsfrei' : 'Preview-only', proposedFields: { proposedTitle: d.proposedTitle, proposedDescription: d.proposedDescription, proposedCategory: d.proposedCategory, proposedStatus: d.proposedStatus, proposedPool: d.proposedPool, canonicalFeatureId: d.canonicalFeatureId, openQuestion: d.openQuestion }, existing: feature ? { title: feature.title || '', description: feature.description || '', category: feature.category || '', status: feature.status || '', pool: feature.pool || '', updatedAt: feature.updatedAt || '' } : {}, validated: true, consumed: false };
+          item.applicableChanges = getCleanupMainChatAllowedChanges(item, feature);
+          item.selectable = !!(feature && d.caseId && d.featureId && d.decision === 'update-existing' && item.validated && item.applicableChanges.length);
+          item.mutationClass = item.selectable ? 'anwendbar: update-existing für Titel/Beschreibung/Kategorie' : 'Preview-only';
+          return item;
         });
+      }
+
+      function invalidateCleanupMainChatDecisionPreview(reason) {
+        if (ui.cleanupReview && ui.cleanupReview.mainChatDecisionPreview) {
+          ui.cleanupReview.mainChatDecisionPreview.invalidated = true;
+          ui.cleanupReview.mainChatDecisionPreview.selectedCaseIds = [];
+          ui.cleanupReview.mainChatDecisionPreview.resultSummary = '';
+          ui.cleanupReview.mainChatDecisionPreview.pendingBatch = null;
+          ui.cleanupReview.mainChatDecisionPreview.errors = [reason || 'Preview ist veraltet. Bitte erneut prüfen.'];
+          ui.cleanupReview.mainChatDecisionPreview.valid = false;
+        } else if (ui.cleanupReview) ui.cleanupReview.mainChatDecisionPreview = null;
+      }
+
+      function toggleCleanupMainChatSelection(caseId, checked) {
+        const preview = ui.cleanupReview.mainChatDecisionPreview;
+        if (!preview || !preview.valid || preview.invalidated || preview.consumed || preview.pendingBatch) return renderView();
+        const selected = new Set(preview.selectedCaseIds || []);
+        const item = (preview.items || []).find(x => x.caseId === caseId);
+        if (checked && item && item.selectable) selected.add(caseId); else selected.delete(caseId);
+        preview.selectedCaseIds = Array.from(selected);
+        renderView();
+      }
+
+      function bindCleanupMainChatDecisionPreviewControls(root) {
+        const scope = root || document;
+        scope.querySelectorAll('[data-cleanup-mainchat-select]').forEach(input => input.addEventListener('change', () => toggleCleanupMainChatSelection(input.dataset.cleanupMainchatSelect || '', input.checked)));
+        const reviewBtn = scope.querySelector('#btnReviewCleanupMainChatSelection');
+        if (reviewBtn) reviewBtn.addEventListener('click', reviewSelectedCleanupMainChatUpdates);
+        const confirmBtn = scope.querySelector('#btnConfirmCleanupMainChatPendingBatch');
+        if (confirmBtn) confirmBtn.addEventListener('click', confirmCleanupMainChatPendingBatch);
+        const cancelBtn = scope.querySelector('#btnCancelCleanupMainChatPendingBatch');
+        if (cancelBtn) cancelBtn.addEventListener('click', cancelCleanupMainChatPendingBatch);
+      }
+
+      function updateCleanupMainChatDecisionPreviewContainer() {
+        const box = $('cleanupMainChatDecisionPreviewResult');
+        if (!box) return;
+        box.innerHTML = renderCleanupDecisionResult(ui.cleanupReview.mainChatDecisionPreview, 'main');
+        bindCleanupMainChatDecisionPreviewControls(box);
+      }
+
+      function cancelCleanupMainChatPendingBatch() {
+        const preview = ui.cleanupReview.mainChatDecisionPreview;
+        if (preview) preview.pendingBatch = null;
+        renderView();
+      }
+
+      function buildCleanupMainChatUpdateBatch(preview) {
+        const errors = [];
+        if (!preview || !preview.valid || preview.invalidated || preview.consumed) errors.push('Preview ist nicht anwendbar. Bitte Hauptchat-Rückgabe erneut prüfen.');
+        const selectedIds = (preview && preview.selectedCaseIds) || [];
+        if (!selectedIds.length) errors.push('Keine anwendbaren Änderungen ausgewählt.');
+        const seenFeatures = new Set();
+        const entries = [];
+        selectedIds.forEach(caseId => {
+          const item = (preview.items || []).find(x => x.caseId === caseId);
+          if (!item || !item.selectable || !item.validated || item.consumed) { errors.push(caseId + ': nicht auswählbar.'); return; }
+          if (item.decision !== 'update-existing') { errors.push(caseId + ': nur update-existing ist anwendbar.'); return; }
+          const currentFeature = S.features.find(f => f && f.id === item.featureId && f.projectId === ui.cleanupReview.projectId);
+          if (!currentFeature) { errors.push(caseId + ': Feature nicht gefunden (' + item.featureId + ').'); return; }
+          if (seenFeatures.has(item.featureId)) { errors.push('Doppelte Ziel-Feature-ID im Batch: ' + item.featureId + '.'); return; }
+          seenFeatures.add(item.featureId);
+          const baseline = item.existing || {};
+          const changes = [];
+          [
+            ['proposedTitle', 'title'],
+            ['proposedDescription', 'description'],
+            ['proposedCategory', 'category']
+          ].forEach(([payloadField, field]) => {
+            const value = normalizeStringField(item.proposedFields && item.proposedFields[payloadField]);
+            if (!value) return;
+            const oldValue = String(baseline[field] || '');
+            if (oldValue !== value) changes.push({ payloadField, field, oldValue, newValue: value });
+          });
+          changes.forEach(change => {
+            if (change.field === 'title') {
+              if (!change.newValue.trim()) errors.push(caseId + ': neuer Titel wäre leer.');
+              addLosslessDecisionErrors(errors, caseId + ' proposedTitle', change.newValue, baseline.title);
+            }
+            if (change.field === 'description') addLosslessDecisionErrors(errors, caseId + ' proposedDescription', change.newValue, baseline.description);
+            if (change.field === 'category' && !FEATURE_CATEGORIES.includes(change.newValue)) errors.push(caseId + ': ungültige Kategorie "' + change.newValue + '".');
+          });
+          if (!changes.length) errors.push(caseId + ': keine tatsächliche Änderung im validierten Snapshot.');
+          entries.push({ caseId, featureId: item.featureId, featureTitle: baseline.title || item.featureTitle || '', baseline, changes });
+        });
+        const fieldCounts = entries.reduce((acc, entry) => { entry.changes.forEach(c => { acc[c.field] = (acc[c.field] || 0) + 1; }); return acc; }, {});
+        return { valid: !errors.length, errors, entries, selectedCount: selectedIds.length, featureCount: entries.length, fieldCount: entries.reduce((n, e) => n + e.changes.length, 0), fieldCounts };
+      }
+
+      function checkCleanupMainChatBatchDrift(batch) {
+        const driftErrors = [];
+        (batch.entries || []).forEach(entry => {
+          const feature = S.features.find(f => f && f.id === entry.featureId && f.projectId === ui.cleanupReview.projectId);
+          if (!feature) { driftErrors.push(entry.featureId + ': Feature wurde entfernt.'); return; }
+          ['title','description','category'].forEach(field => {
+            if (String(feature[field] || '') !== String(entry.baseline[field] || '')) driftErrors.push(entry.featureId + ': Drift bei ' + field + '.');
+          });
+          if (Object.prototype.hasOwnProperty.call(feature, 'updatedAt') && String(feature.updatedAt || '') !== String(entry.baseline.updatedAt || '')) driftErrors.push(entry.featureId + ': Drift bei updatedAt.');
+        });
+        return driftErrors;
+      }
+
+      function formatCleanupMainChatBatchSummary(batch) {
+        const labels = { title: 'Titeländerungen', description: 'Beschreibungsänderungen', category: 'Kategorieänderungen' };
+        const parts = Object.keys(batch.fieldCounts || {}).map(k => (batch.fieldCounts[k] || 0) + ' ' + (labels[k] || k));
+        return (batch.selectedCount || 0) + ' ausgewählte Entscheidungen, ' + (batch.featureCount || 0) + ' betroffene Features, ' + (batch.fieldCount || 0) + ' Feldänderungen' + (parts.length ? ' (' + parts.join(', ') + ')' : '');
+      }
+
+      function formatCleanupMainChatBatchDiff(batch) {
+        return formatCleanupMainChatBatchSummary(batch) + '\n\n' + (batch.entries || []).map(entry => {
+          return 'Feature ' + entry.featureId + ' · ' + entry.featureTitle + '\ncaseId: ' + entry.caseId + '\n' + entry.changes.map(c => c.field + ':\nALT: ' + c.oldValue + '\nNEU: ' + c.newValue).join('\n');
+        }).join('\n\n---\n\n');
+      }
+
+      function getCleanupMainChatProtectedStateDiffs(beforeState, afterState, batch) {
+        const allowedFeatureFields = new Map();
+        (batch.entries || []).forEach(entry => allowedFeatureFields.set(entry.featureId, new Set(entry.changes.map(c => c.field).concat(['updatedAt']))));
+        const clone = value => JSON.parse(JSON.stringify(value == null ? null : value));
+        const before = clone(beforeState);
+        const after = clone(afterState);
+        const diffs = [];
+        const allowedRoot = new Set(['_lastLocalSaveAt', '_lastSaveError', '_lastSaveErrorAt', '_lastSaveErrorMessage']);
+        Object.keys(Object.assign({}, before, after)).forEach(key => {
+          if (key === 'features' || allowedRoot.has(key)) return;
+          if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) diffs.push('State-Feld ' + key + ' wurde unerwartet verändert.');
+        });
+        const beforeFeatures = new Map((before.features || []).map(f => [f && f.id, f]));
+        const afterFeatures = new Map((after.features || []).map(f => [f && f.id, f]));
+        if (beforeFeatures.size !== afterFeatures.size) diffs.push('Feature-Anzahl wurde unerwartet verändert.');
+        beforeFeatures.forEach((beforeFeature, id) => {
+          const afterFeature = afterFeatures.get(id);
+          if (!afterFeature) { diffs.push('Feature ' + id + ' fehlt nach Kandidatenbildung.'); return; }
+          const allowed = allowedFeatureFields.get(id) || new Set();
+          Object.keys(Object.assign({}, beforeFeature, afterFeature)).forEach(field => {
+            if (allowed.has(field)) return;
+            if (JSON.stringify(beforeFeature[field]) !== JSON.stringify(afterFeature[field])) diffs.push('Feature ' + id + ': unerlaubte Änderung an ' + field + '.');
+          });
+        });
+        return diffs;
+      }
+
+      async function commitCleanupMainChatUpdateBatch(preview, batch) {
+        const driftErrors = checkCleanupMainChatBatchDrift(batch);
+        if (driftErrors.length) throw new Error('Driftprüfung fehlgeschlagen: ' + driftErrors.join(' '));
+        const previousState = JSON.parse(JSON.stringify(S || {}));
+        const candidateState = JSON.parse(JSON.stringify(S || {}));
+        const now = new Date().toISOString();
+        (batch.entries || []).forEach(entry => {
+          const feature = (candidateState.features || []).find(f => f && f.id === entry.featureId && f.projectId === ui.cleanupReview.projectId);
+          if (!feature) throw new Error(entry.featureId + ': Feature fehlt in Zustandskopie.');
+          entry.changes.forEach(change => { feature[change.field] = change.newValue; });
+          feature.updatedAt = now;
+        });
+        const ids = new Set((candidateState.features || []).map(f => f && f.id).filter(Boolean));
+        if (ids.size !== (candidateState.features || []).filter(Boolean).length) throw new Error('Batch-Invariante verletzt: doppelte Feature-ID im Kandidatenstand.');
+        const protectedDiffs = getCleanupMainChatProtectedStateDiffs(previousState, candidateState, batch);
+        if (protectedDiffs.length) throw new Error('Schutzlistenprüfung fehlgeschlagen: ' + protectedDiffs.join(' '));
+        try {
+          S = candidateState;
+          await saveAsync();
+        } catch (err) {
+          S = previousState;
+          renderView();
+          throw err;
+        }
+      }
+
+      function reviewSelectedCleanupMainChatUpdates() {
+        const preview = ui.cleanupReview.mainChatDecisionPreview;
+        const batch = buildCleanupMainChatUpdateBatch(preview);
+        if (!batch.valid) return alert('Batch ungültig:\n- ' + batch.errors.join('\n- '));
+        preview.pendingBatch = batch;
+        preview.resultSummary = '';
+        renderView();
+      }
+
+      async function confirmCleanupMainChatPendingBatch() {
+        const preview = ui.cleanupReview.mainChatDecisionPreview;
+        const batch = preview && preview.pendingBatch;
+        if (!preview || !preview.valid || preview.invalidated || preview.consumed || !batch || !batch.valid) return alert('Kein gültiger geprüfter Diff-Batch vorhanden. Bitte erneut prüfen.');
+        if (!window.confirm(formatCleanupMainChatBatchSummary(batch) + '\n\nEchte Roadtrip-Featuredaten werden als Gesamtbatch geändert. Fortfahren?')) return;
+        try {
+          const driftErrors = checkCleanupMainChatBatchDrift(batch);
+          if (driftErrors.length) throw new Error('Driftprüfung fehlgeschlagen: ' + driftErrors.join(' '));
+          await commitCleanupMainChatUpdateBatch(preview, batch);
+          preview.consumed = true;
+          preview.selectedCaseIds = [];
+          preview.pendingBatch = null;
+          preview.resultSummary = 'Batch vollständig angewendet: ' + formatCleanupMainChatBatchSummary(batch) + '. Feature-IDs: ' + batch.entries.map(e => e.featureId).join(', ') + '. Felder: ' + Array.from(new Set(batch.entries.flatMap(e => e.changes.map(c => c.field)))).join(', ') + '.';
+          alert(preview.resultSummary);
+          renderView();
+        } catch (err) {
+          alert('Batch abgebrochen, keine Teiländerung angewendet: ' + (err && err.message ? err.message : err));
+          renderView();
+        }
       }
 
       function validateDedupeDecisionPayload(payload) {
@@ -13395,7 +13689,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           if (!validation.valid) ui.cleanupReview.mainChatDecisionPreview = { valid: false, errors: validation.errors, items: [] };
           else {
             const normalized = normalizeMainChatDecisionPayload(parsed.payload);
-            ui.cleanupReview.mainChatDecisionPreview = { valid: true, errors: [], items: buildMainChatDecisionPreview(normalized, validation.context) };
+            ui.cleanupReview.mainChatDecisionPreview = { valid: true, errors: [], items: buildMainChatDecisionPreview(normalized, validation.context), selectedCaseIds: [], invalidated: false, consumed: false, resultSummary: '' };
           }
         }
         if (before !== getCleanupReviewFeatureSnapshot()) ui.cleanupReview.mainChatDecisionPreview = { valid: false, errors: ['Interner Sicherheitsfehler: Feature-Daten wurden während der Preview-Prüfung verändert.'], items: [] };
@@ -13424,7 +13718,20 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       function renderCleanupDecisionResult(result, type) {
         if (!result) return '';
         if (!result.valid) return '<div class="notice notice-warning"><strong>Rückgabe ungültig.</strong><ul>' + (result.errors || []).map(e => '<li>' + escapeHtml(e) + '</li>').join('') + '</ul></div>';
-        if (type === 'main') return '<div class="notice notice-success">Vorschau geprüft. In diesem Sprint werden keine Featuredaten verändert.</div>' + (result.items || []).map(item => '<div class="item"><div class="row-top"><strong>' + escapeHtml(item.caseId) + '</strong><span class="pill pill-info">' + escapeHtml(item.decision) + '</span></div><div class="mini">Fall: ' + escapeHtml(item.label) + (item.featureId ? ' · Feature ' + escapeHtml(item.featureId) + ' · ' + escapeHtml(item.featureTitle || '') : ' · ohne Feature-ID') + '</div><div class="mini">Einordnung: ' + escapeHtml(item.mutationClass) + '</div><div class="mini">Summary: ' + escapeHtml(item.summary || '—') + '</div><div class="mini">Vorschläge: ' + escapeHtml(JSON.stringify(item.proposedFields)) + '</div><div class="mini">Bestehend: ' + escapeHtml(JSON.stringify(item.existing)) + '</div></div>').join('') || '<div class="notice notice-success">Leeres decisions-Array ist gültig und mutationsfrei.</div>';
+        if (type === 'main') {
+          const selected = new Set(result.selectedCaseIds || []);
+          const selectableCount = (result.items || []).filter(item => item.selectable).length;
+          const selectedCount = (result.items || []).filter(item => selected.has(item.caseId) && item.selectable).length;
+          const intro = result.consumed ? '<div class="notice notice-success">' + escapeHtml(result.resultSummary || 'Batch wurde bereits angewendet. Erneutes Anwenden ist gesperrt.') + '</div>' : '<div class="notice notice-success">Vorschau geprüft. Nur auswählbare update-existing-Entscheidungen können nach Diff und Confirm als Gesamtbatch angewendet werden.</div>';
+          const list = (result.items || []).map(item => {
+            const changes = (item.applicableChanges || []).map(c => '<li><strong>' + escapeHtml(c.field) + '</strong>: <span style="white-space:pre-wrap;">' + escapeHtml(c.oldValue || '—') + '</span> → <span style="white-space:pre-wrap;">' + escapeHtml(c.newValue || '—') + '</span></li>').join('');
+            const control = item.selectable && !result.consumed ? '<label class="mini"><input type="checkbox" data-cleanup-mainchat-select="' + escapeAttr(item.caseId) + '" ' + (selected.has(item.caseId) ? 'checked' : '') + (result.pendingBatch ? ' disabled' : '') + '> ' + (result.pendingBatch ? 'Im geprüften Diff eingefroren' : 'Für Batch-Diff auswählen') + '</label>' : '<span class="pill pill-outline">Preview-only</span>';
+            return '<div class="item"><div class="row-top"><strong>' + escapeHtml(item.caseId) + '</strong><span class="pill pill-info">' + escapeHtml(item.decision) + '</span></div>' + control + '<div class="mini">Fall: ' + escapeHtml(item.label) + (item.featureId ? ' · Feature ' + escapeHtml(item.featureId) + ' · ' + escapeHtml(item.featureTitle || '') : ' · ohne Feature-ID') + '</div><div class="mini">Einordnung: ' + escapeHtml(item.mutationClass) + '</div><div class="mini">Summary: ' + escapeHtml(item.summary || '—') + '</div>' + (changes ? '<div class="mini">Tatsächliche erlaubte Änderungen:<ul>' + changes + '</ul></div>' : '<div class="mini">Keine tatsächliche erlaubte Änderung an title, description oder category.</div>') + '<div class="mini">Vorschläge: ' + escapeHtml(JSON.stringify(item.proposedFields)) + '</div><div class="mini">Baseline: ' + escapeHtml(JSON.stringify(item.existing)) + '</div></div>';
+          }).join('') || '<div class="notice notice-success">Leeres decisions-Array ist gültig und mutationsfrei.</div>';
+          const pending = result.pendingBatch ? '<details class="notice notice-info" open><summary><strong>Vollständiger Batch-Diff:</strong> ' + escapeHtml(formatCleanupMainChatBatchSummary(result.pendingBatch)) + '</summary>' + (result.pendingBatch.entries || []).map(entry => '<div class="item"><div class="row-top"><strong>' + escapeHtml(entry.featureId) + '</strong><span class="pill pill-info">' + escapeHtml(entry.caseId) + '</span></div><div class="mini">Featuretitel: ' + escapeHtml(entry.featureTitle || '—') + '</div>' + entry.changes.map(c => '<div class="mini"><strong>' + escapeHtml(c.field) + '</strong><div style="white-space:pre-wrap;"><strong>Alt:</strong> ' + escapeHtml(c.oldValue || '—') + '</div><div style="white-space:pre-wrap;"><strong>Neu:</strong> ' + escapeHtml(c.newValue || '—') + '</div></div>').join('') + '</div>').join('') + '<div class="stack-row"><button class="btn btn-primary" id="btnConfirmCleanupMainChatPendingBatch">Final bestätigen und Gesamtbatch speichern</button><button class="btn btn-ghost" id="btnCancelCleanupMainChatPendingBatch">Diff abbrechen / Auswahl ändern</button></div></details>' : '';
+          const actions = '<div class="notice notice-info"><strong>Auswahl:</strong> ' + selectedCount + ' ausgewählt · ' + selectableCount + ' anwendbar. Auswahl startet nach jeder Prüfung leer.</div><button class="btn btn-primary" id="btnReviewCleanupMainChatSelection" ' + (!selectedCount || result.consumed || result.pendingBatch ? 'disabled' : '') + '>Ausgewählte Änderungen prüfen</button>';
+          return intro + list + actions + pending;
+        }
         return '<div class="notice notice-success">Vorschau geprüft. Es wurde nichts zusammengeführt, archiviert, gelöscht oder als Duplicate markiert.</div>' + ((result.items || []).map(item => '<div class="item"><div class="row-top"><strong>' + escapeHtml(item.pairId) + '</strong><span class="pill pill-info">' + escapeHtml(item.decision) + '</span></div><div class="mini">Feature A: ' + escapeHtml(item.featureA.id) + ' · ' + escapeHtml(item.featureA.title || '') + '</div><div class="mini">Feature B: ' + escapeHtml(item.featureB.id) + ' · ' + escapeHtml(item.featureB.title || '') + '</div><div class="mini">Kanonisch: ' + escapeHtml(item.canonicalFeatureId || '—') + ' · Duplicate: ' + escapeHtml(item.duplicateFeatureId || '—') + ' · archiveDuplicate: ' + escapeHtml(String(!!item.archiveDuplicate)) + '</div><div class="mini">Rationale: ' + escapeHtml(item.rationale || '—') + '</div><div class="mini">Kanonischer Titel/Beschreibung: ' + escapeHtml(item.canonicalTitle || '—') + ' / ' + escapeHtml(item.canonicalDescription || '—') + '</div></div>').join('') || '<div class="notice notice-success">Leeres dedupeDecisions-Array ist gültig und mutationsfrei.</div>');
       }
 
@@ -13640,7 +13947,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
                 <div class="notice notice-info">Direkte Aktionen bearbeiten nur sichere Fälle. Hauptchat- und Dedupe-Queues sind bewusst zurückgestellte Folgearbeit. Vollständig eingeordnet ist das Review erst, wenn direkte Fälle bearbeitet und Queues bewusst behandelt oder zurückgestellt wurden.</div>
                 <div class="stack-row"><span class="pill pill-outline">${directOpenCount} offene direkte Review-Fälle</span><span class="pill pill-info">${cleanupStats.mainChatQueued} Hauptchat vorgemerkt</span><span class="pill pill-info">${cleanupStats.dedupeQueued} Dedupe vorgemerkt</span></div>
                 <div class="field"><label for="cleanupMainChatClarificationPromptOutput">Hauptchat-Klärungsprompt</label><textarea id="cleanupMainChatClarificationPromptOutput" class="cleanup-review-textarea" placeholder="Prompt aus explizit vorgemerkten Hauptchat-Fällen">${escapeHtml(ui.cleanupReview.clarificationPrompt || '')}</textarea><button class="btn btn-secondary" id="btnCopyCleanupMainChatClarificationPrompt">Klärungsprompt kopieren</button></div>
-                <div class="field"><label for="cleanupMainChatReturnJsonInput">Hauptchat-Rückgabe-JSON</label><textarea id="cleanupMainChatReturnJsonInput" class="cleanup-review-textarea" placeholder='{"schemaVersion":"roadtrip-mainchat-decisions-v1","decisions":[]}' >${escapeHtml(ui.cleanupReview.mainChatReturnJson || '')}</textarea><div class="stack-row"><button class="btn btn-primary" id="btnCheckCleanupMainChatReturnJson">Hauptchat-Rückgabe prüfen</button><button class="btn btn-ghost" id="btnResetCleanupMainChatReturnJson">Hauptchat-Rückgabe zurücksetzen</button></div>${renderCleanupDecisionResult(ui.cleanupReview.mainChatDecisionPreview, 'main')}</div>
+                <div class="field"><label for="cleanupMainChatReturnJsonInput">Hauptchat-Rückgabe-JSON</label><textarea id="cleanupMainChatReturnJsonInput" class="cleanup-review-textarea" placeholder='{"schemaVersion":"roadtrip-mainchat-decisions-v1","decisions":[]}' >${escapeHtml(ui.cleanupReview.mainChatReturnJson || '')}</textarea><div class="stack-row"><button class="btn btn-primary" id="btnCheckCleanupMainChatReturnJson">Hauptchat-Rückgabe prüfen</button><button class="btn btn-ghost" id="btnResetCleanupMainChatReturnJson">Hauptchat-Rückgabe zurücksetzen</button></div><div id="cleanupMainChatDecisionPreviewResult">${renderCleanupDecisionResult(ui.cleanupReview.mainChatDecisionPreview, 'main')}</div></div>
                 <div class="field"><label for="cleanupDedupePromptOutput">Dedupe-Prompt</label><textarea id="cleanupDedupePromptOutput" class="cleanup-review-textarea" placeholder="Prompt aus explizit vorgemerkten bestehenden Datenbank-Dubletten">${escapeHtml(ui.cleanupReview.dedupePrompt || '')}</textarea><button class="btn btn-secondary" id="btnCopyCleanupDedupePrompt">Dedupe-Prompt kopieren</button></div>
                 <div class="field"><label for="cleanupDedupeReturnJsonInput">Dedupe-Rückgabe-JSON</label><textarea id="cleanupDedupeReturnJsonInput" class="cleanup-review-textarea" placeholder='{"schemaVersion":"roadtrip-dedupe-decisions-v1","dedupeDecisions":[]}' >${escapeHtml(ui.cleanupReview.dedupeReturnJson || '')}</textarea><div class="stack-row"><button class="btn btn-primary" id="btnCheckCleanupDedupeReturnJson">Dedupe-Rückgabe prüfen</button><button class="btn btn-ghost" id="btnResetCleanupDedupeReturnJson">Dedupe-Rückgabe zurücksetzen</button></div>${renderCleanupDecisionResult(ui.cleanupReview.dedupeDecisionPreview, 'dedupe')}</div>
               ` : ''}
