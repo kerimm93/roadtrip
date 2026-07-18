@@ -124,6 +124,38 @@ Bei Widerspruch zwischen Quellen gilt diese Reihenfolge:
   Sprintstart-, Hauptchat-, Codex-, Analyse-, Import- und Cleanup-Prompts genutzt.
 - Änderungen an Prompt-Verträgen brauchen einen klaren Auftrag und Review.
 
+### Hauptchat-Rollover-State-Vertrag
+
+- `mainChatRollovers` ist ein additives Root-Array des Roadtrip-State `S` und
+  speichert ausschließlich auditierbare Protokolle erfolgreich bestätigter
+  Hauptchat-Rollover.
+- Jeder aktuell persistierte Rollover-Datensatz enthält mindestens:
+  - `id`
+  - `projectId`
+  - `sourceMainChatId`
+  - `targetMainChatId`
+  - `schemaVersion`
+  - `selectedFeatureCandidateIds`
+  - `skippedFeatureCandidateIds`
+  - `createdAt`
+  - `appliedAt`
+- Der zugehörige Rollover-Fachvertrag ist
+  `roadtrip-mainchat-rollover-v1`. Er bleibt fachlich und technisch getrennt vom
+  bestehenden Legacy-Chat-→-Hauptchat-Bootstrap-Vertrag
+  `roadtrip-mainchat-bootstrap`.
+- Rückwärtskompatibilität: ältere States, reguläre JSON-Exporte und
+  ZIP-Backups ohne `mainChatRollovers` werden defensiv zu `[]` normalisiert. Es
+  gibt keine automatische Migration historischer Daten außer dieser
+  Additiv-/Leerlisten-Normalisierung.
+- Persistenzoberfläche: Rollover-Protokolle sind Teil von regulärem
+  JSON-Import und selektivem Merge, Sync-Fingerprint/Gist-Merge, ZIP-Export über
+  `mainChatRollovers.json`, ZIP-Restore, Tombstones und projektbezogener
+  Löschung.
+- Datenlebensdauer: Ein Rollover-Protokoll entsteht nur im erfolgreichen
+  atomaren Rollover-Commit. Beim Löschen des zugehörigen Projekts wird es mit den
+  übrigen projektbezogenen Daten entfernt und per Tombstone gegen Wiederkehr aus
+  älteren Import-/Remote-Ständen geschützt.
+
 ### Hauptchat-Abgleich und Sprint-Dock
 
 - Roadtrip unterstützt den Abgleich sparse geplanter Features mit Hauptchat- bzw.
