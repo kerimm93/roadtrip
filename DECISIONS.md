@@ -1,260 +1,218 @@
-# DECISIONS.md — Roadtrip Atlas-Redesign
+# DECISIONS.md — Roadtrip Entscheidungslog
 
-Bewusste Umsetzungsentscheidungen, die vom ursprünglichen Atlas-Entwurf
-(`docs/DESIGN.md` / `docs/ARCHITECTURE.md`) abweichen. **Bei Widerspruch gilt
-DIESE Datei.** DESIGN.md/ARCHITECTURE.md sind der Ausgangsentwurf; hier stehen
-die finalen Entscheidungen aus der Umsetzung. Diese Punkte sind entschieden und
-werden nicht erneut „korrigiert".
+Bewusste Produkt-, Workflow-, Architektur- und Designentscheidungen für Roadtrip.
+**Bei Widerspruch gilt diese Datei vor `docs/DESIGN.md` und
+`docs/ARCHITECTURE.md`; Implementierungsfakten müssen trotzdem am aktuellen
+produktiven Code geprüft werden.**
+
+Frühere Atlas-/UI-Entscheidungen bleiben gültige historische Designentscheidungen,
+sofern sie nicht ausdrücklich durch neuere Verträge ersetzt wurden. Der Atlas-
+Prototyp ist Inspirationsquelle, kein Soll-Stand.
 
 ## Gültigkeit / Präzedenz
 
 Bei Widerspruch zwischen Quellen gilt diese Reihenfolge:
 
-1. aktueller `main`-Code
-2. `DECISIONS.md` (diese Datei)
-3. Sprint-Delta-Analyse (sofern beigelegt)
-4. `docs/DESIGN.md`
-5. `docs/ARCHITECTURE.md`
-6. Atlas-Prototyp (`Roadtrip Atlas Redesign (standalone).html`)
-
-Der Prototyp ist Inspirationsquelle, kein Soll-Stand.
-
-## Karten-Übersicht (Overview)
-- Die Overview-View ist eine ruhige LISTENDARSTELLUNG der Projekte als Cards,
-  NICHT das im Entwurf gezeigte verstreute Knoten-/Karten-Layout.
-- Begründung: Bei vielen Projekten (>12) ist das verstreute Layout unübersichtlich;
-  bedeutungslose Positionen (aus Projekt-ID abgeleitet) tragen keine Information.
-- Der Knoten-/Karten-Code (overview-node, --node-x/y, getOverviewNodePosition)
-  bleibt ungenutzt im Code (useListFallback=true) als Grundlage für den späteren
-  Karten-Sprint. NICHT entfernen, aber auch nicht reaktivieren.
-
-## Sidebar
-- Projekt-Items zeigen Hue-Pip (Identität, links) + Titel + 4 Cycle-Dots
-  (Sprint-Zyklus-Fortschritt: Start / Sprint läuft / Abgeschlossen / Zyklus rund,
-  rechts), abgeleitet aus getProjectChatStructure + S.chats. KEIN neues Datenfeld
-  (siehe Entscheidung unten zum Hue-Pip).
-- „Alle Projekte" ist eine eigene abgesetzte Variante oben, ohne Zweitfarbe.
-- Genau ein Akzent (Zinnober) in der Navigation; kein accent-2 als Nav-/Aktionsfarbe.
-
-### Entschieden (Sprint 29): Hue-Pip UND Cycle-Dots nebeneinander
-Pro Projektzeile gilt:
-- **Hue-`.pip`** (links): dekoratives **Identitätssignal**, Farbe aus `--hue-*`,
-  abgeleitet per **CSS-Hashing aus der Projekt-ID**. KEIN Schema-Touch, keine
-  persistente Projektfarbe. Rolle laut `docs/DESIGN.md §2` („für Projekt-Pips").
-- **4 Cycle-Dots** (rechts): informationstragendes **Zustandssignal**
-  (Sprint-Zyklus-Fortschritt), unverändert.
-
-Dies steht NICHT im Widerspruch zu `docs/DESIGN.md §5`. §5 verbietet ein zweites
-*Zustands*-Sekundärsignal (Feature-Count, Timestamp, Sprint-Count neben den
-Cycle-Dots). Der Pip trägt keine Zustandsinformation, sondern Identität/Kategorie,
-und zählt daher nicht als zweites Zustandssignal. Identität (Pip) und Zustand
-(Dots) sind zwei verschiedene Bedeutungsachsen.
-
-Deckt sich mit der Sprint-27-Delta-Analyse (Etappe 19, Abschnitt 6.5 + 11):
-Pip als Kategorie-Signal, Farbe via ID-Hashing, kein Schema-Eingriff.
-
-## Navigation
-- Nav ist in drei Gruppen gegliedert: Reise (Karte, Project, Momentum) ·
-  Werkstatt (Database, Notes, Learning) · Werkzeuge (Import, Settings).
-- View-Keys/Handler wurden NICHT umbenannt, nur visuell gruppiert.
-
-## Geparkt: „Roadtrip Beziehungskarte" (eigener Sprint NACH dem Redesign)
-- Projekte als Inseln (Größe = Anzahl Sprints).
-- Verbindungen zwischen Projekten als Relationen, eingespeist über das
-  Handoff-JSON (neues optionales Feld + Vertragserweiterung mit
-  Migrationssicherheit).
-- Graph-Darstellung mit Hover-Popups, die die Verbindung erklären.
-- Erfordert eine SCHEMA-Änderung → gehört NICHT in den Skin-Refactor-Branch,
-  sondern in einen eigenen Sprint mit eigenem Plan.
-
-## Vokabular / Datenmodell
-- Funktions-Vokabular bleibt funktional-präzise (Projekt, Feature, Sprint,
-  Hauptchat, Handoff). Keine narrative Umbenennung.
-- Die Landkarten-Metapher ist rein visuell/atmosphärisch, NICHT im Datenmodell.
-
-## Stand Sprint 28
-- Atlas-Redesign in `main` gemerged (Merge-Commit 5141fc3).
-- Settings-Gruppe „Verbindung & Sync" umgesetzt; gistId, gistToken, rawGistId
-  und rawGistToken liegen NICHT mehr in der Danger-Zone.
-- Danger-Zone auf riskante/destruktive Aktionen beschränkt.
-- `.eyebrow` und `.section-label` existieren im CSS und werden im Template genutzt
-  (Etappe 17 verifiziert/erledigt, kein eigener Codex-Patch nötig).
-
-## Stand Sprint 29 (Atlas-Polish)
-- Branch `sprint-29-atlas-polish` (Basis main @ 5141fc3).
-- Etappe 29.1 — Sidebar-Brand-Block gemerged (`f24a9f1`): `.sb-brand` mit
-  Inline-SVG-Mark, Serif-Wortmarke, Mono-Kicker „Dev OS". `.sidebar-title` entfernt.
-- Etappe 29.2 — Projekt-Identitäts-Pips gemerged (`60ac2e9`): 8px-Pip pro Projekt,
-  Farbe stabil via `getOverviewProjectHue(getStableProjectSortValue(p))`
-  (bestehende Helfer, kein neues Feld). Cycle-Dots unverändert.
-- E-Ink-Pips: bewusst farbig gelassen. Das E-Ink-Theme überschreibt `--hue-*`
-  nicht; Pips sind dekorativ/winzig, kein Verstoß gegen §E-Ink (gefüllte
-  Aktions-Akzente). Optionaler Einzeiler später: `--hue-*`/`--pip` im E-Ink-Block
-  auf Graustufe mappen.
-
-## Geparkt: Statischer Inline-Style-Cleanup (Sprint 30)
-- In Sprint 29 analysiert, bewusst NICHT umgesetzt.
-- Befund: ~130 statische Inline-`style`-Vorkommen, reduzierbar auf wenige Muster
-  (`margin-bottom:8px/12px/10px/6px`, `font-weight:700`, `gap:4px/6px`,
-  `cursor:pointer`, `width:16px;height:16px`, `flex:1`).
-- WARUM verschoben: P2-Hygiene ohne sichtbaren/funktionalen Mangel UND erhöhtes
-  Risiko — viele statische `style`-Attribute sitzen INNERHALB dynamischer
-  `${…}`-Template-Literale (z. B. renderImportWorkspace ~Z. 4782). Globaler
-  Find-Replace ist daher unsicher (Template-Strings könnten beschädigt werden).
-- Empfehlung Sprint 30: zwei Klassen — (A) Vorkommen in reinem statischem Markup
-  zuerst (sicher), (B) Vorkommen in Template-Literalen einzeln und vorsichtig.
-- TABU (dynamisch, niemals anfassen): `--node-x/y`, `--node-color`, `--pip`,
-  `--hue-*`, `opacity`-States, Positions-/`transform`-Werte. Fragile Modal-Container
-  mit `var(--shadow)` auslassen.
+1. aktueller produktiver Code für Implementierungsfakten
+2. expliziter aktueller Auftrag für fachlichen Scope, Realtestbefunde und neue Entscheidungen
+3. `DECISIONS.md` (diese Datei)
+4. aktuelle Audit-/Handoff-Dateien des Auftrags
+5. `docs/DESIGN.md` und `docs/ARCHITECTURE.md`
+6. historische Referenzen, Archivmaterial und Prototypen
 
 ---
 
-## Stand Sprint 31–39 — aktuelle Roadtrip-Contracts
+## Aktuelle Analyse-/Cleanup-/Review-Entscheidungen seit 2026-07-18
 
-Diese Entscheidungen ergänzen die Atlas-/Sprint-29-Entscheidungen und beschreiben
-den heutigen Roadtrip-Stand. Sie sind Dokumentations- und Workflow-Contracts; sie
-implementieren keine neuen App-Features.
+### Getrennte Feature-Pools und Codeevidenz
 
-### Sprint 31 — Planned Feature Editing MVP
+- Planned und implemented Features bleiben getrennte Soll-/Ist-Pools.
+- Codeevidenz führt nicht automatisch zu Promotion, Statuswechsel, Poolwechsel,
+  Archivierung, Löschung oder Feature-Neuanlage.
+- CSV-Transformationskontexte schützen bestehende Featurebeschreibungen; eine
+  Modellantwort darf bestehende Beschreibungen nicht durch gekürzte oder unbelegte
+  Fassungen ersetzen.
+- Feature-IDs, Fall-IDs und Dedupe-Paar-IDs sind verbindliche lokale Bindungen.
+  Modellantworten dürfen keine fremden IDs erfinden oder bestehende IDs doppelt
+  beziehungsweise gar nicht binden.
+
+### Modellantworten sind untrusted input
+
+- Analyse- und Transformationsmodellantworten sind untrusted input.
+- Prompts mit der Forderung „ausschließlich gültiges JSON“ sind keine technische
+  Garantie gegen Escaping-, Struktur- oder Vertragsfehler.
+- Lokale Parser, Validatoren, Normalisierung, Lossless-/Kürzungs-Guards und
+  Snapshot-Prüfungen sind autoritativ.
+- Ungültiges JSON und gültiges JSON mit leerem Ergebnis sind fachlich verschiedene
+  Zustände und müssen in späterer Produktarbeit getrennt dargestellt werden.
+
+### Versionierte Hauptchat- und Dedupe-Rückgaben
+
+- Hauptchat-Rückgaben für Cleanup-Review nutzen den Vertrag
+  `roadtrip-mainchat-decisions-v1`.
+- Dedupe-Rückgaben nutzen den Vertrag `roadtrip-dedupe-decisions-v1`.
+- Dedupe bleibt Preview-only. Es gibt keine Dedupe-Mutation: kein Merge, keine
+  Archivierung, keine Löschung, keine Duplicate-Markierung, kein Statuswechsel,
+  keine Pool-Promotion.
+- Dedupe-Empfehlungen dürfen keine unbelegten neuen Zielbeschreibungen oder
+  Folgefeatures als Fakten konstruieren.
+- Fälle ohne `featureId` dürfen keine persistierbaren Featurefelder und keine
+  fremde `canonicalFeatureId` einführen.
+
+### Enger `update-existing`-Diff-/Confirm-/Commitpfad
+
+- Nur lokal validierte Hauptchat-Entscheidungen vom Typ `update-existing` dürfen
+  den bestehenden Diff-/Confirm-/Commitpfad betreten.
+- Der aktuelle MVP erlaubt ausschließlich Änderungen an `title`, `description` und
+  `category`.
+- Status, Pool, Promotion, Create, Split, Merge, Archivierung und Löschung sind
+  nicht Teil dieses Pfads.
+- Auswahl startet leer; erst explizit ausgewählte Fälle erzeugen einen Batch-Diff.
+- Commit benötigt Diff, menschliche Bestätigung, Driftprüfung und atomaren
+  Gesamtbatch mit Rollback bei Fehlern.
+- Status des Pfads: code-seitig implementiert und statisch geprüft; ein natürlicher
+  Browser-Realnachweis für Commit, Driftprüfung, Hard-Reload-Persistenz und
+  Batchatomarität steht noch aus.
+
+### Realtestentscheidung vom 18.07.2026
+
+- Der FIAE-RPG-Realbetrieb bestätigte Roadtrip für mutationsfreie Analyse, lokale
+  Validierung und Preview **eingeschränkt freigegeben**.
+- Bestätigt wurden u. a. vollständige eindeutige Bindung aller 65 CSV-Feature-IDs,
+  Ablehnung ungültiger Modellantworten, Ablehnung fremder `canonicalFeatureId`,
+  Schutz bestehender Featurebeschreibungen im CSV-Transformationskontext,
+  mutationsfreier Dedupe und bytegleicher finaler Feature-CSV-Export.
+- Nicht freigegeben ist der Ablauf als dauerhaft wiederaufnehmbarer,
+  zeitsparender Cleanup-Arbeitsprozess.
+- Nächste Produktpriorität ist die **Persistente Cleanup-Workbench & bestätigte
+  Review-Entscheidungen**: Runs dauerhaft speichern, Baseline/Herkunft/Fallstatus/
+  menschliche Entscheidung/nächste Aktion sichtbar machen, Reload-Wiederaufnahme
+  ermöglichen, nicht-mutierende Entscheidungen dauerhaft abschließbar machen und
+  validierte `update-existing`-Fälle nur an den bestehenden Commitpfad übergeben.
+- Harte Nicht-Ziele der nächsten Workbench-Arbeit: kein automatischer Dedupe-Merge,
+  keine Archivierung oder Löschung, keine automatische Status-/Pool-Promotion,
+  keine Feature-Neuanlage aus Analysebefunden, kein unstrukturiertes Voll-Auditlog
+  und kein paralleler neuer `update-existing`-Commitmechanismus.
+
+---
+
+## Feature-, Sprint- und Prompt-Contracts
+
+### Planned Feature Editing und Detailfelder
 
 - Planned Features können direkt in Roadtrip gepflegt und nachgeführt werden.
 - Ziel ist eine belastbare Feature-Datenbank als Soll-/Ist-Arbeitsbasis, nicht nur
   eine lose Ideensammlung.
-- Das Projekt-Schema bleibt geschützt; Änderungen am Datenmodell brauchen einen
-  eigenen Sprintvertrag.
-
-### Sprint 32 — Planned Feature Detail & Brainstorm MVP
-
 - Planned Features haben kontextreiche Detailfelder:
   - `purpose`
   - `workflowContext`
   - `acceptanceCriteria`
   - `sourceContext`
-- Diese Felder sind Teil des aktuellen Feature-Workflow-Vertrags.
-- UI-seitig sollen die Details beherrschbar bleiben; nicht jede Detailtiefe muss
-  dauerhaft sichtbar sein.
+- Diese Felder sind Teil des aktuellen Feature-Workflow-Vertrags und werden in
+  Sprintstart-, Hauptchat-, Codex-, Analyse-, Import- und Cleanup-Prompts genutzt.
+- Änderungen an Prompt-Verträgen brauchen einen klaren Auftrag und Review.
 
-### Sprint 33 — Planned Feature Backfill / Hauptchat-Abgleich MVP
+### Hauptchat-Abgleich und Sprint-Dock
 
 - Roadtrip unterstützt den Abgleich sparse geplanter Features mit Hauptchat- bzw.
   Kontextmaterial.
-- Zweck: bessere Detailfelder und sauberere Feature-Absichten, ohne den normalen
-  Sprintstart zu einem Vollabgleich umzubauen.
 - Normaler Sprintstart und großer Hauptchat-Abgleich bleiben getrennte Werkzeuge.
+- Sprintabschlüsse führen Kontext für den nächsten Sprint und den Hauptchat
+  strukturiert zurück.
+- Der Sprint-Zyklus ist als zentraler Arbeitsbereich konsolidiert; offene Schritte
+  und nächste Aktionen müssen klar bleiben.
+- Das Arbeitsmodus-Dropdown unterscheidet Codex-Steuerung und Direktmodus und ist
+  Workflow-Steuerung, keine Datenmodelländerung.
 
-### Sprint 34 — Detailfelder in Prompt-Workflows
-
-- Planned-Feature-Details werden in Sprintstart-, Hauptchat-, Codex- sowie
-  Analyse-/Import-/Cleanup-Prompts genutzt.
-- Prompt-Verträge sind Schutzbereiche: Änderungen daran brauchen einen klaren
-  Auftrag und Review.
-
-### Sprint 35 — Next-Sprint-/Hauptchat-Handoff
-
-- Sprintabschlüsse sollen Kontext für den nächsten Sprint und den Hauptchat
-  strukturiert zurückführen.
-- Handoff-Dokumente sollen Branch, Dateien, Checks, Risiken und Mergefähigkeit
-  enthalten.
-
-### Sprint 36 — Sprint-Dock / Sprint-Zyklus konsolidiert
-
-- Der Sprint-Zyklus ist als zentraler Arbeitsbereich konsolidiert.
-- Der Ablauf bleibt ein klarer Prozess mit offenen Schritten und direkt erreichbarer
-  nächster Aktion.
-- Rückführungs- und Handoff-Logik bleiben geschützte Verträge.
-
-### Sprint 36.1 — Arbeitsmodus-Dropdown
-
-- Das Arbeitsmodus-Dropdown unterscheidet Codex-Steuerung und Direktmodus.
-- Es sitzt oben im Sprint-Dock und dient der Workflow-Steuerung, nicht einer
-  Datenmodelländerung.
-
-### Sprint 37 — `featureFlow`
+### `featureFlow` und Mermaid Preview
 
 - Planned Features können optional ein Feld `featureFlow` enthalten.
 - `featureFlow` ist Textquelle für Mermaid-/Feature-Flow-Notizen.
-- Das Feld ist optional; leere Werte sollen keine UI- oder Importpflicht erzeugen.
-
-### Sprint 38 — Mermaid-/Feature-Flow-Preview
-
+- Das Feld ist optional; leere Werte erzeugen keine UI- oder Importpflicht.
 - Für befülltes `featureFlow` kann eine optionale Mermaid-/Feature-Flow-Preview
   angezeigt werden.
-- Die Preview ist rein visuell und defensiv.
-- Die Preview verändert den gespeicherten `featureFlow`-Text nicht.
-- Renderfehler werden sichtbar gemacht, dürfen aber gespeicherte Daten nicht
-  destruktiv verändern.
-
-### Sprint 39 Phase 1 — Docs-/Design-Contract-Audit
-
-- Sprint 39 Phase 1 war ein Docs-only-Audit.
-- Ergebnis: `AGENTS.md`, `DECISIONS.md`, `docs/DESIGN.md`,
-  `docs/ARCHITECTURE.md` und `readme.md` waren teilweise veraltet und sollten
-  gezielt aktualisiert werden.
-- Bestehende Kern-Dokumente, `index.html` und Prototyp-Dateien blieben in Phase 1
-  unverändert.
-
-### Sprint 39 Phase 2 — Kern-Dokumente aktualisiert
-
-- Kern-Dokumente werden gezielt auf den Stand nach Sprint 31–39 gebracht.
-- Dieser Sprint ist Docs-only: kein App-Code, kein `index.html`, keine neuen
-  App-Features.
-- Codex-Internet bleibt für diesen Sprint aus.
+- Die Preview ist rein visuell und defensiv; sie verändert den gespeicherten Text
+  nicht. Renderfehler werden sichtbar gemacht und dürfen Daten nicht destruktiv
+  verändern.
 
 ---
 
-## Aktuelle Roadmap-/Workflow-Entscheidungen
+## Historische Atlas-/UI-Designentscheidungen
 
-### Prototyp-Status
+Diese Entscheidungen stammen aus der früheren Atlas-/Polish-Phase. Sie bleiben als
+Designcontract relevant, sind aber kein Auftrag zum 1:1-Nachbau des Prototyps.
 
-- Der alte Roadtrip-/Atlas-Prototyp ist Designreferenz, kein 1:1-Bauplan.
-- Prototyp-Ideen dürfen als Richtung genutzt werden, aber nicht gegen aktuellen
-  Code, `DECISIONS.md` oder Schutzbereiche durchgesetzt werden.
+### Karten-Übersicht (Overview)
+
+- Die Overview-View ist eine ruhige Listendarstellung der Projekte als Cards, nicht
+  das im Entwurf gezeigte verstreute Knoten-/Karten-Layout.
+- Begründung: Bei vielen Projekten ist das verstreute Layout unübersichtlich;
+  bedeutungslose Positionen tragen keine Information.
+- Der ungenutzte Knoten-/Karten-Code bleibt Grundlage für einen späteren
+  Karten-Sprint: nicht entfernen, aber auch nicht reaktivieren.
+
+### Sidebar und Projekt-Pips
+
+- Projekt-Items zeigen Hue-Pip als dekoratives Identitätssignal plus Cycle-Dots als
+  Sprint-Zyklus-Zustandssignal.
+- Der Hue-Pip ist per CSS-/ID-Hashing abgeleitet, kein persistentes Projektfarben-
+  Feld und keine Schema-Änderung.
+- Die Cycle-Dots bleiben informationstragendes Zustandssignal.
+- „Alle Projekte“ ist eine eigene abgesetzte Variante oben, ohne Zweitfarbe.
+- Genau ein Aktionsakzent in der Navigation; kein `accent-2` als Nav-/Aktionsfarbe.
+
+### Navigation und Vokabular
+
+- Navigation ist in Reise, Werkstatt und Werkzeuge gegliedert; View-Keys/Handler
+  wurden nicht narrativ umbenannt.
+- Funktions-Vokabular bleibt funktional-präzise: Projekt, Feature, Sprint,
+  Hauptchat, Handoff.
+- Die Landkarten-Metapher ist rein visuell/atmosphärisch, nicht im Datenmodell.
+
+### Geparkte UI-/Architektur-Ideen
+
+- „Roadtrip Beziehungskarte“ bleibt eigener späterer Sprint mit Schema-/Contract-
+  Entscheidung.
+- Kein automatischer App-Shell-Umbau auf Prototyp-/Atlas-Grid.
+- Mobile Sidebar bleibt Off-Canvas, solange kein eigener UI-Sprint etwas anderes
+  entscheidet.
+- Eigenes Modal-System bleibt bestehen.
+- `.kindgrid`, Paper-Grain und ähnliche Prototypdetails werden nicht automatisch
+  nachgezogen.
+
+---
+
+## Sync-, Backup- und Import-Schutzbereiche
+
+- Settings-Gruppe „Verbindung & Sync“ ist von destruktiven Danger-Zone-Aktionen
+  getrennt.
+- Gist-ID, Gist-Token, Raw-Gist-ID und Raw-Gist-Token sind Konfigurations- und
+  Sicherheitsbereiche.
+- Sync, Gist-Verschlüsselung, ZIP-Backup, JSON Export/Import, Tombstones,
+  Trello-Sync und Raw-/Recovery-Pfade bleiben geschützte Verträge.
+- Historische Sync-Safety-Audits bleiben Referenz für spätere Sync-Sprints, sind
+  aber seit dem Realtest vom 18.07.2026 nicht die unmittelbare Produktpriorität.
+
+---
+
+## Roadmap-/Workflow-Entscheidungen
 
 ### Sprintabschluss-Codeanalyse-Bedarf
 
-Roadtrip soll künftig nicht reflexhaft nach jedem Sprint eine Voll-Codeanalyse
-empfehlen. Stattdessen soll der Bedarf eingeschätzt werden:
+Roadtrip soll nicht reflexhaft nach jedem Sprint eine Voll-Codeanalyse empfehlen.
+Der Bedarf soll nach Art der Änderung eingeschätzt werden:
 
 - Docs-only: Docs-Review + Diff-Checks.
 - Kleiner UI-/Hotfix: Smoke-Test + JS-Syntaxcheck + Changed-Files-Review.
 - Große Datenmodell-/Sync-/Import-/Export-/Promptvertrag-Änderung: Voll-Codeanalyse
   sinnvoll.
 
-### Sprint-Handoff SOP-Extraktion
+### Spätere, nicht implementierte Richtungen
 
-- Sprint-Handoffs sollen später optional darauf geprüft werden, ob daraus eine
-  wiederverwendbare Arbeitsweise als SOP entstehen sollte.
-- Beispiele: Codex-Materialpaket vorbereiten, Docs-/Design-Contract-Audit
-  orchestrieren, Kern-Dokumente pflegen, Sprintchat → Codex → Review → Handoff
-  sauber führen.
-- Diese SOP-Prüfung ist Roadmap, noch keine implementierte App-Funktion.
-
-### Sprintstart und Hauptchat-Abgleich
-
-- Normaler Sprintstart und großer Hauptchat-Abgleich bleiben getrennte Werkzeuge.
-- Spätere Richtung: Beim normalen Sprintstart kann eine kleine
-  Hauptchat→Feature-Database-Mitnahme entstehen.
-- Mögliche Mitnahme: neue planned Features, aktualisierte Detailfelder, offene
-  Fragen, kleine Kontextfetzen.
-- Der große Hauptchat-Abgleich bleibt separates Werkzeug für umfassende Reviews.
-
-### Open Questions Workspace
-
-- Offene Fragen sollen später aus Projekten, Features, Sprint-Handoffs und
-  Backfills gesammelt werden können.
-- Gewünschte Richtung: Übersicht mit Bezug/Tags/Filter, Brainstorm-Prompt für
-  ausgewählte Fragen, JSON-Handoff mit Antworten, Speicherung der Antworten bei
-  Fragen und optionale Markierung betroffener Features als refine-needed.
-- Dies ist Roadmap, keine bestehende Architektur.
-
-### Selektives Feature-Merge für übersprungene Import-Kandidaten
-
-- Problem: `proposedFeatures` können beim Import wegen möglicher Dubletten
-  übersprungen werden; dabei können bessere neue Detailfelder verloren gehen.
-- Spätere Richtung: Import-Zusammenfassung unterscheidet neu angelegt,
-  aktualisiert, übersprungen wegen möglicher Dublette und Fehler.
-- Für übersprungene Kandidaten soll später eine Review-Liste möglich werden:
-  bestehendes Feature vs. Import-Kandidat vergleichen; Aktionen wie ignorieren,
-  später prüfen, leere Felder ergänzen, einzelne Felder übernehmen, als neues
-  Feature anlegen oder mit bestehendem Feature mergen.
-- Dies ist Roadmap und ändert aktuell keinen Import-/Export-Vertrag.
+- Sprint-Handoffs optional auf wiederverwendbare SOPs prüfen.
+- Open Questions Workspace für Fragen aus Projekten, Features, Handoffs und
+  Backfills.
+- Selektives Feature-Merge für übersprungene Import-Kandidaten mit Feldvergleich
+  und Review-Aktionen.
+- Relationship Map / Project Graph.
+- Weitergehende Sync-Safety-Härtung in eigenen engen Sprints.

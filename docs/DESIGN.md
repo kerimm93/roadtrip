@@ -9,13 +9,13 @@
 ---
 
 
-> Aktualisierung Sprint 39 Phase 2: Dieses Dokument bleibt das Designsystem und
+> Aktualisierung 2026-07-18: Dieses Dokument bleibt das Designsystem und
 > die Designreferenz für Roadtrip, wird aber nicht mehr als 1:1-Atlas-Umsetzungsplan
 > gelesen. Der produktive Stand ist die Single-File-HTML-/Vanilla-JS-App
 > `index.html`; der Prototyp ist Inspiration, kein Soll-Stand. Roadmap-Ideen in
 > diesem Dokument sind ausdrücklich nicht automatisch implementiert.
 
-## 0 · Aktueller Design-Contract ab Sprint 39
+## 0 · Aktueller Design-Contract ab 2026-07-18
 
 Roadtrip ist ein ruhiges Meta-Tool für Projekt-, Feature-, Chat- und
 Sprintsteuerung. Das UI soll Kontext ordnen, nächste Aktionen sichtbar machen und
@@ -68,6 +68,54 @@ bereits umgesetzte Features:
 - Renderfehler sollen sichtbar, aber nicht destruktiv sein.
 - Preview-Polish darf keine Datenmodell-, Import-/Export- oder Promptvertrag-Änderung
   verdeckt mitbringen.
+
+
+### Cleanup-Workbench / Review-UX
+
+Dieser Abschnitt ist ein UX-Vertrag für die geplante persistente Cleanup-Workbench.
+Er beschreibt Zielprinzipien, keine bereits implementierte vollständige Workbench.
+Der aktuelle Code enthält Cleanup-Import, Hauptchat-/Dedupe-Rückgaben, lokale
+Validierung, Preview und einen engen Confirm-/Commit-MVP für bestimmte
+`update-existing`-Fälle; der dauerhafte Run-/Fall-Arbeitsstand ist noch geplant.
+
+- **Wiederaufnahme statt Neustart:** Ein Analyse-/Cleanup-Lauf soll nach Hard Reload
+  wiederherstellbar sein, statt nur im temporären Textarea-/Preview-Zustand zu
+  existieren.
+- **Herkunft und Baseline:** Jeder Fall braucht sichtbare Quelle, betroffene
+  Featurebindung, ursprünglichen CSV-/Featurestand und Analysegrund.
+- **Fallstatus:** Status wie offen, geprüft bestätigt, bewusst offen, zurückgestellt,
+  Browser-Test nötig, Dedupe-Entscheidung vorhanden, nicht übernommen, commitbereit
+  oder angewendet sind Produktkontext für die geplante Workbench, aber noch nicht
+  als implementierte Statusliste zu behandeln.
+- **Nächste Aktion:** Pro Fall muss erkennbar sein, ob eine menschliche Entscheidung,
+  ein Hauptchat-Abgleich, ein Dedupe-Review, ein Browser-Test oder ein Commit-Diff
+  als nächstes ansteht.
+- **Preview versus echte Mutation:** Preview-Ergebnisse, Dedupe-Entscheidungen und
+  nicht-mutierende Reviews dürfen visuell nicht wie gespeicherte Featureänderungen
+  wirken. Echte Mutation benötigt klaren Diff, Confirm und Ergebnisnotiz.
+- **Präzise Fehlerursache:** Ungültiges JSON muss als Parse-/Syntaxfehler erscheinen
+  und darf nicht als „keine Vorschläge“ oder gültiges leeres Ergebnis dargestellt
+  werden.
+- **Progressive Disclosure:** Lange Evidenz, Modellbegründungen, Diffs, Baselines und
+  JSON-Felder gehören in aufklappbare Details, damit Reviewkarten ruhig bleiben.
+- **Nicht-mutierende Entscheidungen:** `no-change`, `keep-open`, `defer`,
+  `needs-browser-test`, `needs-project-decision` und Ablehnungen sind
+  Reviewentscheidungen, keine Featurefeldänderungen.
+- **Dedupe ohne versteckte Apply-Aktion:** Dedupe darf Entscheidungen sichtbar
+  machen, aber keine implizite Merge-/Archivierungs-/Löschaktion anbieten.
+- **Sicherer Confirm-/Commit:** Nur ausdrücklich ausgewählte, lokal validierte
+  `update-existing`-Änderungen an zulässigen Feldern dürfen in den bestehenden
+  Diff-/Confirm-/Commitpfad.
+
+### Historische Designreferenz vs. aktueller Contract
+
+Atlas-Tokens, ruhige Panels, eindeutige Primäraktionen, Pills, Progressive
+Disclosure und die klare Trennung von Navigation/Arbeitsfläche/Status/Advanced
+bleiben relevante Designprinzipien. Ältere konkrete Screen- oder Buttonlisten in
+diesem Dokument sind jedoch dort historisch zu lesen, wo der aktuelle Code
+Preview-, Hauptchat-, Dedupe- und Confirm-Pfade differenzierter abbildet. Alte
+Cleanup-Review-Buttonreihenfolgen sind keine vollständige Beschreibung des heutigen
+Hauptchat-/Dedupe-Decision-Preview- und Commit-MVP.
 
 ### Feature Database
 
@@ -386,7 +434,9 @@ Die sieben Bestands-Views bleiben funktional, werden aber in **drei ruhige Grupp
 | **Import · Cleanup** | 3 Stufen (Quelle · Prompt+Import · Review), Counter-Pill, Review-Karten | — |
 | **Einstellungen** | Darstellung · Gist · Trello · Datenverwaltung | Gist-Token; Notfall-Export, Raw-Backup, Speicherdiagnose (Danger-Zone, 2px-Stripe) |
 
-### Review-Karten (Import/Cleanup) — Aktionsleiste IMMER in dieser Reihenfolge
+### Historische Review-Karten-Regel (Import/Cleanup) — nicht vollständiger heutiger Cleanup-Contract
+
+Diese Regel stammt aus dem Atlas-/Import-Review-Design. Für den heutigen Cleanup-Pfad gelten zusätzlich lokale Hauptchat-/Dedupe-Preview, Auswahl, Batch-Diff und Confirm.
 
 1. **Primary** — `Bestehendes Feature aktualisieren` (Ziel erkannt) **oder** `Als neues Feature anlegen` (kein Ziel).
 2. **Secondary** — `Trotzdem als neues Feature anlegen` (nur bei erkanntem Ziel).
@@ -455,7 +505,7 @@ Empty-State-Texte:
 
 ---
 
-## 10 · Umsetzungsreihenfolge
+## 10 · Historische Atlas-Umsetzungsreihenfolge
 
 1. **Token-Block im `:root` ersetzen** (helle Atlas-Tokens), alte Namen als Aliase behalten. Fonts laden (Cormorant Garamond, IBM Plex Sans, IBM Plex Mono).
 2. **Button-CSS** — Hierarchie primary/secondary/ghost/danger, Hover-Lift entfernen.
@@ -474,10 +524,10 @@ Empty-State-Texte:
 
 ---
 
-## 11 · Schutzliste — NICHT anfassen
+## 11 · Schutzliste — nicht ohne expliziten Vertrag anfassen
 
-- localStorage-**Schema** des App-Datenstands (nur neue UI-Keys unter `roadtrip.ui.*`).
-- State-Struktur: `S.projects`, `S.features`, `S.notes`, `S.analyses`, `S.chats`, `S.importVersions`.
+- State-/Persistenzmodell des App-Datenstands; aktuelle Struktur aus `index.html` prüfen, nicht eine historische Teilmenge fortschreiben. Explizit beauftragte, migrationssichere Workbench-Erweiterungen sind möglich, aber nicht beiläufig.
+- Neue rein visuelle UI-Keys nur, wenn sie keine Datenmodell-/Workflow-Änderung verdecken.
 - Migrations-/Normalisierungslogik beim Laden (alte deutsche Statuswerte).
 - Sprintstart-JSON-Validierung (`type === "roadtrip-sprint-start"`, Pflichtfelder).
 - Gist-Sync-, Trello-, Import-/Export-Logik (Verträge, Felder, Endpoints).
@@ -511,4 +561,4 @@ Empty-State-Texte:
 
 ---
 
-*Roadtrip · DESIGN.md · Atlas-Skin v1.0 · Sprint 25*
+*Roadtrip · DESIGN.md · Atlas-Skin als historische Designbasis · aktualisiert 2026-07-18*
