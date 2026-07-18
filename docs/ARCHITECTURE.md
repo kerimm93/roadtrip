@@ -1,11 +1,130 @@
 # Roadtrip · Atlas — Architektur-Diagramme
 
-> Aktualisierung Sprint 39 Phase 2: Diese Datei beschreibt nicht mehr nur die
+> Aktualisierung 2026-07-18: Diese Datei beschreibt nicht mehr nur die
 > Atlas-Skin-Navigation aus Sprint 25, sondern zusätzlich den aktuellen
 > Roadtrip-Architektur- und Workflow-Contract. Mermaid-Diagramme unten bleiben
 > Design-/IA-Referenz; Roadmap-Hinweise sind nicht als implementiert zu lesen.
 
-## Aktueller Architektur-Contract ab Sprint 39
+
+## Aktueller Architektur-Refresh vom 18.07.2026
+
+Diese Ergänzung beschreibt den aktuellen Produkt- und Architekturstand. Die älteren
+Atlas-Mermaid-Diagramme darunter bleiben IA-/Designreferenz, aber nicht vollständige
+Beschreibung des heutigen Analyse-/Cleanup-Pfads.
+
+### State-, Config- und Runtime-Schichten
+
+Der kanonische persistente State wird in `index.html` über `defaultState()`
+initialisiert und beim Laden/Import/Merge normalisiert. Aktuell umfasst er neben
+Metadaten (`version`, `createdAt`, lokale Save-/Export-/Sync-Zeitstempel) die
+Arrays `projects`, `features`, `notes`, `analyses`, `chats`, `importVersions`,
+`pullRequests`, `unmatchedNotes` sowie `deletedIds` für Tombstone-/Löschschutz.
+Diese Liste ist ein Codebeleg zum Stand 18.07.2026, kein Freibrief für beiläufige
+Schemaänderungen.
+
+Config ist getrennt vom State und enthält u. a. Theme/Font, Gist-/Raw-Gist-IDs und
+Tokens, OpenAI-Modellvorgabe sowie Trello-Key/-Token/-Board. UI-/Runtime-State liegt
+überwiegend im nicht-kanonischen `ui`-Objekt: Import-Drafts, Cleanup-Review-Inputs,
+Hauptchat-/Dedupe-Preview, Auswahlzustände, Kanban-Toggles und temporäre
+Prompt-Ausgaben. Export-/Backup-Artefakte sind abgeleitete Übergabeformen
+(JSON/CSV/ZIP/Markdown) und nicht automatisch neue kanonische Persistenzmodelle.
+
+### Implementierte Funktionsbereiche aus dem Code
+
+- IndexedDB-first mit localStorage-Fallback, JSON Import/Export, ZIP-Backup und
+  optionalem verschlüsseltem Gist-Sync.
+- Projekt-, Feature-, Notes-, Analyse-, Chat-, Sprint-/Handoff- und Importversionen.
+- Pull-Request-Bezüge als eigener State-Bereich und als Chat-/Projektkontext.
+- Feature- und Notes-CSV-Exporte, projektbezogene CSV-Dateien im ZIP-Backup sowie
+  Feature-CSV-Pfade für Code-/Cleanup-Analyse.
+- Optionales `featureFlow` mit Mermaid-/Feature-Flow-Preview.
+- Obsidian-Kanban-Markdown-Export für Projekt- und Sprintkarten.
+
+### Analyse-/Cleanup-End-to-End-Pfad
+
+```mermaid
+flowchart TD
+  A[Feature-CSV / Code / Analysekontext] --> B[Analyseprompt]
+  B --> C[Modellantwort: untrusted input]
+  C --> D{JSON parsebar?}
+  D -- nein --> E[Lokaler Fehlerzustand: nicht importieren]
+  D -- ja --> F[Optionaler Transformationsschritt: weiterhin untrusted]
+  F --> G[Lokaler Cleanup-Import]
+  G --> H[Direkte Reviewfälle / Hauptchatfälle / Dedupepaare]
+  H --> I[Strukturierte Hauptchat-Rückgabe roadtrip-mainchat-decisions-v1]
+  H --> J[Strukturierte Dedupe-Rückgabe roadtrip-dedupe-decisions-v1]
+  I --> K[Lokale Parse-/Schema-/ID-/Lossless-Validierung]
+  J --> L[Lokale Parse-/Schema-/Paar-/Lossless-Validierung]
+  K --> M[Mutationsfreie Preview]
+  L --> N[Strukturierte Dedupe-Preview only]
+  M --> O{validiertes update-existing mit erlaubten Feldern?}
+  O -- nein --> P[Reviewstatus/Preview, keine Mutation]
+  O -- ja --> Q[Auswahl → Batch-Diff → Confirm → Driftprüfung → Commit]
+```
+
+### Trust Boundaries
+
+- Jede Modellantwort ist untrusted input, auch wenn der Prompt ausschließlich
+  gültiges JSON verlangt.
+- Parse, Schema-/Projekt-/Feature-ID-Validierung, Normalisierung und Lossless-
+  Guards laufen lokal vor jeder Preview.
+- Preview ist keine Mutation. Ein erfolgreicher Preview-Check darf nicht als
+  angewendete Featureänderung dokumentiert werden.
+- Die strukturierte Dedupe-Rückgabe über `roadtrip-dedupe-decisions-v1` ist
+  Preview-only: Aus dieser Preview gibt es keinen Apply-, Merge-, Archivierungs-,
+  Lösch-, Status-, Pool- oder Duplicate-Markierungs-Pfad. Der davon getrennte
+  direkte Cleanup-Review-Papierkorbpfad für konkret identifizierte Dubletten ist
+  ein bestehender bestätigungspflichtiger Sonderpfad; im CSV-Transformationsmodus
+  bleibt diese direkte Aktion Review-only.
+- Hauptchat-Entscheidungen dürfen nur über `roadtrip-mainchat-decisions-v1` in die
+  lokale Preview. Fälle ohne Feature-ID dürfen keine fremden Featurebindungen
+  einführen. Teilantworten und ein leeres `decisions`-Array sind gültig und
+  mutationsfrei; zurückgegebene `caseId`s müssen bekannt und innerhalb der Antwort
+  eindeutig sein.
+- Dedupe-Entscheidungen dürfen nur über `roadtrip-dedupe-decisions-v1` in die
+  lokale strukturierte Preview; A/B-IDs und `canonicalFeatureId`/`duplicateFeatureId`
+  sind auf das lokale Paar begrenzt. Teilantworten und ein leeres
+  `dedupeDecisions`-Array sind gültig und mutationsfrei; zurückgegebene `pairId`s
+  müssen bekannt und innerhalb der Antwort eindeutig sein.
+
+### Confirm-/Commit-MVP
+
+Der bestehende Commitpfad ist eng begrenzt:
+
+- Status: code-seitig implementiert und statisch geprüft.
+- Eingang: nur validierte Hauptchat-Entscheidungen `update-existing`.
+- Felder: nur `title`, `description`, `category`.
+- Ablauf: explizite Auswahl, Batch-Diff, menschlicher Confirm, Driftprüfung,
+  Kandidaten-State, Schutzlistenprüfung, `saveAsync()` und Rollback bei Fehlern.
+- Nicht enthalten: Status, Pool, Promotion, Create, Split, Merge, Archivierung,
+  Löschung oder strukturierter Dedupe-Apply.
+- Noch offen: natürlicher Browser-Realnachweis für Commit, Driftprüfung,
+  Hard-Reload-Persistenz und Batchatomarität.
+
+### Aktuelle Lücke: noch keine persistente Cleanup-Workbench
+
+Der heutige Cleanup-Arbeitsstand ist überwiegend temporärer Runtime-/UI-State.
+Importierte Reviewfälle, Hauptchat-/Dedupe-Textareas, lokale Previews, Auswahl und
+Zwischenergebnisse sind noch nicht als dauerhafter Analyse-/Cleanup-Run mit
+Baseline, Herkunft, Fallstatus, menschlicher Entscheidung, nächster Aktion und
+Reload-Wiederaufnahme modelliert.
+
+Die geplante Zielarchitektur für den nächsten Produktsprint ist eine persistente
+Cleanup-Workbench. Sie soll Runs und Fallentscheidungen dauerhaft speichern,
+nicht-mutierende Entscheidungen nachvollziehbar abschließen, Filter/Zähler nach
+Fallstatus ermöglichen, Parsefehler von gültigen leeren Ergebnissen trennen und
+validierte `update-existing`-Fälle ausschließlich an den bestehenden Diff-/Confirm-/
+Commitpfad übergeben. Die Workbench darf keinen neuen automatischen Dedupe-Merge
+oder neue Archivierungs-/Löschpfade einführen. Sie ist geplant, nicht implementiert.
+
+### Weiterhin geschützte, aber nicht aktuelle Hauptpriorität
+
+Sync, Backup, Tombstones, Trello, Import/Export und Gist-Verschlüsselung bleiben
+Schutzbereiche. Historische Sync-Safety-Audits bleiben relevant für spätere enge
+Sync-Sprints, dominieren aber nicht die aktuelle Produktpriorität nach dem
+Cleanup-Realbetrieb vom 18.07.2026.
+
+## Historischer Architektur-Contract aus der Atlas-/Sprint-39-Dokumentation
 
 Roadtrip ist eine browserbasierte Single-File-HTML-/Vanilla-JS-App. Der produktive
 App-Code liegt in `index.html`; es gibt keinen Framework- oder Build-Step.
