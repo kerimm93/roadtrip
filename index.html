@@ -1979,6 +1979,9 @@
       const NOTE_STATUSES = ['open', 'processed', 'archived'];
       const SPRINT_EXECUTION_MODES = { codexControl: 'codex-control', direct: 'direct' };
       const NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE = 'roadtrip-next-sprint-mainchat-handoff-v1';
+      const MAINCHAT_ROLLOVER_SCHEMA_VERSION = 'roadtrip-mainchat-rollover-v1';
+      const MAINCHAT_ROLLOVER_TYPE = 'roadtrip-mainchat-rollover';
+      const MAINCHAT_ROLLOVER_CONFIDENCE = ['hoch', 'mittel', 'niedrig'];
 
       let S = defaultState();
       let C = defaultConfig();
@@ -2015,7 +2018,9 @@
         nextSprintMainchatHandoffByProject: {},
         importFeatureDuplicateReviewsByProject: {},
         sprintQuickPanelByProject: {},
-        pullRequestImport: { rawText: '', candidates: [], projectId: '', repoFullName: '', assignmentPrompt: '', assignmentJson: '' }
+        pullRequestImport: { rawText: '', candidates: [], projectId: '', repoFullName: '', assignmentPrompt: '', assignmentJson: '' },
+        mainChatRolloverByProject: {},
+        mainChatRolloverCommitInFlight: false
       };
 
       const $ = (id) => document.getElementById(id);
@@ -2152,6 +2157,7 @@
           importVersions: [],
           pullRequests: [],
           unmatchedNotes: [],
+          mainChatRollovers: [],
           deletedIds: {}
         };
       }
@@ -2326,6 +2332,7 @@
         if (!Array.isArray(S.importVersions)) S.importVersions = [];
         if (!Array.isArray(S.pullRequests)) S.pullRequests = [];
         if (!Array.isArray(S.unmatchedNotes)) S.unmatchedNotes = [];
+        if (!Array.isArray(S.mainChatRollovers)) S.mainChatRollovers = [];
         if (!S.deletedIds || typeof S.deletedIds !== 'object' || Array.isArray(S.deletedIds)) S.deletedIds = {};
         if (!S._lastLocalSaveAt && S._lastExported) S._lastLocalSaveAt = S._lastExported;
         if (!S._lastGistPushAt && S._lastExported) S._lastGistPushAt = S._lastExported;
@@ -2334,6 +2341,7 @@
         S.notes = S.notes.map(ensureNoteDefaults);
         S.chats = S.chats.map(ensureChatDefaults);
         S.pullRequests = S.pullRequests.map(ensurePullRequestDefaults);
+        S.mainChatRollovers = S.mainChatRollovers.filter(r => r && typeof r === 'object');
         if (!ui.pullRequestImport || typeof ui.pullRequestImport !== 'object') ui.pullRequestImport = { rawText: '', candidates: [], projectId: '', repoFullName: '', assignmentPrompt: '', assignmentJson: '' };
         if (!Array.isArray(ui.pullRequestImport.candidates)) ui.pullRequestImport.candidates = [];
         if (typeof ui.pullRequestImport.projectId !== 'string') ui.pullRequestImport.projectId = '';
@@ -3481,6 +3489,81 @@
           const st = getChatWorkflowState(projectId);
           importMainChatBootstrapJson(projectId, st.mainChatBootstrapJson || '');
         });
+        if ($('btnPrepareMainChatRollover')) $('btnPrepareMainChatRollover').addEventListener('click', () => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          const st = getMainChatRolloverState(projectId);
+          try {
+            const baseline = buildMainChatRolloverBaseline(projectId);
+            st.baselineJson = JSON.stringify(baseline, null, 2);
+            st.prompt = buildMainChatRolloverExternalPrompt(projectId, baseline);
+            st.preview = null;
+          } catch (err) { alert('Rollover-Baseline konnte nicht erzeugt werden: ' + (err && err.message ? err.message : err)); }
+          renderView();
+        });
+        if ($('mainChatRolloverJsonInput')) $('mainChatRolloverJsonInput').addEventListener('input', e => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          const st = getMainChatRolloverState(projectId);
+          st.rawJson = e.target.value;
+          st.preview = null;
+        });
+        if ($('mainChatRolloverExternalUrl')) $('mainChatRolloverExternalUrl').addEventListener('input', e => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          const st = getMainChatRolloverState(projectId);
+          st.externalChatUrl = e.target.value;
+          if (st.preview) st.preview.externalChatUrl = String(e.target.value || '').trim();
+        });
+        if ($('btnPreviewMainChatRollover')) $('btnPreviewMainChatRollover').addEventListener('click', () => {
+          const projectId = ui.activeProjectId || '';
+          if (!projectId || projectId === ALL_PROJECTS_KEY) return;
+          const st = getMainChatRolloverState(projectId);
+          const preview = validateMainChatRolloverPayload(projectId, st.rawJson || '', st.externalChatUrl || '');
+          preview.projectId = projectId;
+          preview.selectedIds = preview.selectedIds || [];
+          st.preview = preview;
+          if (!preview.valid) alert('Rollover-Validierung fehlgeschlagen:\n- ' + preview.errors.join('\n- '));
+          renderView();
+        });
+        qq('.rollover-feature-checkbox').forEach(cb => cb.addEventListener('change', () => {
+          const projectId = ui.activeProjectId || '';
+          const st = getMainChatRolloverState(projectId);
+          if (!st.preview) return;
+          const id = cb.dataset.candidateId || '';
+          const selected = new Set(st.preview.selectedIds || []);
+          if (cb.checked) selected.add(id); else selected.delete(id);
+          st.preview.selectedIds = Array.from(selected);
+          renderView();
+        }));
+        if ($('btnSelectAllRolloverFeatures')) $('btnSelectAllRolloverFeatures').addEventListener('click', () => {
+          const st = getMainChatRolloverState(ui.activeProjectId || '');
+          if (st.preview && st.preview.valid) st.preview.selectedIds = (st.preview.payload.featureDelta.newPlannedFeatures || []).map(c => c.candidateId);
+          renderView();
+        });
+        if ($('btnClearRolloverFeatures')) $('btnClearRolloverFeatures').addEventListener('click', () => {
+          const st = getMainChatRolloverState(ui.activeProjectId || '');
+          if (st.preview) st.preview.selectedIds = [];
+          renderView();
+        });
+        if ($('btnConfirmMainChatRollover')) $('btnConfirmMainChatRollover').addEventListener('click', async () => {
+          const st = getMainChatRolloverState(ui.activeProjectId || '');
+          const preview = st.preview;
+          if (!preview || !preview.valid) return alert('Keine gültige Rollover-Preview vorhanden.');
+          const drift = checkMainChatRolloverDrift(preview);
+          if (drift.length) { st.preview.valid = false; st.preview.errors = drift; renderView(); return alert('Rollover blockiert: ' + drift.join(' ')); }
+          if (!window.confirm('Hauptchat-Rollover atomar committen? Ausgewählte neue Features: ' + (preview.selectedIds || []).length + '. Alter Hauptchat bleibt als Referenz erhalten.')) return;
+          try {
+            const newChatId = await commitMainChatRollover(preview);
+            st.summary = 'Rollover angewendet. Neuer Hauptchat: ' + newChatId;
+            st.preview = null;
+            alert(st.summary);
+            renderAll();
+          } catch (err) { alert('Rollover abgebrochen, keine Teiländerung angewendet: ' + (err && err.message ? err.message : err)); }
+        });
+        if ($('btnCopyMainChatRolloverBaseline')) $('btnCopyMainChatRolloverBaseline').addEventListener('click', () => copyPrompt('mainChatRolloverBaselineOutput'));
+        if ($('btnCopyMainChatRolloverPrompt')) $('btnCopyMainChatRolloverPrompt').addEventListener('click', () => copyPrompt('mainChatRolloverPromptOutput'));
+
         if ($('btnBuildDailyLogProjectPrompt')) $('btnBuildDailyLogProjectPrompt').addEventListener('click', () => {
           ui.dailyLogQuery.prompt = buildDailyLogProjectPrompt();
           renderView();
@@ -4002,6 +4085,280 @@
         const handoff = getChatWorkflowHandoffState(projectId);
         if (handoff.sourceChatId !== state.sourceChatId) handoff.sourceChatId = state.sourceChatId || '';
         return state;
+      }
+
+
+      function getMainChatRolloverState(projectId) {
+        if (!ui.mainChatRolloverByProject || typeof ui.mainChatRolloverByProject !== 'object') ui.mainChatRolloverByProject = {};
+        if (!projectId || projectId === ALL_PROJECTS_KEY) return { projectId: projectId || '', baselineJson: '', prompt: '', rawJson: '', externalChatUrl: '', preview: null, summary: '' };
+        const st = ui.mainChatRolloverByProject[projectId] && typeof ui.mainChatRolloverByProject[projectId] === 'object'
+          ? ui.mainChatRolloverByProject[projectId]
+          : { projectId, baselineJson: '', prompt: '', rawJson: '', externalChatUrl: '', preview: null, summary: '' };
+        st.projectId = projectId;
+        ['baselineJson', 'prompt', 'rawJson', 'externalChatUrl', 'summary'].forEach(k => { if (typeof st[k] !== 'string') st[k] = ''; });
+        if (!st.preview || typeof st.preview !== 'object') st.preview = null;
+        ui.mainChatRolloverByProject[projectId] = st;
+        return st;
+      }
+
+      function featureRolloverSnapshot(feature) {
+        return {
+          id: feature.id,
+          title: feature.title || '',
+          description: feature.description || '',
+          category: feature.category || 'Sonstiges',
+          priority: feature.priority || 'mittel',
+          status: feature.status || '',
+          pool: normalizeFeaturePool(feature.pool),
+          purpose: feature.purpose || '',
+          workflowContext: feature.workflowContext || '',
+          acceptanceCriteria: feature.acceptanceCriteria || '',
+          sourceContext: feature.sourceContext || '',
+          featureFlow: feature.featureFlow || '',
+          openQuestions: feature.openQuestions || '',
+          notes: feature.notes || '',
+          createdAt: feature.createdAt || '',
+          updatedAt: feature.updatedAt || ''
+        };
+      }
+
+      function buildMainChatRolloverBaseline(projectId) {
+        const project = S.projects.find(p => p && p.id === projectId);
+        const mainChat = getProjectMainChat(projectId);
+        if (!project || !mainChat) throw new Error('Aktuelles Projekt oder aktiver Hauptchat fehlt.');
+        const features = getVisibleFeatures(S.features).filter(f => f && f.projectId === projectId);
+        const handoffs = (S.importVersions || []).filter(x => x && x.projectId === projectId).slice(-5);
+        return {
+          schemaVersion: 'roadtrip-mainchat-rollover-baseline-v1',
+          generatedAt: new Date().toISOString(),
+          projectId,
+          projectTitle: project.title || '',
+          projectSummary: project.summary || '',
+          currentFocus: project.currentFocus || '',
+          nextStep: project.nextStep || '',
+          activeMainChatId: mainChat.id,
+          activeMainChatUrl: project.mainChatUrl || mainChat.url || '',
+          activeMainChatUpdatedAt: mainChat.updatedAt || '',
+          plannedFeatures: features.filter(f => normalizeFeaturePool(f.pool) === 'planned').map(featureRolloverSnapshot),
+          implementedFeatures: features.filter(f => normalizeFeaturePool(f.pool) === 'implemented').map(featureRolloverSnapshot),
+          recentImportHistory: handoffs.map(h => ({ id: h.id || '', importedAt: h.importedAt || '', summary: h.summary || '', type: h.type || '' }))
+        };
+      }
+
+      function buildMainChatRolloverExternalPrompt(projectId, baseline) {
+        return [
+          'Du bereitest einen Roadtrip-Hauptchat-Rollover vor.',
+          '',
+          'Regeln:',
+          '- Roadtrip ist die bestehende Projektwahrheit; der alte Hauptchat ist nur Delta- und Übergangsquelle.',
+          '- Rekonstruiere das Projekt nicht vollständig neu.',
+          '- Erzeuge keine historischen Sprintchats und keinen Sprintabschluss.',
+          '- Erzeuge keine implemented Features.',
+          '- Prüfe jeden neuen Feature-Kandidaten gegen planned UND implemented Bestand.',
+          '- Vorhandene Features dürfen nur über reale featureId referenziert werden.',
+          '- Mögliche Aktualisierungen vorhandener Features getrennt in possibleUpdates ausgeben.',
+          '- Unklare/widersprüchliche/historische Punkte sichtbar lassen.',
+          '- Antworte ausschließlich mit gültigem JSON im Vertrag roadtrip-mainchat-rollover-v1.',
+          '',
+          'JSON-Vertrag:',
+          JSON.stringify({ schemaVersion: MAINCHAT_ROLLOVER_SCHEMA_VERSION, type: MAINCHAT_ROLLOVER_TYPE, projectId, sourceMainChatId: baseline.activeMainChatId, sourceMainChatUpdatedAt: baseline.activeMainChatUpdatedAt, generatedAt: '', newMainChat: { title: '', projectSummary: '', currentFocus: '', nextStep: '', mainChatPrompt: '', knownContext: [], recentWork: [], activeDecisions: [], openQuestions: [] }, featureDelta: { existingFeatureRefs: [{ featureId: 'f_...', reason: '' }], newPlannedFeatures: [{ candidateId: 'ROLL-F-001', title: '', description: '', category: 'Workflow', priority: 'mittel', status: 'planned', confidence: 'hoch', sourceReason: '' }], possibleUpdates: [{ featureId: 'f_...', suggestedTitle: '', suggestedDescription: '', suggestedCategory: 'Workflow', reason: '' }], ambiguousCandidates: [{ candidateId: 'ROLL-A-001', title: '', reason: '' }] }, legacySourceNotes: [], warnings: [] }, null, 2),
+          '',
+          'Roadtrip-Baseline:',
+          JSON.stringify(baseline, null, 2)
+        ].join('\n');
+      }
+
+      function normalizeRolloverTitle(value) { return normalizeText(value).replace(/[^a-z0-9äöüß]+/gi, ' ').trim(); }
+      function stringArrayOrErrors(value, path, errors) {
+        if (!Array.isArray(value)) { errors.push(path + ' muss ein Array sein.'); return []; }
+        return value.map((v, i) => { if (typeof v !== 'string') errors.push(path + '[' + i + '] muss ein String sein.'); return String(v || ''); });
+      }
+
+      function validateMainChatRolloverPayload(projectId, rawJson, externalChatUrl) {
+        const errors = [], warnings = [];
+        const project = S.projects.find(p => p && p.id === projectId);
+        const mainChat = project && project.mainChatId ? (S.chats || []).find(c => c && c.id === project.mainChatId && c.projectId === projectId && c.type === 'project-main') : null;
+        let payload;
+        try { payload = JSON.parse(String(rawJson || '').trim()); } catch (_) { return { valid: false, errors: ['Ungültiges JSON.'], warnings: [], payload: null }; }
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+          return { valid: false, errors: ['Root muss ein JSON-Objekt sein.'], warnings: [], payload: null };
+        }
+        if (!project) errors.push('Aktuelles Projekt wurde nicht gefunden.');
+        if (!mainChat) errors.push('Aktiver Hauptchat wurde nicht gefunden.');
+        if (payload.schemaVersion !== MAINCHAT_ROLLOVER_SCHEMA_VERSION) errors.push('schemaVersion muss exakt ' + MAINCHAT_ROLLOVER_SCHEMA_VERSION + ' sein.');
+        if (payload.type !== MAINCHAT_ROLLOVER_TYPE) errors.push('type muss exakt ' + MAINCHAT_ROLLOVER_TYPE + ' sein.');
+        if (payload.projectId !== projectId) errors.push('projectId muss exakt dem aktuell ausgewählten Projekt entsprechen.');
+        if (project && payload.sourceMainChatId !== project.mainChatId) errors.push('sourceMainChatId entspricht nicht project.mainChatId.');
+        if (mainChat && payload.sourceMainChatId !== mainChat.id) errors.push('sourceMainChatId ist nicht der aktuelle project-main Chat.');
+        if (mainChat && mainChat.projectId !== projectId) errors.push('Quellchat gehört nicht zum aktuellen Projekt.');
+        if (mainChat && payload.sourceMainChatUpdatedAt !== (mainChat.updatedAt || '')) errors.push('sourceMainChatUpdatedAt weicht vom aktuellen Hauptchat ab. Frische Baseline nötig.');
+        if (typeof payload.generatedAt !== 'string') errors.push('generatedAt muss ein String sein.');
+        const nm = payload.newMainChat;
+        if (!nm || typeof nm !== 'object' || Array.isArray(nm)) errors.push('newMainChat muss ein Objekt sein.');
+        ['title','projectSummary','currentFocus','nextStep','mainChatPrompt'].forEach(k => { if (!nm || typeof nm[k] !== 'string' || !nm[k].trim()) errors.push('newMainChat.' + k + ' ist Pflicht und muss ein String sein.'); });
+        ['knownContext','recentWork','activeDecisions','openQuestions'].forEach(k => { if (nm) stringArrayOrErrors(nm[k], 'newMainChat.' + k, errors); });
+        const fd = payload.featureDelta;
+        if (!fd || typeof fd !== 'object' || Array.isArray(fd)) errors.push('featureDelta muss ein Objekt sein.');
+        if (fd && typeof fd === 'object' && !Array.isArray(fd)) {
+          const allowedDeltaKeys = new Set(['existingFeatureRefs', 'newPlannedFeatures', 'possibleUpdates', 'ambiguousCandidates']);
+          Object.keys(fd).forEach(key => { if (!allowedDeltaKeys.has(key)) errors.push('Unbekannte Mutationsart in featureDelta: ' + key + '.'); });
+        }
+        const projectFeatures = getVisibleFeatures(S.features).filter(f => f && f.projectId === projectId);
+        const featureById = new Map(projectFeatures.map(f => [f.id, f]));
+        const seenCandidates = new Set();
+        const candidateRefs = [];
+        const checkCandidateId = (id, path) => {
+          const trimmedId = String(id || '').trim();
+          if (!trimmedId) errors.push(path + '.candidateId fehlt oder ist leer.');
+          else if (seenCandidates.has(trimmedId)) errors.push('candidateId doppelt: ' + trimmedId);
+          else seenCandidates.add(trimmedId);
+        };
+        const existingRefs = fd && Array.isArray(fd.existingFeatureRefs) ? fd.existingFeatureRefs : [];
+        if (!fd || !Array.isArray(fd.existingFeatureRefs)) errors.push('featureDelta.existingFeatureRefs muss ein Array sein.');
+        existingRefs.forEach((ref, i) => {
+          if (!ref || typeof ref !== 'object') return errors.push('existingFeatureRefs[' + i + '] muss ein Objekt sein.');
+          if (!featureById.has(ref.featureId)) errors.push('existingFeatureRefs[' + i + '].featureId existiert nicht im Projekt.');
+          if (typeof ref.reason !== 'string') errors.push('existingFeatureRefs[' + i + '].reason muss String sein.');
+        });
+        const updates = fd && Array.isArray(fd.possibleUpdates) ? fd.possibleUpdates : [];
+        if (!fd || !Array.isArray(fd.possibleUpdates)) errors.push('featureDelta.possibleUpdates muss ein Array sein.');
+        updates.forEach((u, i) => {
+          if (!u || typeof u !== 'object') return errors.push('possibleUpdates[' + i + '] muss ein Objekt sein.');
+          if (!featureById.has(u.featureId)) errors.push('possibleUpdates[' + i + '].featureId existiert nicht im Projekt.');
+          if (u.suggestedCategory && !FEATURE_CATEGORIES.includes(u.suggestedCategory)) errors.push('possibleUpdates[' + i + '].suggestedCategory ist keine erlaubte Kategorie.');
+        });
+        const candidates = fd && Array.isArray(fd.newPlannedFeatures) ? fd.newPlannedFeatures : [];
+        if (!fd || !Array.isArray(fd.newPlannedFeatures)) errors.push('featureDelta.newPlannedFeatures muss ein Array sein.');
+        const existingTitles = new Map(projectFeatures.map(f => [normalizeRolloverTitle(f.title), f]).filter(x => x[0]));
+        const candidateTitles = new Map();
+        candidates.forEach((c, i) => {
+          if (!c || typeof c !== 'object') return errors.push('newPlannedFeatures[' + i + '] muss ein Objekt sein.');
+          checkCandidateId(c.candidateId, 'newPlannedFeatures[' + i + ']');
+          ['title','description','category','priority','status','confidence','sourceReason'].forEach(k => { if (typeof c[k] !== 'string') errors.push('newPlannedFeatures[' + i + '].' + k + ' muss String sein.'); });
+          ['title','description','sourceReason'].forEach(k => { if (typeof c[k] === 'string' && !c[k].trim()) errors.push('newPlannedFeatures[' + i + '].' + k + ' darf nicht leer sein.'); });
+          if (c.status !== 'planned') errors.push(c.candidateId + ': status muss planned sein; neue implemented Features sind verboten.');
+          if (!FEATURE_CATEGORIES.includes(c.category)) errors.push(c.candidateId + ': Kategorie nicht erlaubt.');
+          if (!PRIORITIES.includes(c.priority)) errors.push(c.candidateId + ': Priorität nicht erlaubt.');
+          if (!MAINCHAT_ROLLOVER_CONFIDENCE.includes(c.confidence)) errors.push(c.candidateId + ': confidence muss hoch, mittel oder niedrig sein.');
+          const normalizedCandidateTitle = normalizeRolloverTitle(c.title);
+          const duplicateCandidate = candidateTitles.get(normalizedCandidateTitle);
+          if (normalizedCandidateTitle && duplicateCandidate) errors.push(c.candidateId + ': Titel-Dublette gegen neuen Kandidaten ' + duplicateCandidate.candidateId + ' (normalisierter Titel: ' + normalizedCandidateTitle + ').');
+          if (normalizedCandidateTitle && !duplicateCandidate) candidateTitles.set(normalizedCandidateTitle, c);
+          const duplicate = existingTitles.get(normalizedCandidateTitle);
+          if (duplicate) errors.push(c.candidateId + ': Titel-Dublette gegen vorhandenes Feature ' + duplicate.id + ' (' + normalizeFeaturePool(duplicate.pool) + ').');
+          projectFeatures.forEach(f => {
+            const a = normalizeRolloverTitle(c.title), b = normalizeRolloverTitle(f.title);
+            if (a && b && a !== b && (a.includes(b) || b.includes(a))) warnings.push(c.candidateId + ': Ähnlich zu vorhandenem Feature ' + f.id + ' — bitte vor Confirm prüfen.');
+          });
+          candidateRefs.push(c);
+        });
+        const ambiguous = fd && Array.isArray(fd.ambiguousCandidates) ? fd.ambiguousCandidates : [];
+        if (!fd || !Array.isArray(fd.ambiguousCandidates)) errors.push('featureDelta.ambiguousCandidates muss ein Array sein.');
+        ambiguous.forEach((a, i) => { if (!a || typeof a !== 'object') return errors.push('ambiguousCandidates[' + i + '] muss Objekt sein.'); checkCandidateId(a.candidateId, 'ambiguousCandidates[' + i + ']'); });
+        if (!Array.isArray(payload.legacySourceNotes)) errors.push('legacySourceNotes muss ein Array sein.');
+        if (!Array.isArray(payload.warnings)) errors.push('warnings muss ein Array sein.');
+        const selectedIds = errors.length ? [] : candidates.map(c => c.candidateId);
+        return { valid: errors.length === 0, errors, warnings: warnings.concat(Array.isArray(payload.warnings) ? payload.warnings.map(String) : []), payload, selectedIds, externalChatUrl: String(externalChatUrl || '').trim() };
+      }
+
+      function checkMainChatRolloverDrift(preview) {
+        const errors = [];
+        const project = S.projects.find(p => p && p.id === (preview && preview.projectId));
+        const mainChat = project && project.mainChatId ? (S.chats || []).find(c => c && c.id === project.mainChatId && c.projectId === project.id && c.type === 'project-main') : null;
+        if (!preview || !preview.payload) errors.push('Keine Rollover-Preview vorhanden.');
+        if (!project) errors.push('Projekt fehlt.');
+        if (project && project.mainChatId !== preview.payload.sourceMainChatId) errors.push('Projektzeiger mainChatId ist gedriftet.');
+        if (!mainChat || mainChat.id !== preview.payload.sourceMainChatId) errors.push('Aktiver Hauptchat ist gedriftet.');
+        if (mainChat && mainChat.projectId !== preview.projectId) errors.push('Hauptchat-Projektzugehörigkeit ist gedriftet.');
+        if (mainChat && (mainChat.updatedAt || '') !== preview.payload.sourceMainChatUpdatedAt) errors.push('Hauptchat updatedAt ist gedriftet.');
+        return errors;
+      }
+
+      function formatMainChatRolloverDiff(preview) {
+        const p = preview.payload;
+        const selected = new Set(preview.selectedIds || []);
+        const selectedCandidates = (p.featureDelta.newPlannedFeatures || []).filter(c => selected.has(c.candidateId));
+        return [
+          'Hauptchat: ' + p.sourceMainChatId + ' -> neue lokale ID beim Commit',
+          'Alter Hauptchat: status referenz, supersededByChatId, archivedAt',
+          'Projekt: summary/focus/nextStep/mainChatId werden aktualisiert; mainChatUrl bleibt leer, wenn keine echte URL eingegeben wurde',
+          'Neue planned Features: ' + selectedCandidates.map(c => c.candidateId + ' · ' + c.title).join('; '),
+          'Rollover-Protokoll: 1 Eintrag in mainChatRollovers'
+        ].join('\n');
+      }
+
+      async function commitMainChatRollover(preview) {
+        if (ui.mainChatRolloverCommitInFlight) throw new Error('Rollover-Commit läuft bereits.');
+        const drift = checkMainChatRolloverDrift(preview);
+        if (drift.length) throw new Error('Driftprüfung fehlgeschlagen: ' + drift.join(' '));
+        const revalidated = validateMainChatRolloverPayload(preview.projectId, JSON.stringify(preview.payload || {}), preview.externalChatUrl || '');
+        if (!revalidated.valid) throw new Error('Rollover-Revalidierung fehlgeschlagen: ' + (revalidated.errors || []).join(' '));
+        const validCandidateIds = new Set((((revalidated.payload || {}).featureDelta || {}).newPlannedFeatures || []).map(c => c && c.candidateId).filter(Boolean));
+        const unknownSelectedIds = (preview.selectedIds || []).filter(id => !validCandidateIds.has(id));
+        if (unknownSelectedIds.length) throw new Error('Rollover-Auswahl enthält unbekannte Candidate-IDs: ' + unknownSelectedIds.join(', '));
+        ui.mainChatRolloverCommitInFlight = true;
+        const previousState = JSON.parse(JSON.stringify(S || {}));
+        try {
+          const candidateState = JSON.parse(JSON.stringify(S || {}));
+          if (!Array.isArray(candidateState.mainChatRollovers)) candidateState.mainChatRollovers = [];
+          const now = new Date().toISOString();
+          const p = revalidated.payload;
+          const project = candidateState.projects.find(x => x && x.id === preview.projectId);
+          const oldChat = candidateState.chats.find(c => c && c.id === p.sourceMainChatId && c.projectId === preview.projectId);
+          if (!project || !oldChat || project.mainChatId !== oldChat.id || (oldChat.updatedAt || '') !== p.sourceMainChatUpdatedAt) throw new Error('Kandidatenstand ist gedriftet.');
+          const newChatId = uid('ch');
+          const url = String(preview.externalChatUrl || '').trim();
+          const newChat = ensureChatDefaults({
+            id: newChatId,
+            projectId: preview.projectId,
+            title: p.newMainChat.title,
+            type: 'project-main',
+            status: 'aktiv',
+            url: url,
+            needsUrl: !url,
+            summary: p.newMainChat.projectSummary,
+            currentFocus: p.newMainChat.currentFocus,
+            nextStep: p.newMainChat.nextStep,
+            mainChatPrompt: p.newMainChat.mainChatPrompt,
+            knownContext: p.newMainChat.knownContext,
+            recentWork: p.newMainChat.recentWork,
+            activeDecisions: p.newMainChat.activeDecisions,
+            openQuestions: p.newMainChat.openQuestions,
+            supersedesChatId: oldChat.id,
+            createdFromRollover: true,
+            rolloverSourceUpdatedAt: p.sourceMainChatUpdatedAt,
+            rolloverAt: now,
+            startedAt: now,
+            updatedAt: now
+          });
+          oldChat.supersededByChatId = newChatId;
+          oldChat.archivedAt = now;
+          oldChat.status = 'referenz';
+          oldChat.updatedAt = now;
+          candidateState.chats.push(newChat);
+          project.mainChatId = newChatId;
+          project.mainChatUrl = url;
+          project.summary = p.newMainChat.projectSummary;
+          project.currentFocus = p.newMainChat.currentFocus;
+          project.nextStep = p.newMainChat.nextStep;
+          project.updatedAt = now;
+          const selected = new Set(preview.selectedIds || []);
+          (p.featureDelta.newPlannedFeatures || []).filter(c => selected.has(c.candidateId)).forEach(c => {
+            candidateState.features.push(ensureFeatureDefaults({ id: uid('f'), projectId: preview.projectId, pool: 'planned', status: 'planned', title: c.title, description: c.description, category: c.category, priority: c.priority, sourceType: 'mainchat-rollover', sourceChatId: oldChat.id, rolloverCandidateId: c.candidateId, sourceContext: c.sourceReason, createdAt: now, updatedAt: now }));
+          });
+          candidateState.mainChatRollovers.push({ id: uid('roll'), projectId: preview.projectId, sourceMainChatId: oldChat.id, targetMainChatId: newChatId, schemaVersion: MAINCHAT_ROLLOVER_SCHEMA_VERSION, selectedFeatureCandidateIds: Array.from(selected), skippedFeatureCandidateIds: (p.featureDelta.newPlannedFeatures || []).map(c => c.candidateId).filter(id => !selected.has(id)), createdAt: now, appliedAt: now });
+          const featureIds = new Set(candidateState.features.map(f => f && f.id).filter(Boolean));
+          if (featureIds.size !== candidateState.features.filter(Boolean).length) throw new Error('Doppelte Feature-ID im Kandidatenstand.');
+          S = candidateState;
+          await saveAsync();
+          return newChatId;
+        } catch (err) {
+          S = previousState;
+          renderView();
+          throw err;
+        } finally {
+          ui.mainChatRolloverCommitInFlight = false;
+        }
       }
 
       function getChatWorkflowHandoffState(projectId) {
@@ -5772,6 +6129,7 @@
         const seen = new Set(existingOpen.map(item => normalizeText(`${item.text}|${item.reason}|${item.source}`)));
         const nowIso = new Date().toISOString();
         if (!Array.isArray(S.unmatchedNotes)) S.unmatchedNotes = [];
+        if (!Array.isArray(S.mainChatRollovers)) S.mainChatRollovers = [];
         let added = 0;
         current.forEach(item => {
           const normalized = normalizeUnmatchedNote(Object.assign({}, item || {}, { source: 'multi-project-brainstorm', status: 'offen', createdAt: nowIso, updatedAt: nowIso }));
@@ -6887,6 +7245,30 @@
         ].join('\n');
       }
 
+
+      function renderMainChatRolloverPreview(preview) {
+        if (!preview.valid) return `<div class="notice notice-warn"><strong>Rollover ungültig:</strong><ul>${(preview.errors || []).map(e => `<li>${escapeHtml(e)}</li>`).join('')}</ul></div>`;
+        const p = preview.payload;
+        const selected = new Set(preview.selectedIds || []);
+        const project = S.projects.find(x => x && x.id === preview.projectId) || {};
+        const source = (S.chats || []).find(c => c && c.id === p.sourceMainChatId) || {};
+        const featureTitle = id => ((S.features || []).find(f => f && f.id === id && f.projectId === preview.projectId) || {}).title || 'Feature fehlt';
+        return `<div class="notice notice-info" style="margin-top:8px;">
+          <strong>Mutationsfreie Rollover-Preview</strong>
+          <div class="mini">Hauptchatwechsel: ${escapeHtml(source.title || source.id || '—')} → ${escapeHtml(p.newMainChat.title)} · URL: ${preview.externalChatUrl ? escapeHtml(preview.externalChatUrl) : '<span class="pill">needs-url</span>'}</div>
+          <div class="mini">Projekt vorher/nachher: Summary/Fokus/Nächster Schritt werden erst beim Confirm geändert. mainChatId: ${escapeHtml(project.mainChatId || '')} → neue lokale ID.</div>
+          <h4>Neue planned Feature-Kandidaten</h4>
+          ${(p.featureDelta.newPlannedFeatures || []).map(c => `<label style="display:block;margin:4px 0;"><input type="checkbox" class="rollover-feature-checkbox" data-candidate-id="${escapeAttr(c.candidateId)}" ${selected.has(c.candidateId) ? 'checked' : ''}> <strong>${escapeHtml(c.candidateId)}</strong> · ${escapeHtml(c.title)} <span class="mini">${escapeHtml(c.category)} · ${escapeHtml(c.priority)} · ${escapeHtml(c.confidence)}</span></label>`).join('') || '<div class="mini">Keine neuen Kandidaten.</div>'}
+          <h4>Bereits bekannte Feature-Referenzen</h4>
+          <ul>${(p.featureDelta.existingFeatureRefs || []).map(r => `<li>${escapeHtml(r.featureId)} · ${escapeHtml(featureTitle(r.featureId))}: ${escapeHtml(r.reason || '')}</li>`).join('') || '<li>Keine.</li>'}</ul>
+          <h4>Mögliche Updates (Preview-only)</h4>
+          <ul>${(p.featureDelta.possibleUpdates || []).map(u => `<li>${escapeHtml(u.featureId)} · ${escapeHtml(featureTitle(u.featureId))}: ${escapeHtml(u.reason || '')}</li>`).join('') || '<li>Keine.</li>'}</ul>
+          <h4>Unklare Kandidaten / Warnungen</h4>
+          <ul>${(p.featureDelta.ambiguousCandidates || []).map(a => `<li>${escapeHtml(a.candidateId)} · ${escapeHtml(a.title || '')}: ${escapeHtml(a.reason || '')}</li>`).concat((preview.warnings || []).map(w => `<li>Warnung: ${escapeHtml(w)}</li>`)).join('') || '<li>Keine.</li>'}</ul>
+          <h4>Geplanter Commit-Diff</h4><pre style="white-space:pre-wrap;">${escapeHtml(formatMainChatRolloverDiff(preview))}</pre>
+        </div>`;
+      }
+
       function renderProjectWorkspace() {
         // ── Empty state ──────────────────────────────────────────────────────
         if (ui.activeProjectId === ALL_PROJECTS_KEY || !S.projects.length) {
@@ -6922,6 +7304,7 @@
         const sourceChats = getProjectSourceChats(p.id);
         const chatWorkflow = getChatWorkflowState(p.id);
         const chatWorkflowHandoff = getChatWorkflowHandoffState(p.id);
+        const mainChatRollover = getMainChatRolloverState(p.id);
         const nextSprintMainchatHandoff = getNextSprintMainchatHandoffState(p.id);
         const chatWorkflowSource = sourceChats.find(c => c.id === chatWorkflow.sourceChatId) || null;
         const isArchivedProject = p.status === 'archiviert';
@@ -6974,10 +7357,11 @@
         }
 
         // ── DASHBOARD MODE (default) ──────────────────────────────────────────
-        const mainChatUrl = (p.mainChatUrl || '').trim();
+        const mainChatUrl = (p.mainChatUrl || '').trim() === 'needs-url' ? '' : (p.mainChatUrl || '').trim();
+        const mainChatNeedsUrl = !!(projectMainChat && projectMainChat.needsUrl);
         const driveUrl = (p.driveUrl || '').trim();
         const obsidianUrl = (p.obsidianUrl || '').trim();
-        const hasLinks = mainChatUrl || driveUrl || obsidianUrl;
+        const hasLinks = mainChatUrl || mainChatNeedsUrl || driveUrl || obsidianUrl;
         const chatStructure = getProjectChatStructure(p.id);
         const updatedAt = getProjectUpdatedAt(p);
         const mainChatLabel = projectMainChat ? (projectMainChat.title || 'Hauptchat vorhanden') : (chatStructure.hasMainChat ? 'Hauptchat vorhanden' : 'Kein Hauptchat');
@@ -7034,7 +7418,7 @@
             </div>
             ${hasLinks ? `
               <div class="stack-row">
-                ${mainChatUrl ? `<a href="${escapeAttr(mainChatUrl)}" target="_blank" rel="noopener" class="btn">💬 Hauptchat</a>` : `<button class="btn" data-enter-project-edit="${p.id}">+ Hauptchat hinzufügen</button>`}
+                ${mainChatUrl ? `<a href="${escapeAttr(mainChatUrl)}" target="_blank" rel="noopener" class="btn">💬 Hauptchat</a>` : (mainChatNeedsUrl ? `<button class="btn" data-enter-project-edit="${p.id}">needs-url: Hauptchat-URL eintragen</button>` : `<button class="btn" data-enter-project-edit="${p.id}">+ Hauptchat hinzufügen</button>`)}
                 ${driveUrl ? `<a href="${escapeAttr(driveUrl)}" target="_blank" rel="noopener" class="btn">📂 Drive</a>` : `<button class="btn" data-enter-project-edit="${p.id}">+ Drive hinzufügen</button>`}
                 ${obsidianUrl ? `<a href="${escapeAttr(obsidianUrl)}" target="_blank" rel="noopener" class="btn">🔮 Obsidian</a>` : `<button class="btn" data-enter-project-edit="${p.id}">+ Obsidian hinzufügen</button>`}
               </div>
@@ -7066,7 +7450,7 @@
                     </div>
                   ` : ''}
                   <div class="stack-row">
-                    ${c.url && c.url.trim() ? `<a href="${escapeAttr(c.url.trim())}" target="_blank" rel="noopener" class="btn">Öffnen</a>` : ''}
+                    ${c.url && c.url.trim() && c.url.trim() !== 'needs-url' ? `<a href="${escapeAttr(c.url.trim())}" target="_blank" rel="noopener" class="btn">Öffnen</a>` : (c.needsUrl ? '<span class="pill">needs-url</span>' : '')}
                     ${p.mainChatId !== c.id ? `<button class="btn" data-set-chat-main="${c.id}" ${isArchivedProject ? 'disabled' : ''}>Als Hauptchat markieren</button>` : '<span class="pill pill-gold">Kanonischer Hauptchat</span>'}
                     <button class="btn" data-use-chat-source="${c.id}" data-project-id="${p.id}" ${isArchivedProject ? 'disabled' : ''}>Prompt-Workflow wählen</button>
                     <button class="btn" data-edit-chat="${c.id}">Bearbeiten</button>
@@ -7192,6 +7576,7 @@
                   <button class="btn btn-ghost" id="btnChatWorkflowBuildReturn" ${isArchivedProject || !chatWorkflow.sourceChatId || !projectMainChat ? 'disabled' : ''}>Zum Hauptchat-Kontext zurück</button>
                   <button class="btn btn-ghost" id="btnChatWorkflowBuildBootstrap" ${isArchivedProject || !chatWorkflow.sourceChatId ? 'disabled' : ''}>Neuen Hauptchat-Kontext bauen</button>
                   <button class="btn btn-ghost" id="btnChatWorkflowBuildLegacyMainBootstrap" ${isArchivedProject ? 'disabled' : ''}>Legacy-Chat → Hauptchat-Bootstrap</button>
+                  <button class="btn btn-ghost" id="btnPrepareMainChatRollover" ${isArchivedProject || !projectMainChat ? 'disabled' : ''}>Hauptchat-Rollover vorbereiten</button>
                   <button class="btn btn-ghost" id="btnBuildClaudeDesignConceptPrompt" ${isArchivedProject ? 'disabled' : ''}>Claude-Design-Konzeptprompt erzeugen</button>
                 </div>
                 <div class="field" style="margin-top:8px;">
@@ -7202,6 +7587,23 @@
                     <button class="btn btn-secondary" id="btnImportMainChatBootstrapJson" ${isArchivedProject ? 'disabled' : ''}>Hauptchat-Bootstrap importieren</button>
                   </div>
                 </div>
+
+                <div class="field" style="margin-top:8px;">
+                  <label for="mainChatRolloverJsonInput">roadtrip-mainchat-rollover JSON importieren</label>
+                  <div class="mini" style="margin-bottom:6px;">Preview ist mutationsfrei. Commit erst nach Auswahl und expliziter Bestätigung. Leere URL wird als needs-url markiert.</div>
+                  <textarea id="mainChatRolloverJsonInput" style="min-height:150px;font-family:var(--font-mono);font-size:12px;" placeholder='{"schemaVersion":"roadtrip-mainchat-rollover-v1","type":"roadtrip-mainchat-rollover"}'>${escapeHtml(mainChatRollover.rawJson || '')}</textarea>
+                  <div class="field" style="margin-top:6px;"><label for="mainChatRolloverExternalUrl">Neue externe Hauptchat-URL (optional)</label><input id="mainChatRolloverExternalUrl" placeholder="https://... oder leer = needs-url" value="${escapeAttr(mainChatRollover.externalChatUrl || '')}" /></div>
+                  <div class="stack-row" style="margin-top:6px;">
+                    <button class="btn btn-secondary" id="btnPreviewMainChatRollover" ${isArchivedProject || !projectMainChat ? 'disabled' : ''}>Rollover-JSON validieren & Preview</button>
+                    <button class="btn btn-ghost" id="btnSelectAllRolloverFeatures" ${!mainChatRollover.preview || !mainChatRollover.preview.valid ? 'disabled' : ''}>Alle validen Kandidaten auswählen</button>
+                    <button class="btn btn-ghost" id="btnClearRolloverFeatures" ${!mainChatRollover.preview || !mainChatRollover.preview.valid ? 'disabled' : ''}>Alle abwählen</button>
+                    <button class="btn btn-primary" id="btnConfirmMainChatRollover" ${!mainChatRollover.preview || !mainChatRollover.preview.valid || isArchivedProject ? 'disabled' : ''}>Bestätigten Cutover committen</button>
+                  </div>
+                </div>
+                ${mainChatRollover.baselineJson ? `<div class="field"><label for="mainChatRolloverBaselineOutput">Rollover-Baseline</label><textarea id="mainChatRolloverBaselineOutput" style="min-height:160px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(mainChatRollover.baselineJson)}</textarea><button class="btn" id="btnCopyMainChatRolloverBaseline">Baseline kopieren</button></div>` : ''}
+                ${mainChatRollover.prompt ? `<div class="field"><label for="mainChatRolloverPromptOutput">Externer Rollover-Prompt</label><textarea id="mainChatRolloverPromptOutput" style="min-height:220px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(mainChatRollover.prompt)}</textarea><button class="btn" id="btnCopyMainChatRolloverPrompt">Rollover-Prompt kopieren</button></div>` : ''}
+                ${mainChatRollover.preview ? renderMainChatRolloverPreview(mainChatRollover.preview) : ''}
+
                 ${chatWorkflow.summary ? `<div class="notice notice-info" style="margin-top:8px;white-space:pre-wrap;">${escapeHtml(chatWorkflow.summary)}</div>` : ''}
               </details>
               <details class="sprint-advanced-zone">
@@ -14939,7 +15341,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
 
       function getStateLatestEntityTimestamp(state) {
         const st = (state && typeof state === 'object' && !Array.isArray(state)) ? state : {};
-        const arrays = ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes', 'pullRequests'];
+        const arrays = ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes', 'pullRequests', 'mainChatRollovers'];
         const fields = ['updatedAt', 'createdAt', 'importedAt', 'completedAt'];
         let newestMs = Number.NEGATIVE_INFINITY;
         arrays.forEach(key => {
@@ -14962,7 +15364,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
 
       function hasRoadtripUserData(state) {
         if (!state || typeof state !== 'object' || Array.isArray(state)) return false;
-        const arrays = ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes', 'pullRequests'];
+        const arrays = ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes', 'pullRequests', 'mainChatRollovers'];
         const hasEntityData = arrays.some(k => Array.isArray(state[k]) && state[k].some(item => item && typeof item === 'object'));
         const deletedIds = state.deletedIds && typeof state.deletedIds === 'object' && !Array.isArray(state.deletedIds) ? state.deletedIds : {};
         const hasTombstones = Object.keys(deletedIds).some(id => !!deletedIds[id]);
@@ -14976,7 +15378,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       function normalizeStateForSyncCompare(state) {
         const source = (state && typeof state === 'object' && !Array.isArray(state)) ? state : {};
         const normalized = {};
-        const arrayKeys = ['projects', 'features', 'notes', 'chats', 'analyses', 'importVersions', 'unmatchedNotes', 'pullRequests'];
+        const arrayKeys = ['projects', 'features', 'notes', 'chats', 'analyses', 'importVersions', 'unmatchedNotes', 'pullRequests', 'mainChatRollovers'];
         const normalizeValue = (value) => {
           if (Array.isArray(value)) return value.map(normalizeValue);
           if (value && typeof value === 'object') {
@@ -15036,7 +15438,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const merged = JSON.parse(JSON.stringify(opts.preferRemoteWhenLocalClean ? remoteBase : localBase));
         merged.deletedIds = mergeDeletedIds(localBase.deletedIds || {}, remoteBase.deletedIds || {});
         if (opts.preferRemoteWhenLocalClean) {
-          ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes'].forEach(entityType => {
+          ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes', 'mainChatRollovers'].forEach(entityType => {
             const list = Array.isArray(merged[entityType]) ? merged[entityType] : [];
             merged[entityType] = list.filter(item => item && item.id && !merged.deletedIds[item.id]);
           });
@@ -15084,7 +15486,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           merged[entityType] = Array.from(byId.values()).filter(item => item && item.id && !merged.deletedIds[item.id]);
         };
 
-        ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes'].forEach(mergeEntityArray);
+        ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes', 'mainChatRollovers'].forEach(mergeEntityArray);
         const localPullRequests = (localBase.pullRequests || []).filter(item => item && item.id && !merged.deletedIds[item.id]);
         const remotePullRequests = (remoteBase.pullRequests || []).filter(item => item && item.id && !merged.deletedIds[item.id]);
         merged.pullRequests = mergePullRequestsByKey(localPullRequests, remotePullRequests);
@@ -15583,12 +15985,16 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           });
           S.pullRequests = Array.from(byKey.values());
         }
+        if (selections.mainChatRollovers) {
+          S.mainChatRollovers = mergeArrayById(S.mainChatRollovers || [], incomingState.mainChatRollovers || [], 'id', null);
+        }
         S.projects = (S.projects || []).filter(p => !isDeleted(p.id));
         S.features = (S.features || []).filter(f => !isDeleted(f.id));
         S.notes = (S.notes || []).filter(n => !isDeleted(n.id));
         S.analyses = (S.analyses || []).filter(a => !isDeleted(a.id));
         S.chats = (S.chats || []).filter(c => !isDeleted(c.id));
         S.importVersions = (S.importVersions || []).filter(v => !isDeleted(v.id));
+        S.mainChatRollovers = (S.mainChatRollovers || []).filter(r => !isDeleted(r.id));
         ensureDefaults();
         save();
         renderAll();
@@ -15615,9 +16021,11 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         if (!Array.isArray(normalized.chats)) normalized.chats = [];
         if (!Array.isArray(normalized.importVersions)) normalized.importVersions = [];
         if (!Array.isArray(normalized.pullRequests)) normalized.pullRequests = [];
+        if (!Array.isArray(normalized.mainChatRollovers)) normalized.mainChatRollovers = [];
         if (!normalized.deletedIds || typeof normalized.deletedIds !== 'object' || Array.isArray(normalized.deletedIds)) normalized.deletedIds = {};
         normalized.features = normalized.features.map(ensureFeatureDefaults);
         normalized.pullRequests = normalized.pullRequests.map(ensurePullRequestDefaults);
+        normalized.mainChatRollovers = normalized.mainChatRollovers.filter(r => r && typeof r === 'object' && r.id);
         return normalized;
       }
 
@@ -15633,7 +16041,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           analyses: (normalized.analyses || []).length,
           chats: (normalized.chats || []).length,
           importVersions: (normalized.importVersions || []).length,
-          pullRequests: (normalized.pullRequests || []).length
+          pullRequests: (normalized.pullRequests || []).length,
+          mainChatRollovers: (normalized.mainChatRollovers || []).length
         };
         const modal = document.createElement('div');
         modal.id = 'importMergeModal';
@@ -15653,6 +16062,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
                 <span class="pill">Chats: ${counts.chats}</span>
                 <span class="pill">Importe: ${counts.importVersions}</span>
                 <span class="pill">Pull Requests: ${counts.pullRequests}</span>
+                <span class="pill">Rollover: ${counts.mainChatRollovers}</span>
               </div>
             </div>
             <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:16px;">
@@ -15665,6 +16075,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
                 <span class="pill">Chats: ${S.chats.length}</span>
                 <span class="pill">Importe: ${(S.importVersions || []).length}</span>
                 <span class="pill">Pull Requests: ${(S.pullRequests || []).length}</span>
+                <span class="pill">Rollover: ${(S.mainChatRollovers || []).length}</span>
               </div>
             </div>
             <div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:16px;">
@@ -15690,6 +16101,9 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
                 </label>
                 <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;letter-spacing:0;color:var(--ink);">
                   <input type="checkbox" id="mergePullRequests" checked style="width:16px;height:16px;"> Pull Requests (${counts.pullRequests})
+                </label>
+                <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;letter-spacing:0;color:var(--ink);">
+                  <input type="checkbox" id="mergeMainChatRollovers" checked style="width:16px;height:16px;"> Rollover-Protokolle (${counts.mainChatRollovers})
                 </label>
               </div>
               <div class="notice" style="margin-top:10px;font-size:12px;">Merge ist sicher: bestehende IDs und Titel werden nicht überschrieben. Nur neue Einträge werden hinzugefügt.</div>
@@ -15722,9 +16136,10 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
             analyses: modal.querySelector('#mergeAnalyses').checked,
             chats: modal.querySelector('#mergeChats').checked,
             importVersions: modal.querySelector('#mergeImportVersions').checked,
-            pullRequests: modal.querySelector('#mergePullRequests').checked
+            pullRequests: modal.querySelector('#mergePullRequests').checked,
+            mainChatRollovers: modal.querySelector('#mergeMainChatRollovers').checked
           };
-          if (!sel.projects && !sel.features && !sel.notes && !sel.analyses && !sel.chats && !sel.importVersions && !sel.pullRequests) {
+          if (!sel.projects && !sel.features && !sel.notes && !sel.analyses && !sel.chats && !sel.importVersions && !sel.pullRequests && !sel.mainChatRollovers) {
             return alert('Bitte mindestens einen Bereich auswählen.');
           }
           applySelectiveMerge(_importDraftData, sel);
@@ -16045,6 +16460,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           analysisCount: Array.isArray(source.analyses) ? source.analyses.length : 0,
           importVersionCount: Array.isArray(source.importVersions) ? source.importVersions.length : 0,
           pullRequestCount: Array.isArray(source.pullRequests) ? source.pullRequests.length : 0,
+          mainChatRolloverCount: Array.isArray(source.mainChatRollovers) ? source.mainChatRollovers.length : 0,
           deletedIdCount: source.deletedIds && typeof source.deletedIds === 'object' && !Array.isArray(source.deletedIds) ? Object.keys(source.deletedIds).length : 0
         };
       }
@@ -16065,6 +16481,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
             analyses: Array.isArray(S.analyses) ? S.analyses : [],
             importVersions: preparedImportVersions.clean,
             pullRequests: Array.isArray(S.pullRequests) ? S.pullRequests : [],
+            mainChatRollovers: Array.isArray(S.mainChatRollovers) ? S.mainChatRollovers : [],
             deletedIds: S.deletedIds && typeof S.deletedIds === 'object' && !Array.isArray(S.deletedIds) ? S.deletedIds : {}
           };
           const counts = getRoadtripEntityCounts(exportData);
@@ -16083,6 +16500,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
               analyses: 'analyses.json',
               importVersions: 'importVersions.json',
               pullRequests: 'pullRequests.json',
+              mainChatRollovers: 'mainChatRollovers.json',
               deletedIds: 'deletedIds.json'
             }
           };
@@ -16161,6 +16579,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           analyses: await parseZipJsonFile(zip, 'analyses.json', [], true),
           importVersions: await parseZipJsonFile(zip, 'importVersions.json', [], true),
           pullRequests: await parseZipJsonFile(zip, 'pullRequests.json', [], false),
+          mainChatRollovers: await parseZipJsonFile(zip, 'mainChatRollovers.json', [], false),
           deletedIds: await parseZipJsonFile(zip, 'deletedIds.json', {}, true)
         });
         applyRoadtripZipMeta(reconstructedS, meta);
@@ -16404,7 +16823,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       }
 
       function ensureProjectDefaults(project) {
-        return Object.assign({
+        const clone = Object.assign({
           id: uid('p'),
           title: '',
           type: APP_TYPES[0],
@@ -16425,6 +16844,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           lastSprintCompletedAt: '',
           lastCodeAnalysisCompletedAt: ''
         }, project || {});
+        if (String(clone.mainChatUrl || '').trim() === 'needs-url') clone.mainChatUrl = '';
+        return clone;
       }
 
       const CHAT_WORK_MODES = { agent: 'agent', learning: 'learning' };
@@ -16462,6 +16883,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         clone.recentWork = Array.isArray(clone.recentWork) ? clone.recentWork.map(x => String(x || '').trim()).filter(Boolean) : [];
         clone.openQuestions = Array.isArray(clone.openQuestions) ? clone.openQuestions.map(x => String(x || '').trim()).filter(Boolean) : [];
         clone.legacySourceNotes = Array.isArray(clone.legacySourceNotes) ? clone.legacySourceNotes.map(x => String(x || '').trim()).filter(Boolean) : [];
+        if (String(clone.url || '').trim() === 'needs-url') { clone.url = ''; clone.needsUrl = true; }
+        clone.needsUrl = !!clone.needsUrl;
         clone.mainChatPrompt = String(clone.mainChatPrompt || '');
         clone.learningMeta = Object.assign({
           learningsExtracted: false,
