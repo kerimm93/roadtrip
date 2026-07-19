@@ -2342,6 +2342,7 @@
         S.chats = S.chats.map(ensureChatDefaults);
         S.pullRequests = S.pullRequests.map(ensurePullRequestDefaults);
         S.mainChatRollovers = S.mainChatRollovers.filter(r => r && typeof r === 'object');
+        S.analyses = S.analyses.map(normalizeCleanupWorkbenchRunRecord).filter(Boolean);
         if (!ui.pullRequestImport || typeof ui.pullRequestImport !== 'object') ui.pullRequestImport = { rawText: '', candidates: [], projectId: '', repoFullName: '', assignmentPrompt: '', assignmentJson: '' };
         if (!Array.isArray(ui.pullRequestImport.candidates)) ui.pullRequestImport.candidates = [];
         if (typeof ui.pullRequestImport.projectId !== 'string') ui.pullRequestImport.projectId = '';
@@ -3149,6 +3150,7 @@
         qq('[data-import-dup-create]').forEach(btn => btn.addEventListener('click', () => createImportedFeatureDuplicateAsNew(btn.dataset.importDupCreate || '', 'Als neues planned Feature angelegt')));
         qq('[data-import-dup-later]').forEach(btn => btn.addEventListener('click', () => createImportedFeatureDuplicateAsNew(btn.dataset.importDupLater || '', 'Später prüfen')));
         qq('[data-cleanup-ignore]').forEach(btn => btn.addEventListener('click', () => ignoreCleanupProposal(+btn.dataset.cleanupIgnore)));
+        qq('[data-resume-cleanup-workbench-run]').forEach(btn => btn.addEventListener('click', () => resumeCleanupWorkbenchRun(btn.dataset.resumeCleanupWorkbenchRun)));
         qq('[data-restore-feature]').forEach(btn => btn.addEventListener('click', () => restoreFeatureFromTrash(btn.dataset.restoreFeature)));
 
         if ($('btnAddNotesWorkspaceNote')) $('btnAddNotesWorkspaceNote').addEventListener('click', addNotesWorkspaceNote);
@@ -9703,6 +9705,7 @@
               <button class="btn" id="btnCopyCleanupPrompt">Copy</button>
             </div>
           </div>
+          ${renderCleanupWorkbenchRunList()}
           ${renderCleanupReviewSection()}
         `;
       }
@@ -13094,6 +13097,220 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         renderView();
       }
 
+
+      const CLEANUP_WORKBENCH_ANALYSIS_TYPE = 'cleanup-workbench-p1';
+      const CLEANUP_WORKBENCH_SCHEMA_VERSION = 'roadtrip-cleanup-workbench-v1';
+      const CLEANUP_WORKBENCH_CASE_STATUSES = ['open', 'reviewed', 'keep-open', 'deferred', 'needs-browser-test', 'dedupe-decided', 'rejected', 'commit-ready', 'applied'];
+
+      function isCleanupWorkbenchRunRecord(record) {
+        return !!(record && record.type === CLEANUP_WORKBENCH_ANALYSIS_TYPE);
+      }
+
+      function normalizeCleanupWorkbenchCaseStatus(status) {
+        const value = String(status || '').trim();
+        return CLEANUP_WORKBENCH_CASE_STATUSES.includes(value) ? value : 'open';
+      }
+
+      function cloneCleanupWorkbenchJson(value, fallback) {
+        try { return JSON.parse(JSON.stringify(value == null ? fallback : value)); }
+        catch (_) { return fallback; }
+      }
+
+      function normalizeCleanupWorkbenchProposal(proposal, index, mode, usedCaseIds, usedPairIds, options) {
+        // Fresh model JSON is untrusted; only locally persisted runs may provide caseId/pairId.
+        const p = proposal && typeof proposal === 'object' && !Array.isArray(proposal) ? proposal : {};
+        const trustedLocal = !!(options && options.trustedLocal);
+
+        const validTypes = ['match-existing', 'update-existing', 'new-implemented-feature', 'new-feature', 'duplicate-of', 'probably-stale'];
+        const validConfidence = ['hoch', 'mittel', 'niedrig'];
+        const fallbackType = mode === 'project-dedupe' ? 'update-existing' : 'new-implemented-feature';
+        const normalized = {
+          _idx: index,
+          caseId: trustedLocal ? String(p.caseId || p._mainChatCaseId || '').trim() : '',
+          pairId: trustedLocal ? String(p.pairId || p._dedupePairId || '').trim() : '',
+          type: normalizeCleanupProposalType(validTypes.includes(p.type) ? p.type : fallbackType, mode),
+          targetFeatureId: String(p.targetFeatureId || '').trim(),
+          duplicateFeatureId: String(p.duplicateFeatureId || '').trim(),
+          featureId: String(p.featureId || '').trim(),
+          sourceFeatureId: String(p.sourceFeatureId || '').trim(),
+          incomingTitle: String(p.incomingTitle || '').trim(),
+          resolvedTitle: String(p.resolvedTitle || '').trim(),
+          resolvedDescription: String(p.resolvedDescription || '').trim(),
+          resolvedCategory: FEATURE_CATEGORIES.includes(String(p.resolvedCategory || '').trim()) ? String(p.resolvedCategory || '').trim() : '',
+          resolvedStatus: String(p.resolvedStatus || '').trim() ? resolveStatusForPool(p.resolvedStatus, isImplementedCleanupMode(mode) ? 'implemented' : 'planned') : '',
+          confidence: validConfidence.includes(String(p.confidence || '').trim()) ? String(p.confidence || '').trim() : 'mittel',
+          rationale: String(p.rationale || '').trim(),
+          changeSummary: String(p.changeSummary || '').trim(),
+          _done: false,
+          _queuedMainChat: false,
+          _queuedDedupe: false,
+          _reviewedOnly: false,
+          _ignored: false,
+          _mainChatCaseId: trustedLocal ? String(p._mainChatCaseId || p.caseId || '').trim() : '',
+          _dedupePairId: trustedLocal ? String(p._dedupePairId || p.pairId || '').trim() : ''
+        };
+        if (!normalized.caseId) normalized.caseId = buildCleanupReviewStableCaseId(normalized);
+        while (usedCaseIds.has(normalized.caseId)) normalized.caseId += '-' + cleanupReviewSlug(index + 1);
+        usedCaseIds.add(normalized.caseId);
+        normalized._mainChatCaseId = normalized.caseId;
+        if (normalized.type === 'duplicate-of' && normalized.targetFeatureId && normalized.duplicateFeatureId && normalized.targetFeatureId !== normalized.duplicateFeatureId) {
+          if (!normalized.pairId) normalized.pairId = 'dedupe-' + cleanupReviewSlug([normalized.targetFeatureId, normalized.duplicateFeatureId, index].join('-'));
+          while (usedPairIds.has(normalized.pairId)) normalized.pairId += '-' + cleanupReviewSlug(index + 1);
+          usedPairIds.add(normalized.pairId);
+          normalized._dedupePairId = normalized.pairId;
+        }
+        return normalized;
+      }
+
+      function normalizeCleanupWorkbenchRunRecord(record) {
+        if (!isCleanupWorkbenchRunRecord(record)) return record;
+        const now = new Date().toISOString();
+        const source = record.source && typeof record.source === 'object' && !Array.isArray(record.source) ? record.source : {};
+        const result = record.result && typeof record.result === 'object' && !Array.isArray(record.result) ? record.result : {};
+        const mode = String(source.cleanupMode || result.mode || record.mode || 'import-cleanup').trim() || 'import-cleanup';
+        const usedCaseIds = new Set();
+        const usedPairIds = new Set();
+        const proposals = Array.isArray(result.proposals) ? result.proposals.map((proposal, index) => normalizeCleanupWorkbenchProposal(proposal, index, mode, usedCaseIds, usedPairIds, { trustedLocal: true })) : [];
+        const cases = {};
+        const inputCases = record.reviewState && record.reviewState.cases && typeof record.reviewState.cases === 'object' && !Array.isArray(record.reviewState.cases) ? record.reviewState.cases : {};
+        proposals.forEach(proposal => {
+          const existing = inputCases[proposal.caseId] && typeof inputCases[proposal.caseId] === 'object' ? inputCases[proposal.caseId] : {};
+          cases[proposal.caseId] = {
+            status: normalizeCleanupWorkbenchCaseStatus(existing.status || existing.runStatus),
+            mainChatDecision: existing.mainChatDecision || null,
+            dedupeDecision: existing.dedupeDecision || null
+          };
+        });
+        return {
+          id: String(record.id || uid('analysis')),
+          type: CLEANUP_WORKBENCH_ANALYSIS_TYPE,
+          schemaVersion: CLEANUP_WORKBENCH_SCHEMA_VERSION,
+          projectId: String(record.projectId || source.projectId || '').trim(),
+          source: {
+            cleanupMode: mode,
+            sourceKind: String(source.sourceKind || 'cleanup-json').trim() || 'cleanup-json',
+            analysisId: String(source.analysisId || '').trim(),
+            importVersionId: String(source.importVersionId || '').trim(),
+            createdFrom: String(source.createdFrom || 'cleanup-review-import').trim()
+          },
+          result: {
+            summary: String(result.summary || '').trim(),
+            proposals,
+            openQuestions: Array.isArray(result.openQuestions) ? result.openQuestions.map(normalizeCleanupOpenQuestionEntry).filter(Boolean).slice(0, 30) : []
+          },
+          reviewState: {
+            runStatus: record.reviewState && record.reviewState.runStatus === 'completed' ? 'completed' : 'active',
+            cases,
+            mainChatDecision: (record.reviewState && record.reviewState.mainChatDecision) || null,
+            dedupeDecision: (record.reviewState && record.reviewState.dedupeDecision) || null
+          },
+          createdAt: String(record.createdAt || now),
+          updatedAt: String(record.updatedAt || now),
+          resumedAt: String(record.resumedAt || ''),
+          completedAt: String(record.completedAt || '')
+        };
+      }
+
+      function getCleanupWorkbenchRuns(projectId) {
+        return (S.analyses || []).map(normalizeCleanupWorkbenchRunRecord).filter(r => r && isCleanupWorkbenchRunRecord(r) && (!projectId || r.projectId === projectId)).sort((a,b) => (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || ''));
+      }
+
+      function findCleanupWorkbenchRun(id) {
+        return (S.analyses || []).find(r => r && r.id === id && isCleanupWorkbenchRunRecord(r)) || null;
+      }
+
+      function upsertCleanupWorkbenchRun(record) {
+        const normalized = normalizeCleanupWorkbenchRunRecord(record);
+        if (!normalized || !normalized.projectId) return null;
+        const idx = (S.analyses || []).findIndex(r => r && r.id === normalized.id && isCleanupWorkbenchRunRecord(r));
+        if (idx >= 0) S.analyses[idx] = normalized;
+        else S.analyses.push(normalized);
+        return normalized;
+      }
+
+      function createCleanupWorkbenchRunFromReview(parsed, proposals, openQuestions) {
+        const now = new Date().toISOString();
+        const mode = ui.cleanupReview.mode || 'import-cleanup';
+        const usedCaseIds = new Set();
+        const usedPairIds = new Set();
+        // Fresh Cleanup-JSON import: never trust runtime flags, _idx, caseId or pairId from the model payload.
+        const localProposals = Array.isArray(proposals)
+          ? proposals.map((proposal, index) => normalizeCleanupWorkbenchProposal(proposal, index, mode, usedCaseIds, usedPairIds, { trustedLocal: false }))
+          : [];
+        return upsertCleanupWorkbenchRun({
+          id: uid('analysis'),
+          type: CLEANUP_WORKBENCH_ANALYSIS_TYPE,
+          schemaVersion: CLEANUP_WORKBENCH_SCHEMA_VERSION,
+          projectId: ui.cleanupReview.projectId || getImportTargetProjectId(),
+          source: { cleanupMode: mode, sourceKind: 'cleanup-json', createdFrom: 'cleanup-review-import' },
+          result: { summary: String(parsed.summary || '').trim(), proposals: localProposals, openQuestions },
+          reviewState: { runStatus: 'active', cases: {}, mainChatDecision: null, dedupeDecision: null },
+          createdAt: now,
+          updatedAt: now,
+          resumedAt: '',
+          completedAt: ''
+        });
+      }
+
+      function hydrateCleanupReviewFromWorkbenchRun(run) {
+        const record = normalizeCleanupWorkbenchRunRecord(run);
+        const result = record.result || {};
+        ui.cleanupReview.projectId = record.projectId || '';
+        ui.cleanupReview.incomingFeatures = [];
+        ui.cleanupReview.rawAnalysisJson = '';
+        ui.cleanupReview.mode = (record.source && record.source.cleanupMode) || 'import-cleanup';
+        ui.cleanupReview.summary = result.summary || '';
+        ui.cleanupReview.openQuestions = cloneCleanupWorkbenchJson(result.openQuestions, []);
+        // Local run hydration keeps locally generated IDs but revives no Patch-1 runtime flags.
+        ui.cleanupReview.proposals = cloneCleanupWorkbenchJson(result.proposals, []).map((proposal, index) => {
+          proposal._idx = index;
+          proposal._done = false;
+          proposal._queuedMainChat = false;
+          proposal._queuedDedupe = false;
+          proposal._reviewedOnly = false;
+          proposal._ignored = false;
+          proposal._mainChatCaseId = proposal.caseId || proposal._mainChatCaseId || '';
+          proposal._dedupePairId = proposal.pairId || proposal._dedupePairId || '';
+          return proposal;
+        });
+        ui.cleanupReview.clarificationPrompt = '';
+        ui.cleanupReview.mainChatReturnJson = '';
+        ui.cleanupReview.dedupePrompt = '';
+        ui.cleanupReview.dedupeReturnJson = '';
+        ui.cleanupReview.mainChatDecisionPreview = null;
+        ui.cleanupReview.dedupeDecisionPreview = null;
+        ui.cleanupReview.visible = true;
+        ui.cleanupReview.versionLogged = true;
+        ui.cleanupReview.activeRunId = record.id;
+      }
+
+      function resumeCleanupWorkbenchRun(id) {
+        const run = findCleanupWorkbenchRun(id);
+        if (!run) return alert('Cleanup-Run nicht gefunden.');
+        const now = new Date().toISOString();
+        run.resumedAt = now;
+        run.updatedAt = now;
+        const normalized = upsertCleanupWorkbenchRun(run);
+        hydrateCleanupReviewFromWorkbenchRun(normalized);
+        save();
+        renderView();
+      }
+
+      function renderCleanupWorkbenchRunList() {
+        const projectId = getImportTargetProjectId() || (ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '');
+        if (!projectId) return '';
+        const runs = getCleanupWorkbenchRuns(projectId);
+        const rows = runs.map(run => {
+          const proposals = (run.result && run.result.proposals) || [];
+          const openQuestions = (run.result && run.result.openQuestions) || [];
+          const status = run.reviewState && run.reviewState.runStatus === 'completed' ? 'completed' : 'active';
+          const title = run.source && run.source.cleanupMode ? run.source.cleanupMode : 'Cleanup-Run';
+          const ts = run.updatedAt || run.createdAt || '';
+          return `<div class="item"><div class="row-top"><strong>${escapeHtml(title)}</strong><span class="pill pill-info">${escapeHtml(status)}</span></div><div class="mini">${escapeHtml(ts || 'ohne Zeitpunkt')} · ${proposals.length} Vorschläge · ${openQuestions.length} offene Fragen</div><div class="stack-row" style="margin-top:8px;"><button class="btn btn-secondary" data-resume-cleanup-workbench-run="${escapeAttr(run.id)}">Wieder aufnehmen</button></div></div>`;
+        }).join('');
+        return `<section class="cleanup-review-stage" aria-label="Gespeicherte Cleanup-Runs"><div class="cleanup-review-stage-head"><h3 class="cleanup-review-stage-title">Gespeicherte Cleanup-Runs</h3><span class="pill pill-outline">${runs.length}</span></div>${runs.length ? `<div class="list">${rows}</div>` : '<div class="notice">Noch keine gespeicherten Cleanup-Runs für dieses Projekt.</div>'}</section>`;
+      }
+
       function normalizeCleanupOpenQuestionEntry(entry) {
         if (typeof entry === 'string') return entry.trim();
         if (!entry || typeof entry !== 'object') return '';
@@ -13114,35 +13331,18 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         try { parsed = JSON.parse(extractJsonObjectFromText(raw)); } catch (e) {
           return alert('Kein gültiges JSON erkannt: ' + e.message);
         }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return alert('Ungültige Cleanup-JSON-Struktur. Erwartet wird ein JSON-Objekt.');
         const proposals = Array.isArray(parsed.proposals) ? parsed.proposals : [];
         const parsedOpenQuestions = Array.isArray(parsed.openQuestions) ? parsed.openQuestions.map(normalizeCleanupOpenQuestionEntry).filter(Boolean).slice(0, 30) : [];
-        if (!proposals.length && !parsedOpenQuestions.length) return alert('Keine Vorschläge oder openQuestions im JSON gefunden.');
-        const validTypes = ['match-existing', 'update-existing', 'new-implemented-feature', 'new-feature', 'duplicate-of', 'probably-stale'];
-        const validConfidence = ['hoch', 'mittel', 'niedrig'];
-        const fallbackType = ui.cleanupReview.mode === 'project-dedupe' ? 'update-existing' : 'new-implemented-feature';
-        ui.cleanupReview.proposals = proposals.map((p, i) => ({
-          _idx: i,
-          type: normalizeCleanupProposalType(validTypes.includes(p.type) ? p.type : fallbackType, ui.cleanupReview.mode),
-          targetFeatureId: String(p.targetFeatureId || '').trim(),
-          duplicateFeatureId: String(p.duplicateFeatureId || '').trim(),
-          featureId: String(p.featureId || '').trim(),
-          sourceFeatureId: String(p.sourceFeatureId || '').trim(),
-          incomingTitle: String(p.incomingTitle || '').trim(),
-          resolvedTitle: String(p.resolvedTitle || '').trim(),
-          resolvedDescription: String(p.resolvedDescription || '').trim(),
-          resolvedCategory: FEATURE_CATEGORIES.includes(String(p.resolvedCategory || '').trim()) ? String(p.resolvedCategory || '').trim() : '',
-          resolvedStatus: String(p.resolvedStatus || '').trim() ? resolveStatusForPool(p.resolvedStatus, isImplementedCleanupMode(ui.cleanupReview.mode) ? 'implemented' : 'planned') : '',
-          confidence: validConfidence.includes(String(p.confidence || '').trim()) ? String(p.confidence || '').trim() : 'mittel',
-          rationale: String(p.rationale || '').trim(),
-          changeSummary: String(p.changeSummary || '').trim(),
-          _done: false,
-          _queuedMainChat: false,
-          _queuedDedupe: false,
-          _mainChatCaseId: '',
-          _dedupePairId: ''
-        }));
-        ui.cleanupReview.summary = String(parsed.summary || '').trim();
-        ui.cleanupReview.openQuestions = parsedOpenQuestions;
+        const legacyRawAnalysisJson = ui.cleanupReview.rawAnalysisJson || '';
+        const legacyIncomingFeatures = Array.isArray(ui.cleanupReview.incomingFeatures) ? ui.cleanupReview.incomingFeatures.slice() : [];
+        const legacyVersionLogged = ui.cleanupReview.versionLogged === true;
+        const run = createCleanupWorkbenchRunFromReview(parsed, proposals, parsedOpenQuestions);
+        if (!run) return alert('Cleanup-Run konnte nicht gespeichert werden. Bitte Projekt-Auswahl prüfen.');
+        hydrateCleanupReviewFromWorkbenchRun(run);
+        ui.cleanupReview.rawAnalysisJson = legacyRawAnalysisJson;
+        ui.cleanupReview.incomingFeatures = legacyIncomingFeatures;
+        ui.cleanupReview.versionLogged = legacyVersionLogged;
         ui.cleanupReview.clarificationPrompt = '';
         ui.cleanupReview.mainChatReturnJson = '';
         ui.cleanupReview.dedupePrompt = '';
@@ -13150,6 +13350,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         ui.cleanupReview.mainChatDecisionPreview = null;
         ui.cleanupReview.dedupeDecisionPreview = null;
         ui.cleanupReview.visible = true;
+        save();
         if (
           !ui.cleanupReview.versionLogged &&
           ui.cleanupReview.mode === 'import-cleanup' &&
