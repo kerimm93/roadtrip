@@ -331,3 +331,30 @@ flowchart LR
 ---
 
 *Roadtrip · Architektur · Atlas-Skin · Sprint 25*
+
+## Persistente Cleanup-Workbench (`roadtrip-cleanup-run-v1`)
+
+Der Cleanup-Workbench-MVP ergänzt den Roadtrip-State additiv um `cleanupRuns: []`.
+Runs sind projektgebundene Root-Entities mit identischen `id`/`runId`-Werten,
+Status `active|completed`, Quellenbindung (`source.kind`, nicht-kryptografischer
+`source.inputFingerprint`, `source.inputLength`, `source.validationState`,
+`source.capturedAt`), kleiner Baseline und normalisierten Fällen. Ältere States
+ohne Feld werden auf `[]` normalisiert.
+
+Fälle enthalten stabile `caseId`/optionale `pairId`, Featurebindungen, kleine
+Feature-Baselines, Analysezusammenfassung, validierte Hauptchat- und Dedupe-
+Entscheidungen, menschliche Entscheidung, Status, nächste Aktion und Fehlerfelder.
+Unbrauchbare Runs werden nicht als Workbench angezeigt; unbekannte Statuswerte
+fallen auf `open`/`review` zurück.
+
+Persistenzintegration: regulärer JSON-Import/Export, selektiver Merge, Tombstone-
+Filter, ZIP-Backup (`cleanupRuns.json`), ZIP-Restore, Entity-Counts,
+Sync-Normalisierung, Gist-Merge, Latest-Timestamp/User-Data-Erkennung und
+projektbezogene Löschung behandeln `cleanupRuns` als eigenständigen Bereich. Der
+Gist-Merge löst Konflikte auf Run-Ebene per Last-write-wins; feldweiser Fall-Merge
+ist bewusst kein MVP-Bestandteil.
+
+Mutationsgrenze: Menschliche Reviewentscheidungen und strukturierte Dedupe-
+Entscheidungen ändern keine Features. `update-existing` nutzt ausschließlich den
+bestehenden Preview-/Batch-/Drift-/Confirm-/Commitpfad für `title`, `description`
+und `category`; Dedupe bleibt vollständig mutationsfrei.

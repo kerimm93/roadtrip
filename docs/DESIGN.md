@@ -566,3 +566,17 @@ Empty-State-Texte:
 ---
 
 *Roadtrip · DESIGN.md · Atlas-Skin als historische Designbasis · aktualisiert 2026-07-18*
+
+### Implementierter Cleanup-Workbench-MVP ab 2026-07-19
+
+Der Import/Cleanup-Bereich zeigt nun einen persistenten projektbezogenen Cleanup-
+Run mit Erstell-/Aktualisierungszeit, Runstatus, Fallstatus-Zählern, Statusfilter
+und Fallkarten. Fallkarten trennen sichtbar Review-/Preview-Informationen von
+Featuremutationen und legen längere Baselines, Analysegründe und validierte
+Entscheidungen in `details`/`summary` ab. Menschliche Entscheidungen werden als
+kleine sekundäre Aktionen angeboten und bleiben mutationsfrei.
+
+Parse-Diagnostik unterscheidet sichtbar `Ungültiges JSON`, lokal ungültiges aber
+parsebares JSON, gültige leere Ergebnisse und gültige verarbeitbare Ergebnisse.
+Der Dedupe-Bereich bleibt Preview-/Review-only; echte Featureänderungen bleiben an
+den engen bestehenden Confirm-/Commit-Diff gebunden.

@@ -2158,6 +2158,7 @@
           pullRequests: [],
           unmatchedNotes: [],
           mainChatRollovers: [],
+          cleanupRuns: [],
           deletedIds: {}
         };
       }
@@ -2333,6 +2334,7 @@
         if (!Array.isArray(S.pullRequests)) S.pullRequests = [];
         if (!Array.isArray(S.unmatchedNotes)) S.unmatchedNotes = [];
         if (!Array.isArray(S.mainChatRollovers)) S.mainChatRollovers = [];
+        if (!Array.isArray(S.cleanupRuns)) S.cleanupRuns = [];
         if (!S.deletedIds || typeof S.deletedIds !== 'object' || Array.isArray(S.deletedIds)) S.deletedIds = {};
         if (!S._lastLocalSaveAt && S._lastExported) S._lastLocalSaveAt = S._lastExported;
         if (!S._lastGistPushAt && S._lastExported) S._lastGistPushAt = S._lastExported;
@@ -2342,6 +2344,7 @@
         S.chats = S.chats.map(ensureChatDefaults);
         S.pullRequests = S.pullRequests.map(ensurePullRequestDefaults);
         S.mainChatRollovers = S.mainChatRollovers.filter(r => r && typeof r === 'object');
+        S.cleanupRuns = normalizeCleanupRuns(S.cleanupRuns, S);
         if (!ui.pullRequestImport || typeof ui.pullRequestImport !== 'object') ui.pullRequestImport = { rawText: '', candidates: [], projectId: '', repoFullName: '', assignmentPrompt: '', assignmentJson: '' };
         if (!Array.isArray(ui.pullRequestImport.candidates)) ui.pullRequestImport.candidates = [];
         if (typeof ui.pullRequestImport.projectId !== 'string') ui.pullRequestImport.projectId = '';
@@ -2510,6 +2513,7 @@
 
 
       async function saveAsync() {
+        if (window.__roadtripTestSaveAsync) return window.__roadtripTestSaveAsync(S);
         if (!window.__roadtripSaveAlertState || typeof window.__roadtripSaveAlertState !== 'object') window.__roadtripSaveAlertState = { lastType: '', lastAt: 0 };
         const classifySaveError = (err, stage) => {
           const message = String((err && err.message) || '');
@@ -2758,6 +2762,7 @@
       }
 
       function renderView() {
+        if (window.__roadtripSuppressRender) return;
         if (typeof cleanupMermaidArtifacts === 'function') cleanupMermaidArtifacts();
         const c = $('viewContainer');
         if (ui.view === 'overview') c.innerHTML = renderOverview();
@@ -3127,6 +3132,7 @@
         if ($('btnCopyCleanupMainChatClarificationPrompt')) $('btnCopyCleanupMainChatClarificationPrompt').addEventListener('click', () => copyPrompt('cleanupMainChatClarificationPromptOutput'));
         if ($('cleanupMainChatReturnJsonInput')) $('cleanupMainChatReturnJsonInput').addEventListener('input', e => { ui.cleanupReview.mainChatReturnJson = e.target.value; invalidateCleanupMainChatDecisionPreview('Textarea wurde nach der Prüfung geändert. Bitte erneut prüfen.'); updateCleanupMainChatDecisionPreviewContainer(); });
         if ($('cleanupDedupeReturnJsonInput')) $('cleanupDedupeReturnJsonInput').addEventListener('input', e => { ui.cleanupReview.dedupeReturnJson = e.target.value; ui.cleanupReview.dedupeDecisionPreview = null; });
+        if ($('cleanupWorkbenchStatusFilter')) $('cleanupWorkbenchStatusFilter').addEventListener('change', e => { ui.cleanupReview.statusFilter = e.target.value || 'all'; renderView(); });
         if ($('btnCheckCleanupMainChatReturnJson')) $('btnCheckCleanupMainChatReturnJson').addEventListener('click', checkCleanupMainChatReturnJson);
         bindCleanupMainChatDecisionPreviewControls();
         if ($('btnResetCleanupMainChatReturnJson')) $('btnResetCleanupMainChatReturnJson').addEventListener('click', resetCleanupMainChatReturnJson);
@@ -3143,6 +3149,8 @@
         qq('[data-cleanup-mark-duplicate]').forEach(btn => btn.addEventListener('click', () => markCleanupProposalAsDuplicate(+btn.dataset.cleanupMarkDuplicate)));
         qq('[data-cleanup-queue-mainchat]').forEach(btn => btn.addEventListener('click', () => queueCleanupProposalForMainChat(+btn.dataset.cleanupQueueMainchat)));
         qq('[data-cleanup-queue-dedupe]').forEach(btn => btn.addEventListener('click', () => queueCleanupProposalForDedupe(+btn.dataset.cleanupQueueDedupe)));
+        qq('[data-cleanup-human-decision]').forEach(btn => btn.addEventListener('click', () => setCleanupWorkbenchHumanDecision(btn.dataset.runId || '', btn.dataset.caseId || '', btn.dataset.cleanupHumanDecision || '').catch(err => alert(err && err.message ? err.message : err))));
+        qq('[data-cleanup-run-status]').forEach(btn => btn.addEventListener('click', () => setCleanupWorkbenchRunStatus(btn.dataset.runId || '', btn.dataset.cleanupRunStatus || '').catch(err => alert(err && err.message ? err.message : err))));
         qq('[data-import-dup-ignore]').forEach(btn => btn.addEventListener('click', () => ignoreImportedFeatureDuplicate(btn.dataset.importDupIgnore || '')));
         qq('[data-import-dup-fill]').forEach(btn => btn.addEventListener('click', () => fillImportedFeatureDuplicateEmptyFields(btn.dataset.importDupFill || '')));
         qq('[data-import-dup-adopt]').forEach(btn => btn.addEventListener('click', () => adoptImportedFeatureDuplicateCandidate(btn.dataset.importDupAdopt || '')));
@@ -10451,6 +10459,7 @@
         (S.importVersions || []).forEach(v => { if (v && v.projectId === id && v.id) deletedProjectIds.add(v.id); });
         (S.analyses || []).forEach(a => { if (a && a.projectId === id && a.id) deletedProjectIds.add(a.id); });
         (S.mainChatRollovers || []).forEach(r => { if (r && r.projectId === id && r.id) deletedProjectIds.add(r.id); });
+        (S.cleanupRuns || []).forEach(r => { if (r && r.projectId === id && r.id) deletedProjectIds.add(r.id); });
         deletedProjectIds.forEach(recordDeletion);
         S.projects = S.projects.filter(x => x.id !== id);
         S.features = S.features.filter(f => f.projectId !== id);
@@ -10459,6 +10468,7 @@
         S.importVersions = (S.importVersions || []).filter(v => v.projectId !== id);
         S.analyses = (S.analyses || []).filter(a => a.projectId !== id);
         S.mainChatRollovers = (S.mainChatRollovers || []).filter(r => r.projectId !== id);
+        S.cleanupRuns = (S.cleanupRuns || []).filter(r => r.projectId !== id);
         ui.projectEditMode = false;
         ui.editingProjectId = null;
         ui.activeProjectId = S.projects.length ? S.projects[0].id : ALL_PROJECTS_KEY;
@@ -13107,22 +13117,153 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         return parts.join(' · ');
       }
 
-      function loadCleanupReviewProposals() {
+
+      const CLEANUP_RUN_SCHEMA_VERSION = 'roadtrip-cleanup-run-v1';
+      const CLEANUP_RUN_STATUSES = ['active', 'completed'];
+      const CLEANUP_CASE_STATUSES = ['open', 'reviewed', 'kept-open', 'deferred', 'browser-test-needed', 'dedupe-decision-recorded', 'not-adopted', 'commit-ready', 'applied'];
+      const CLEANUP_NEXT_ACTIONS = ['review', 'main-chat-review', 'dedupe-review', 'project-decision', 'browser-test', 'commit', 'none'];
+      const CLEANUP_HUMAN_DECISIONS = ['keep-open', 'defer', 'needs-browser-test', 'needs-project-decision', 'reject-analysis-finding'];
+      const CLEANUP_HUMAN_DECISION_TRANSITIONS = {
+        'keep-open': { status: 'kept-open', nextAction: 'review' },
+        'defer': { status: 'deferred', nextAction: 'review' },
+        'needs-browser-test': { status: 'browser-test-needed', nextAction: 'browser-test' },
+        'needs-project-decision': { status: 'kept-open', nextAction: 'project-decision' },
+        'reject-analysis-finding': { status: 'not-adopted', nextAction: 'none' }
+      };
+
+      function cloneForCleanupWorkbench(value) { return JSON.parse(JSON.stringify(value == null ? null : value)); }
+      function cleanupRunFingerprint(text) {
+        const raw = String(text || '');
+        let hash = 2166136261;
+        for (let i = 0; i < raw.length; i++) { hash ^= raw.charCodeAt(i); hash = Math.imul(hash, 16777619); }
+        return 'noncrypto-fnv1a32-' + (hash >>> 0).toString(16).padStart(8, '0');
+      }
+      function cleanupFeatureBaseline(feature) {
+        if (!feature || typeof feature !== 'object') return null;
+        return { id: String(feature.id || ''), title: String(feature.title || ''), description: String(feature.description || ''), category: String(feature.category || ''), status: String(feature.status || ''), pool: String(feature.pool || ''), updatedAt: String(feature.updatedAt || '') };
+      }
+      function normalizeCleanupCaseStatus(value) { return CLEANUP_CASE_STATUSES.includes(value) ? value : 'open'; }
+      function normalizeCleanupNextAction(value) { return CLEANUP_NEXT_ACTIONS.includes(value) ? value : 'review'; }
+      function normalizeCleanupRunStatus(value) { return CLEANUP_RUN_STATUSES.includes(value) ? value : 'active'; }
+      function normalizeCleanupRunCase(c, state, runProjectId) {
+        if (!c || typeof c !== 'object') return null;
+        const id = String(c.id || c.caseId || '').trim();
+        if (!id) return null;
+        const featureId = String(c.featureId || '').trim();
+        const duplicateFeatureId = String(c.duplicateFeatureId || '').trim();
+        const projectFeatures = Array.isArray(state && state.features) ? state.features : [];
+        if (featureId && !projectFeatures.some(f => f && f.id === featureId && f.projectId === runProjectId)) return null;
+        if (duplicateFeatureId && !projectFeatures.some(f => f && f.id === duplicateFeatureId && f.projectId === runProjectId)) return null;
+        return Object.assign({}, c, {
+          id, caseId: String(c.caseId || id), pairId: String(c.pairId || ''), kind: String(c.kind || (c.pairId ? 'dedupe-pair' : 'proposal')),
+          proposalType: String(c.proposalType || c.type || ''), featureId, duplicateFeatureId,
+          baseline: c.baseline && typeof c.baseline === 'object' ? c.baseline : {}, analysis: c.analysis && typeof c.analysis === 'object' ? c.analysis : {},
+          validatedMainChatDecision: c.validatedMainChatDecision || null, validatedDedupeDecision: c.validatedDedupeDecision || null,
+          humanDecision: CLEANUP_HUMAN_DECISIONS.includes(c.humanDecision) ? c.humanDecision : '',
+          status: normalizeCleanupCaseStatus(c.status), nextAction: normalizeCleanupNextAction(c.nextAction), lastError: String(c.lastError || ''),
+          createdAt: String(c.createdAt || c.updatedAt || new Date().toISOString()), updatedAt: String(c.updatedAt || c.createdAt || new Date().toISOString()), appliedAt: String(c.appliedAt || '')
+        });
+      }
+      function normalizeCleanupRuns(runs, state) {
+        const activeByProject = new Set();
+        return (Array.isArray(runs) ? runs : []).map(r => {
+          if (!r || typeof r !== 'object') return null;
+          const id = String(r.id || r.runId || '').trim();
+          const projectId = String(r.projectId || '').trim();
+          if (!id || !projectId) return null;
+          let status = normalizeCleanupRunStatus(r.status);
+          if (status === 'active') { if (activeByProject.has(projectId)) status = 'completed'; else activeByProject.add(projectId); }
+          const cases = (Array.isArray(r.cases) ? r.cases : []).map(c => normalizeCleanupRunCase(c, state || S, projectId)).filter(Boolean);
+          if (!cases.length) return null;
+          return Object.assign({}, r, { id, runId: id, schemaVersion: CLEANUP_RUN_SCHEMA_VERSION, projectId, status, source: r.source && typeof r.source === 'object' ? r.source : {}, baseline: r.baseline && typeof r.baseline === 'object' ? r.baseline : {}, summary: r.summary && typeof r.summary === 'object' ? r.summary : { text: String(r.summary || '') }, cases, createdAt: String(r.createdAt || r.updatedAt || new Date().toISOString()), updatedAt: String(r.updatedAt || r.createdAt || new Date().toISOString()), completedAt: status === 'completed' ? String(r.completedAt || '') : '' });
+        }).filter(Boolean);
+      }
+      function getActiveCleanupRun(projectId) { return (S.cleanupRuns || []).find(r => r && r.projectId === projectId && r.status === 'active') || null; }
+      function projectCleanupFeatures(projectId) { return (S.features || []).filter(f => f && f.projectId === projectId); }
+      function createCleanupRunFromParsed(projectId, mode, parsed, raw) {
+        const now = new Date().toISOString();
+        const featureById = new Map(projectCleanupFeatures(projectId).map(f => [f.id, f]));
+        const proposals = Array.isArray(parsed.proposals) ? parsed.proposals : [];
+        const openQuestions = Array.isArray(parsed.openQuestions) ? parsed.openQuestions.map(normalizeCleanupOpenQuestionEntry).filter(Boolean).slice(0, 30) : [];
+        const runId = uid('cleanup-run');
+        const cases = proposals.map((pr, i) => {
+          const fId = String(pr.targetFeatureId || pr.featureId || '').trim();
+          const dId = String(pr.duplicateFeatureId || '').trim();
+          const pairId = dId ? buildCleanupReviewStablePairId({ target: featureById.get(fId), duplicate: featureById.get(dId) }, Object.assign({_idx:i}, pr)) : '';
+          const caseId = buildCleanupReviewStableCaseId(Object.assign({_idx:i}, pr));
+          return { id: caseId, caseId, pairId, kind: pairId ? 'dedupe-pair' : 'proposal', proposalType: String(pr.type || '').trim(), featureId: fId, duplicateFeatureId: dId, baseline: { feature: cleanupFeatureBaseline(featureById.get(fId)), duplicateFeature: cleanupFeatureBaseline(featureById.get(dId)) }, analysis: { title: String(pr.resolvedTitle || pr.incomingTitle || '').trim(), rationale: String(pr.rationale || '').trim(), changeSummary: String(pr.changeSummary || '').trim(), confidence: String(pr.confidence || '').trim(), proposedTitle: String(pr.resolvedTitle || '').trim(), proposedDescription: String(pr.resolvedDescription || '').trim(), proposedCategory: String(pr.resolvedCategory || '').trim(), proposedStatus: String(pr.resolvedStatus || '').trim() }, validatedMainChatDecision: null, validatedDedupeDecision: null, humanDecision: '', status: 'open', nextAction: pairId ? 'dedupe-review' : 'review', lastError: '', createdAt: now, updatedAt: now, appliedAt: '' };
+        }).concat(openQuestions.map((q, i) => { const caseId = buildCleanupReviewStableOpenQuestionCaseId(q, i); return { id: caseId, caseId, pairId: '', kind: 'open-question', proposalType: 'open-question', featureId: '', duplicateFeatureId: '', baseline: {}, analysis: { title: 'Open Question', rationale: q, changeSummary: '', confidence: '', question: q }, validatedMainChatDecision: null, validatedDedupeDecision: null, humanDecision: '', status: 'open', nextAction: 'review', lastError: '', createdAt: now, updatedAt: now, appliedAt: '' }; }));
+        return { id: runId, runId, schemaVersion: CLEANUP_RUN_SCHEMA_VERSION, projectId, mode: mode || 'import-cleanup', status: 'active', source: { kind: mode || 'import-cleanup', inputFingerprint: cleanupRunFingerprint(raw), inputLength: String(raw || '').length, validationState: 'valid-content', capturedAt: now }, baseline: { projectId, featureCount: featureById.size }, summary: { text: String(parsed.summary || '').trim(), proposalCount: proposals.length, openQuestionCount: openQuestions.length }, cases, createdAt: now, updatedAt: now, completedAt: '' };
+      }
+      function projectCleanupProposalValidation(parsed, projectId, mode) {
+        const errors = [];
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) errors.push('Top-Level muss ein JSON-Objekt sein.');
+        const proposals = parsed && Array.isArray(parsed.proposals) ? parsed.proposals : null;
+        if (parsed && !Array.isArray(parsed.proposals)) errors.push('proposals muss ein Array sein.');
+        if (parsed && parsed.openQuestions != null && !Array.isArray(parsed.openQuestions)) errors.push('openQuestions muss optional ein Array sein.');
+        const validTypes = ['match-existing', 'update-existing', 'new-implemented-feature', 'new-feature', 'duplicate-of', 'probably-stale'];
+        const validConfidence = ['hoch', 'mittel', 'niedrig', ''];
+        const projectFeatureIds = new Set(projectCleanupFeatures(projectId).map(f => f.id));
+        (proposals || []).forEach((pr, i) => {
+          if (!pr || typeof pr !== 'object' || Array.isArray(pr)) { errors.push('proposals[' + i + '] muss ein Objekt sein.'); return; }
+          if (!validTypes.includes(String(pr.type || '').trim())) errors.push('proposals[' + i + '].type ist unbekannt.');
+          ['targetFeatureId','duplicateFeatureId','featureId','sourceFeatureId','incomingTitle','resolvedTitle','resolvedDescription','resolvedCategory','resolvedStatus','changeSummary','confidence','rationale'].forEach(k => { if (pr[k] != null && typeof pr[k] !== 'string') errors.push('proposals[' + i + '].' + k + ' muss ein String sein.'); });
+          if (pr.confidence != null && !validConfidence.includes(String(pr.confidence || '').trim())) errors.push('proposals[' + i + '].confidence ist ungültig.');
+          if (pr.resolvedCategory != null && String(pr.resolvedCategory).trim() && !FEATURE_CATEGORIES.includes(String(pr.resolvedCategory).trim())) errors.push('proposals[' + i + '].resolvedCategory ist ungültig.');
+          const ids = [pr.targetFeatureId, pr.duplicateFeatureId, pr.featureId].map(x => String(x || '').trim()).filter(Boolean);
+          ids.forEach(fid => { if (!projectFeatureIds.has(fid)) errors.push('proposals[' + i + '] verweist auf fremde oder fehlende Feature-ID ' + fid + '.'); });
+        });
+        return { valid: !errors.length, errors, empty: !!parsed && Array.isArray(parsed.proposals) && parsed.proposals.length === 0 && (!Array.isArray(parsed.openQuestions) || parsed.openQuestions.length === 0) };
+      }
+      function diagnoseRoadtripJsonImport(rawText, validator, isEmpty) {
+        const raw = String(rawText || '').trim();
+        let jsonText = '';
+        try { jsonText = extractJsonObjectFromText(raw); JSON.parse(jsonText); } catch (err) {
+          const msg = err && err.message ? err.message : String(err);
+          const m = /position\s+(\d+)/i.exec(msg);
+          const pos = m ? Number(m[1]) : NaN;
+          return { state: 'parse-error', title: 'Ungültiges JSON', errors: [msg], position: Number.isFinite(pos) ? pos : null, context: Number.isFinite(pos) ? raw.slice(Math.max(0, pos - 60), pos + 60) : '', repairHint: 'Bitte verwende ausschließlich die vorherige Modellantwort als Quelle, repariere nur JSON-Syntax beziehungsweise String-Escaping, ändere keine IDs, Reihenfolge oder fachlichen Inhalte und gib ausschließlich ein gültiges JSON-Objekt zurück.' };
+        }
+        const payload = JSON.parse(jsonText);
+        const v = validator ? validator(payload) : { valid: true, errors: [] };
+        if (!v.valid) return { state: 'validation-error', title: 'JSON parsebar, aber lokal ungültig', errors: v.errors || [], payload };
+        const empty = isEmpty ? isEmpty(payload, v) : !!v.empty;
+        return { state: empty ? 'valid-empty' : 'valid-content', title: empty ? 'Gültiges leeres Ergebnis' : 'Gültiges Ergebnis', errors: [], payload, context: v.context };
+      }
+      function cleanupWorkbenchOpenRun(runId) {
+        const run = (S.cleanupRuns || []).find(r => r && r.runId === runId);
+        if (!run) return false;
+        ui.cleanupReview.activeRunId = run.runId; ui.cleanupReview.projectId = run.projectId; ui.cleanupReview.mode = run.mode; ui.cleanupReview.visible = true;
+        ui.cleanupReview.proposals = (run.cases || []).filter(c => c.kind !== 'open-question').map((c,i)=>({ _idx:i, type:c.proposalType, targetFeatureId:c.featureId, duplicateFeatureId:c.duplicateFeatureId, featureId:c.featureId, incomingTitle:c.analysis&&c.analysis.title||'', resolvedTitle:c.analysis&&c.analysis.proposedTitle||'', resolvedDescription:c.analysis&&c.analysis.proposedDescription||'', resolvedCategory:c.analysis&&c.analysis.proposedCategory||'', resolvedStatus:c.analysis&&c.analysis.proposedStatus||'', confidence:c.analysis&&c.analysis.confidence||'', rationale:c.analysis&&c.analysis.rationale||'', changeSummary:c.analysis&&c.analysis.changeSummary||'', _mainChatCaseId:c.caseId, _dedupePairId:c.pairId, _queuedMainChat:c.nextAction==='main-chat-review'||c.status==='commit-ready', _queuedDedupe:c.nextAction==='dedupe-review'}));
+        ui.cleanupReview.openQuestions = (run.cases || []).filter(c => c.kind === 'open-question').map(c => c.analysis && (c.analysis.question || c.analysis.rationale) || '');
+        ensureCleanupReviewDecisionIds(); return true;
+      }
+      async function setCleanupWorkbenchHumanDecision(runId, caseId, decision) {
+        if (!CLEANUP_HUMAN_DECISIONS.includes(decision)) throw new Error('Unbekannte menschliche Entscheidung.');
+        const previous = cloneForCleanupWorkbench(S); const candidate = cloneForCleanupWorkbench(S); const run = (candidate.cleanupRuns||[]).find(r=>r.runId===runId && r.projectId===ui.cleanupReview.projectId); if (!run) throw new Error('Run nicht gefunden oder Projektbindung ungültig.'); const c = (run.cases||[]).find(x=>x.caseId===caseId); if (!c) throw new Error('Fall nicht gefunden.'); const t = CLEANUP_HUMAN_DECISION_TRANSITIONS[decision]; c.humanDecision=decision; c.status=t.status; c.nextAction=t.nextAction; c.lastError=''; c.updatedAt=new Date().toISOString(); run.updatedAt=c.updatedAt; try { S=candidate; await saveAsync(); cleanupWorkbenchOpenRun(runId); renderView(); } catch(e){ S=previous; renderView(); throw e; }
+      }
+      async function setCleanupWorkbenchRunStatus(runId, status) {
+        if (!CLEANUP_RUN_STATUSES.includes(status)) throw new Error('Ungültiger Runstatus.'); const previous=cloneForCleanupWorkbench(S), candidate=cloneForCleanupWorkbench(S); const run=(candidate.cleanupRuns||[]).find(r=>r.runId===runId); if(!run) throw new Error('Run nicht gefunden.'); if(status==='active' && (candidate.cleanupRuns||[]).some(r=>r.runId!==runId && r.projectId===run.projectId && r.status==='active')) throw new Error('Für dieses Projekt ist bereits ein anderer aktiver Run vorhanden.'); run.status=status; run.completedAt=status==='completed'?new Date().toISOString():''; run.updatedAt=new Date().toISOString(); try{S=candidate; await saveAsync(); cleanupWorkbenchOpenRun(runId); renderView();}catch(e){S=previous;renderView();throw e;}
+      }
+
+      async function loadCleanupReviewProposals() {
         const raw = $('cleanupReviewJsonInput') ? $('cleanupReviewJsonInput').value.trim() : '';
         if (!raw) return alert('Bitte Cleanup-JSON einfügen.');
-        let parsed;
-        try { parsed = JSON.parse(extractJsonObjectFromText(raw)); } catch (e) {
-          return alert('Kein gültiges JSON erkannt: ' + e.message);
-        }
-        const proposals = Array.isArray(parsed.proposals) ? parsed.proposals : [];
+        const projectId = ui.cleanupReview.projectId || '';
+        const diagnosis = diagnoseRoadtripJsonImport(raw, payload => projectCleanupProposalValidation(payload, projectId, ui.cleanupReview.mode), (payload, v) => v.empty);
+        ui.cleanupReview.parseDiagnosis = diagnosis;
+        if (diagnosis.state === 'parse-error') { alert('Ungültiges JSON\n' + diagnosis.errors.join('\n')); renderView(); return; }
+        if (diagnosis.state === 'validation-error') { alert('JSON parsebar, aber lokal ungültig:\n- ' + diagnosis.errors.join('\n- ')); renderView(); return; }
+        const parsed = diagnosis.payload;
+        const proposals = parsed.proposals;
         const parsedOpenQuestions = Array.isArray(parsed.openQuestions) ? parsed.openQuestions.map(normalizeCleanupOpenQuestionEntry).filter(Boolean).slice(0, 30) : [];
-        if (!proposals.length && !parsedOpenQuestions.length) return alert('Keine Vorschläge oder openQuestions im JSON gefunden.');
-        const validTypes = ['match-existing', 'update-existing', 'new-implemented-feature', 'new-feature', 'duplicate-of', 'probably-stale'];
+        if (!proposals.length && !parsedOpenQuestions.length) { ui.cleanupReview.proposals = []; ui.cleanupReview.openQuestions = []; ui.cleanupReview.visible = true; alert('Gültiges leeres Ergebnis. Es wurde kein neuer Cleanup-Run erzeugt.'); renderView(); return; }
+        const activeRun = getActiveCleanupRun(projectId);
+        if (activeRun) { cleanupWorkbenchOpenRun(activeRun.runId); alert('Für dieses Projekt ist bereits ein aktiver Cleanup-Run vorhanden. Bestehender Run wurde geöffnet: ' + activeRun.runId); renderView(); return; }
         const validConfidence = ['hoch', 'mittel', 'niedrig'];
-        const fallbackType = ui.cleanupReview.mode === 'project-dedupe' ? 'update-existing' : 'new-implemented-feature';
         ui.cleanupReview.proposals = proposals.map((p, i) => ({
           _idx: i,
-          type: normalizeCleanupProposalType(validTypes.includes(p.type) ? p.type : fallbackType, ui.cleanupReview.mode),
+          type: normalizeCleanupProposalType(String(p.type || '').trim(), ui.cleanupReview.mode),
           targetFeatureId: String(p.targetFeatureId || '').trim(),
           duplicateFeatureId: String(p.duplicateFeatureId || '').trim(),
           featureId: String(p.featureId || '').trim(),
@@ -13150,6 +13291,11 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         ui.cleanupReview.mainChatDecisionPreview = null;
         ui.cleanupReview.dedupeDecisionPreview = null;
         ui.cleanupReview.visible = true;
+        const previousCleanupState = cloneForCleanupWorkbench(S);
+        const candidateCleanupState = cloneForCleanupWorkbench(S);
+        const newRun = createCleanupRunFromParsed(projectId, ui.cleanupReview.mode, parsed, raw);
+        candidateCleanupState.cleanupRuns = normalizeCleanupRuns((candidateCleanupState.cleanupRuns || []).concat([newRun]), candidateCleanupState);
+        try { S = candidateCleanupState; await saveAsync(); cleanupWorkbenchOpenRun(newRun.runId); } catch (err) { S = previousCleanupState; alert('Cleanup-Run konnte nicht gespeichert werden: ' + (err && err.message ? err.message : err)); renderView(); return; }
         if (
           !ui.cleanupReview.versionLogged &&
           ui.cleanupReview.mode === 'import-cleanup' &&
@@ -13910,6 +14056,37 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         });
       }
 
+
+      async function persistValidatedMainChatDecisions(normalized, previewItems) {
+        const runId = ui.cleanupReview.activeRunId || '';
+        const run = (S.cleanupRuns || []).find(r => r && r.runId === runId && r.projectId === ui.cleanupReview.projectId);
+        if (!run || !(normalized.decisions || []).length) return;
+        const itemByCaseId = new Map((previewItems || []).map(item => [item.caseId, item]));
+        const previous = cloneForCleanupWorkbench(S);
+        const candidate = cloneForCleanupWorkbench(S);
+        const candidateRun = (candidate.cleanupRuns || []).find(r => r.runId === runId && r.projectId === ui.cleanupReview.projectId);
+        const now = new Date().toISOString();
+        (normalized.decisions || []).forEach(d => {
+          const c = (candidateRun.cases || []).find(x => x.caseId === d.caseId);
+          if (!c) return;
+          const item = itemByCaseId.get(d.caseId);
+          c.validatedMainChatDecision = d;
+          if (item && item.selectable) { c.status = 'commit-ready'; c.nextAction = 'commit'; } else if (c.status === 'open') { c.status = 'reviewed'; c.nextAction = 'review'; }
+          c.lastError = ''; c.updatedAt = now;
+        });
+        candidateRun.updatedAt = now;
+        try { S = candidate; await saveAsync(); cleanupWorkbenchOpenRun(runId); } catch (err) { S = previous; throw err; }
+      }
+      async function persistValidatedDedupeDecisions(normalized) {
+        const runId = ui.cleanupReview.activeRunId || '';
+        const run = (S.cleanupRuns || []).find(r => r && r.runId === runId && r.projectId === ui.cleanupReview.projectId);
+        if (!run || !(normalized.dedupeDecisions || []).length) return;
+        const previous = cloneForCleanupWorkbench(S), candidate = cloneForCleanupWorkbench(S), candidateRun = (candidate.cleanupRuns || []).find(r => r.runId === runId && r.projectId === ui.cleanupReview.projectId), now = new Date().toISOString();
+        (normalized.dedupeDecisions || []).forEach(d => { const c = (candidateRun.cases || []).find(x => x.pairId === d.pairId); if (!c) return; c.validatedDedupeDecision = d; c.status = 'dedupe-decision-recorded'; c.nextAction = 'none'; c.lastError = ''; c.updatedAt = now; });
+        candidateRun.updatedAt = now;
+        try { S = candidate; await saveAsync(); cleanupWorkbenchOpenRun(runId); } catch (err) { S = previous; throw err; }
+      }
+
       function invalidateCleanupMainChatDecisionPreview(reason) {
         if (ui.cleanupReview && ui.cleanupReview.mainChatDecisionPreview) {
           ui.cleanupReview.mainChatDecisionPreview.invalidated = true;
@@ -14032,7 +14209,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const diffs = [];
         const allowedRoot = new Set(['_lastLocalSaveAt', '_lastSaveError', '_lastSaveErrorAt', '_lastSaveErrorMessage']);
         Object.keys(Object.assign({}, before, after)).forEach(key => {
-          if (key === 'features' || allowedRoot.has(key)) return;
+          if (key === 'features' || key === 'cleanupRuns' || allowedRoot.has(key)) return;
           if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) diffs.push('State-Feld ' + key + ' wurde unerwartet verändert.');
         });
         const beforeFeatures = new Map((before.features || []).map(f => [f && f.id, f]));
@@ -14066,6 +14243,17 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         });
         const ids = new Set((candidateState.features || []).map(f => f && f.id).filter(Boolean));
         if (ids.size !== (candidateState.features || []).filter(Boolean).length) throw new Error('Batch-Invariante verletzt: doppelte Feature-ID im Kandidatenstand.');
+        const wbRunId = ui.cleanupReview.activeRunId || '';
+        const wbRun = wbRunId ? (candidateState.cleanupRuns || []).find(r => r.runId === wbRunId && r.projectId === ui.cleanupReview.projectId) : null;
+        if (wbRun) {
+          const nowApplied = now;
+          (batch.entries || []).forEach(entry => {
+            const c = (wbRun.cases || []).find(x => x.caseId === entry.caseId && x.featureId === entry.featureId && x.status === 'commit-ready');
+            if (!c) throw new Error('Workbench-Bindung fehlt oder ist nicht commit-ready: ' + entry.caseId);
+            c.status = 'applied'; c.nextAction = 'none'; c.appliedAt = nowApplied; c.updatedAt = nowApplied; c.lastError = '';
+          });
+          wbRun.updatedAt = nowApplied;
+        }
         const protectedDiffs = getCleanupMainChatProtectedStateDiffs(previousState, candidateState, batch);
         if (protectedDiffs.length) throw new Error('Schutzlistenprüfung fehlgeschlagen: ' + protectedDiffs.join(' '));
         try {
@@ -14158,7 +14346,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         });
       }
 
-      function checkCleanupMainChatReturnJson() {
+      async function checkCleanupMainChatReturnJson() {
         const before = getCleanupReviewFeatureSnapshot();
         const parsed = parseMainChatDecisionJson(ui.cleanupReview.mainChatReturnJson || '');
         if (parsed.errors.length) ui.cleanupReview.mainChatDecisionPreview = { valid: false, errors: parsed.errors, items: [] };
@@ -14167,14 +14355,16 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           if (!validation.valid) ui.cleanupReview.mainChatDecisionPreview = { valid: false, errors: validation.errors, items: [] };
           else {
             const normalized = normalizeMainChatDecisionPayload(parsed.payload);
-            ui.cleanupReview.mainChatDecisionPreview = { valid: true, errors: [], items: buildMainChatDecisionPreview(normalized, validation.context), selectedCaseIds: [], invalidated: false, consumed: false, resultSummary: '' };
+            const items = buildMainChatDecisionPreview(normalized, validation.context);
+            await persistValidatedMainChatDecisions(normalized, items);
+            ui.cleanupReview.mainChatDecisionPreview = { valid: true, errors: [], items, selectedCaseIds: [], invalidated: false, consumed: false, resultSummary: normalized.decisions.length ? 'Validierte Hauptchat-Entscheidungen wurden am aktiven Run gespeichert.' : '' };
           }
         }
         if (before !== getCleanupReviewFeatureSnapshot()) ui.cleanupReview.mainChatDecisionPreview = { valid: false, errors: ['Interner Sicherheitsfehler: Feature-Daten wurden während der Preview-Prüfung verändert.'], items: [] };
         renderView();
       }
 
-      function checkCleanupDedupeReturnJson() {
+      async function checkCleanupDedupeReturnJson() {
         const before = getCleanupReviewFeatureSnapshot();
         const parsed = parseDedupeDecisionJson(ui.cleanupReview.dedupeReturnJson || '');
         if (parsed.errors.length) ui.cleanupReview.dedupeDecisionPreview = { valid: false, errors: parsed.errors, items: [] };
@@ -14183,7 +14373,9 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           if (!validation.valid) ui.cleanupReview.dedupeDecisionPreview = { valid: false, errors: validation.errors, items: [] };
           else {
             const normalized = normalizeDedupeDecisionPayload(parsed.payload);
-            ui.cleanupReview.dedupeDecisionPreview = { valid: true, errors: [], items: buildDedupeDecisionPreview(normalized, validation.context) };
+            const items = buildDedupeDecisionPreview(normalized, validation.context);
+            await persistValidatedDedupeDecisions(normalized);
+            ui.cleanupReview.dedupeDecisionPreview = { valid: true, errors: [], items, resultSummary: normalized.dedupeDecisions.length ? 'Validierte Dedupe-Entscheidungen wurden mutationsfrei am aktiven Run gespeichert.' : '' };
           }
         }
         if (before !== getCleanupReviewFeatureSnapshot()) ui.cleanupReview.dedupeDecisionPreview = { valid: false, errors: ['Interner Sicherheitsfehler: Feature-Daten wurden während der Preview-Prüfung verändert.'], items: [] };
@@ -14192,6 +14384,30 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
 
       function resetCleanupMainChatReturnJson() { ui.cleanupReview.mainChatReturnJson = ''; ui.cleanupReview.mainChatDecisionPreview = null; renderView(); }
       function resetCleanupDedupeReturnJson() { ui.cleanupReview.dedupeReturnJson = ''; ui.cleanupReview.dedupeDecisionPreview = null; renderView(); }
+
+
+      function renderCleanupParseDiagnosis(d) {
+        if (!d) return '';
+        if (d.state === 'parse-error') return '<div class="notice notice-warning"><h3>Ungültiges JSON</h3><div class="mini">JSON.parse: ' + escapeHtml((d.errors || []).join(' ')) + '</div>' + (d.position != null ? '<div class="mini">Position: ' + escapeHtml(String(d.position)) + '</div><pre style="white-space:pre-wrap;">' + escapeHtml(d.context || '') + '</pre>' : '') + '<div class="field"><label>Reparaturhinweis kopieren</label><textarea class="cleanup-review-textarea">' + escapeHtml(d.repairHint || '') + '</textarea></div></div>';
+        if (d.state === 'validation-error') return '<div class="notice notice-warning"><strong>JSON parsebar, aber lokal ungültig.</strong><ul>' + (d.errors || []).map(e => '<li>' + escapeHtml(e) + '</li>').join('') + '</ul></div>';
+        if (d.state === 'valid-empty') return '<div class="notice notice-success"><strong>Gültiges leeres Ergebnis.</strong> Es wurde kein neuer Cleanup-Run erzeugt.</div>';
+        if (d.state === 'valid-content') return '<div class="notice notice-success"><strong>Gültiges Ergebnis.</strong> Persistenter Cleanup-Run wurde erzeugt oder geöffnet.</div>';
+        return '';
+      }
+      function renderCleanupWorkbenchPanel() {
+        const run = (S.cleanupRuns || []).find(r => r && r.runId === ui.cleanupReview.activeRunId) || getActiveCleanupRun(ui.cleanupReview.projectId || '');
+        if (!run) return '';
+        const counts = {};
+        (run.cases || []).forEach(c => { counts[c.status || 'open'] = (counts[c.status || 'open'] || 0) + 1; });
+        const filter = ui.cleanupReview.statusFilter || 'all';
+        const cases = (run.cases || []).filter(c => filter === 'all' || c.status === filter);
+        const caseCards = cases.map(c => {
+          const options = CLEANUP_HUMAN_DECISIONS.map(d => '<button class="btn btn-ghost" data-run-id="' + escapeAttr(run.runId) + '" data-case-id="' + escapeAttr(c.caseId) + '" data-cleanup-human-decision="' + escapeAttr(d) + '">' + escapeHtml(d) + '</button>').join('');
+          return '<div class="item"><div class="row-top"><strong>' + escapeHtml((c.analysis && (c.analysis.title || c.analysis.question)) || c.caseId) + '</strong><span class="pill ' + (c.status === 'open' || c.status === 'commit-ready' ? 'pill-info' : 'pill-outline') + '">' + escapeHtml(c.status) + '</span></div><div class="mini">Typ: ' + escapeHtml(c.kind) + ' / ' + escapeHtml(c.proposalType) + ' · caseId: ' + escapeHtml(c.caseId) + (c.pairId ? ' · pairId: ' + escapeHtml(c.pairId) : '') + '</div><div class="mini">Feature-ID: ' + escapeHtml(c.featureId || '—') + (c.duplicateFeatureId ? ' · Duplicate: ' + escapeHtml(c.duplicateFeatureId) : '') + '</div><details><summary>Baseline</summary><pre style="white-space:pre-wrap;">' + escapeHtml(JSON.stringify(c.baseline || {}, null, 2)) + '</pre></details><details><summary>Analyse / Begründung</summary><pre style="white-space:pre-wrap;">' + escapeHtml(JSON.stringify(c.analysis || {}, null, 2)) + '</pre></details><details><summary>Validierte Entscheidungen</summary><pre style="white-space:pre-wrap;">' + escapeHtml(JSON.stringify({ mainChat: c.validatedMainChatDecision, dedupe: c.validatedDedupeDecision }, null, 2)) + '</pre></details><div class="mini">Menschliche Entscheidung: ' + escapeHtml(c.humanDecision || '—') + ' · nächste Aktion: ' + escapeHtml(c.nextAction || 'review') + '</div>' + (c.lastError ? '<div class="notice notice-warning">Letzter Fehler: ' + escapeHtml(c.lastError) + '</div>' : '') + '<div class="stack-row">' + options + '</div></div>';
+        }).join('') || '<div class="notice">Keine Fälle für diesen Filter.</div>';
+        const statusOptions = ['all'].concat(CLEANUP_CASE_STATUSES).map(st => '<option value="' + escapeAttr(st) + '" ' + (filter === st ? 'selected' : '') + '>' + escapeHtml(st) + '</option>').join('');
+        return '<section class="panel"><div class="row-top"><div><h3>Persistente Cleanup-Workbench</h3><div class="mini">Run ' + escapeHtml(run.runId) + ' · Projekt ' + escapeHtml(getProjectTitle(run.projectId) || run.projectId) + '</div></div><span class="pill pill-info">' + escapeHtml(run.status) + '</span></div><div class="mini">Erstellt: ' + escapeHtml(run.createdAt || '—') + ' · Aktualisiert: ' + escapeHtml(run.updatedAt || '—') + '</div><div class="stack-row">' + Object.keys(counts).sort().map(k => '<span class="pill">' + escapeHtml(k) + ': ' + counts[k] + '</span>').join('') + '</div><div class="field"><label>Statusfilter</label><select id="cleanupWorkbenchStatusFilter">' + statusOptions + '</select></div><div class="stack-row"><button class="btn btn-secondary" data-run-id="' + escapeAttr(run.runId) + '" data-cleanup-run-status="completed">Run abschließen</button><button class="btn btn-ghost" data-run-id="' + escapeAttr(run.runId) + '" data-cleanup-run-status="active">Run reaktivieren</button></div><div class="notice notice-info">Preview/Reviewstatus ist von echten Featuremutationen getrennt. Dedupe bleibt mutationsfrei; update-existing nutzt ausschließlich den bestehenden Confirm-/Commitpfad.</div>' + caseCards + '</section>';
+      }
 
       function renderCleanupDecisionResult(result, type) {
         if (!result) return '';
@@ -14420,6 +14636,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
                 ${csvMode ? '<button class="btn btn-secondary" id="btnBuildCleanupMainChatClarificationPrompt">Hauptchat-Klärungsprompt erzeugen</button><button class="btn btn-secondary" id="btnBuildCleanupDedupePrompt">Dedupe-Prompt erzeugen</button>' : ''}
                 <button class="btn" id="btnClearCleanupReview">Cleanup schließen</button>
               </div>
+              ${renderCleanupParseDiagnosis(ui.cleanupReview.parseDiagnosis)}
+              ${renderCleanupWorkbenchPanel()}
               ${ui.cleanupReview.summary ? `<div class="mini cleanup-review-summary-text">Summary: ${escapeHtml(ui.cleanupReview.summary)}</div>` : ''}
               ${ui.cleanupReview.openQuestions && ui.cleanupReview.openQuestions.length ? `<div class="mini cleanup-review-note-muted">Open Questions: ${escapeHtml(ui.cleanupReview.openQuestions.length)}</div>` : ''}
               ${csvMode ? `
@@ -15386,7 +15604,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
 
       function getStateLatestEntityTimestamp(state) {
         const st = (state && typeof state === 'object' && !Array.isArray(state)) ? state : {};
-        const arrays = ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes', 'pullRequests', 'mainChatRollovers'];
+        const arrays = ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes', 'pullRequests', 'mainChatRollovers', 'cleanupRuns'];
         const fields = ['updatedAt', 'createdAt', 'importedAt', 'completedAt'];
         let newestMs = Number.NEGATIVE_INFINITY;
         arrays.forEach(key => {
@@ -15409,7 +15627,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
 
       function hasRoadtripUserData(state) {
         if (!state || typeof state !== 'object' || Array.isArray(state)) return false;
-        const arrays = ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes', 'pullRequests', 'mainChatRollovers'];
+        const arrays = ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes', 'pullRequests', 'mainChatRollovers', 'cleanupRuns'];
         const hasEntityData = arrays.some(k => Array.isArray(state[k]) && state[k].some(item => item && typeof item === 'object'));
         const deletedIds = state.deletedIds && typeof state.deletedIds === 'object' && !Array.isArray(state.deletedIds) ? state.deletedIds : {};
         const hasTombstones = Object.keys(deletedIds).some(id => !!deletedIds[id]);
@@ -15423,7 +15641,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       function normalizeStateForSyncCompare(state) {
         const source = (state && typeof state === 'object' && !Array.isArray(state)) ? state : {};
         const normalized = {};
-        const arrayKeys = ['projects', 'features', 'notes', 'chats', 'analyses', 'importVersions', 'unmatchedNotes', 'pullRequests', 'mainChatRollovers'];
+        const arrayKeys = ['projects', 'features', 'notes', 'chats', 'analyses', 'importVersions', 'unmatchedNotes', 'pullRequests', 'mainChatRollovers', 'cleanupRuns'];
         const normalizeValue = (value) => {
           if (Array.isArray(value)) return value.map(normalizeValue);
           if (value && typeof value === 'object') {
@@ -15483,7 +15701,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const merged = JSON.parse(JSON.stringify(opts.preferRemoteWhenLocalClean ? remoteBase : localBase));
         merged.deletedIds = mergeDeletedIds(localBase.deletedIds || {}, remoteBase.deletedIds || {});
         if (opts.preferRemoteWhenLocalClean) {
-          ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes', 'mainChatRollovers'].forEach(entityType => {
+          ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes', 'mainChatRollovers', 'cleanupRuns'].forEach(entityType => {
             const list = Array.isArray(merged[entityType]) ? merged[entityType] : [];
             merged[entityType] = list.filter(item => item && item.id && !merged.deletedIds[item.id]);
           });
@@ -15531,7 +15749,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           merged[entityType] = Array.from(byId.values()).filter(item => item && item.id && !merged.deletedIds[item.id]);
         };
 
-        ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes', 'mainChatRollovers'].forEach(mergeEntityArray);
+        ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes', 'mainChatRollovers', 'cleanupRuns'].forEach(mergeEntityArray);
         const localPullRequests = (localBase.pullRequests || []).filter(item => item && item.id && !merged.deletedIds[item.id]);
         const remotePullRequests = (remoteBase.pullRequests || []).filter(item => item && item.id && !merged.deletedIds[item.id]);
         merged.pullRequests = mergePullRequestsByKey(localPullRequests, remotePullRequests);
@@ -16033,6 +16251,9 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         if (selections.mainChatRollovers) {
           S.mainChatRollovers = mergeArrayById(S.mainChatRollovers || [], incomingState.mainChatRollovers || [], 'id', null);
         }
+        if (selections.cleanupRuns) {
+          S.cleanupRuns = mergeArrayById(S.cleanupRuns || [], incomingState.cleanupRuns || [], 'id', null);
+        }
         S.projects = (S.projects || []).filter(p => !isDeleted(p.id));
         S.features = (S.features || []).filter(f => !isDeleted(f.id));
         S.notes = (S.notes || []).filter(n => !isDeleted(n.id));
@@ -16040,6 +16261,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         S.chats = (S.chats || []).filter(c => !isDeleted(c.id));
         S.importVersions = (S.importVersions || []).filter(v => !isDeleted(v.id));
         S.mainChatRollovers = (S.mainChatRollovers || []).filter(r => !isDeleted(r.id));
+        S.cleanupRuns = (S.cleanupRuns || []).filter(r => !isDeleted(r.id));
         ensureDefaults();
         save();
         renderAll();
@@ -16067,10 +16289,12 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         if (!Array.isArray(normalized.importVersions)) normalized.importVersions = [];
         if (!Array.isArray(normalized.pullRequests)) normalized.pullRequests = [];
         if (!Array.isArray(normalized.mainChatRollovers)) normalized.mainChatRollovers = [];
+        if (!Array.isArray(normalized.cleanupRuns)) normalized.cleanupRuns = [];
         if (!normalized.deletedIds || typeof normalized.deletedIds !== 'object' || Array.isArray(normalized.deletedIds)) normalized.deletedIds = {};
         normalized.features = normalized.features.map(ensureFeatureDefaults);
         normalized.pullRequests = normalized.pullRequests.map(ensurePullRequestDefaults);
         normalized.mainChatRollovers = normalized.mainChatRollovers.filter(r => r && typeof r === 'object' && r.id);
+        normalized.cleanupRuns = normalizeCleanupRuns(normalized.cleanupRuns, normalized);
         return normalized;
       }
 
@@ -16087,7 +16311,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           chats: (normalized.chats || []).length,
           importVersions: (normalized.importVersions || []).length,
           pullRequests: (normalized.pullRequests || []).length,
-          mainChatRollovers: (normalized.mainChatRollovers || []).length
+          mainChatRollovers: (normalized.mainChatRollovers || []).length,
+          cleanupRuns: (normalized.cleanupRuns || []).length
         };
         const modal = document.createElement('div');
         modal.id = 'importMergeModal';
@@ -16108,6 +16333,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
                 <span class="pill">Importe: ${counts.importVersions}</span>
                 <span class="pill">Pull Requests: ${counts.pullRequests}</span>
                 <span class="pill">Rollover: ${counts.mainChatRollovers}</span>
+                <span class="pill">Cleanup-Runs: ${counts.cleanupRuns}</span>
               </div>
             </div>
             <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:16px;">
@@ -16121,6 +16347,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
                 <span class="pill">Importe: ${(S.importVersions || []).length}</span>
                 <span class="pill">Pull Requests: ${(S.pullRequests || []).length}</span>
                 <span class="pill">Rollover: ${(S.mainChatRollovers || []).length}</span>
+                <span class="pill">Cleanup-Runs: ${(S.cleanupRuns || []).length}</span>
               </div>
             </div>
             <div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:16px;">
@@ -16149,6 +16376,9 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
                 </label>
                 <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;letter-spacing:0;color:var(--ink);">
                   <input type="checkbox" id="mergeMainChatRollovers" checked style="width:16px;height:16px;"> Rollover-Protokolle (${counts.mainChatRollovers})
+                </label>
+                <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;letter-spacing:0;color:var(--ink);">
+                  <input type="checkbox" id="mergeCleanupRuns" checked style="width:16px;height:16px;"> Cleanup-Runs (${counts.cleanupRuns})
                 </label>
               </div>
               <div class="notice" style="margin-top:10px;font-size:12px;">Merge ist sicher: bestehende IDs und Titel werden nicht überschrieben. Nur neue Einträge werden hinzugefügt.</div>
@@ -16182,9 +16412,10 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
             chats: modal.querySelector('#mergeChats').checked,
             importVersions: modal.querySelector('#mergeImportVersions').checked,
             pullRequests: modal.querySelector('#mergePullRequests').checked,
-            mainChatRollovers: modal.querySelector('#mergeMainChatRollovers').checked
+            mainChatRollovers: modal.querySelector('#mergeMainChatRollovers').checked,
+            cleanupRuns: modal.querySelector('#mergeCleanupRuns').checked
           };
-          if (!sel.projects && !sel.features && !sel.notes && !sel.analyses && !sel.chats && !sel.importVersions && !sel.pullRequests && !sel.mainChatRollovers) {
+          if (!sel.projects && !sel.features && !sel.notes && !sel.analyses && !sel.chats && !sel.importVersions && !sel.pullRequests && !sel.mainChatRollovers && !sel.cleanupRuns) {
             return alert('Bitte mindestens einen Bereich auswählen.');
           }
           applySelectiveMerge(_importDraftData, sel);
@@ -16506,6 +16737,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           importVersionCount: Array.isArray(source.importVersions) ? source.importVersions.length : 0,
           pullRequestCount: Array.isArray(source.pullRequests) ? source.pullRequests.length : 0,
           mainChatRolloverCount: Array.isArray(source.mainChatRollovers) ? source.mainChatRollovers.length : 0,
+          cleanupRunCount: Array.isArray(source.cleanupRuns) ? source.cleanupRuns.length : 0,
           deletedIdCount: source.deletedIds && typeof source.deletedIds === 'object' && !Array.isArray(source.deletedIds) ? Object.keys(source.deletedIds).length : 0
         };
       }
@@ -16527,6 +16759,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
             importVersions: preparedImportVersions.clean,
             pullRequests: Array.isArray(S.pullRequests) ? S.pullRequests : [],
             mainChatRollovers: Array.isArray(S.mainChatRollovers) ? S.mainChatRollovers : [],
+            cleanupRuns: Array.isArray(S.cleanupRuns) ? S.cleanupRuns : [],
             deletedIds: S.deletedIds && typeof S.deletedIds === 'object' && !Array.isArray(S.deletedIds) ? S.deletedIds : {}
           };
           const counts = getRoadtripEntityCounts(exportData);
@@ -16546,6 +16779,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
               importVersions: 'importVersions.json',
               pullRequests: 'pullRequests.json',
               mainChatRollovers: 'mainChatRollovers.json',
+              cleanupRuns: 'cleanupRuns.json',
               deletedIds: 'deletedIds.json'
             }
           };
@@ -16625,6 +16859,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           importVersions: await parseZipJsonFile(zip, 'importVersions.json', [], true),
           pullRequests: await parseZipJsonFile(zip, 'pullRequests.json', [], false),
           mainChatRollovers: await parseZipJsonFile(zip, 'mainChatRollovers.json', [], false),
+          cleanupRuns: await parseZipJsonFile(zip, 'cleanupRuns.json', [], false),
           deletedIds: await parseZipJsonFile(zip, 'deletedIds.json', {}, true)
         });
         applyRoadtripZipMeta(reconstructedS, meta);

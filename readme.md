@@ -314,3 +314,18 @@ Not yet specified.
 Roadtrip is a personal local-first project operating system for AI-assisted software development. It is not designed as a multi-user SaaS, team platform or general-purpose public project management tool.
 
 Data integrity, backup and sync safety remain important. Regular JSON / ZIP exports are still recommended.
+
+### Persistent Cleanup Workbench MVP
+
+Roadtrip now persists cleanup workbench runs in `cleanupRuns` using
+`roadtrip-cleanup-run-v1`. A valid cleanup import creates a project-bound run with
+stable cases, small feature baselines, source metadata and durable review state.
+Hard reload recovery can reopen the active run for the selected project without
+re-reading the raw model response.
+
+The MVP distinguishes invalid JSON, parseable-but-invalid JSON, valid empty
+results and valid content. Human review decisions are persisted without mutating
+features. Valid main-chat `update-existing` decisions can become commit-ready only
+when they produce an allowed `title`, `description` or `category` change and still
+use the existing diff / confirm / drift / commit path. Structured Dedupe decisions
+remain fully mutation-free.

@@ -288,3 +288,39 @@ Der Bedarf soll nach Art der Änderung eingeschätzt werden:
   und Review-Aktionen.
 - Relationship Map / Project Graph.
 - Weitergehende Sync-Safety-Härtung in eigenen engen Sprints.
+
+### Persistente Cleanup-Workbench MVP — 19.07.2026
+
+- Cleanup-Runs werden additiv im Root-Array `cleanupRuns` mit Schema-Version
+  `roadtrip-cleanup-run-v1` gespeichert. `id` und `runId` sind identisch, damit
+  bestehende Entity-/Merge-/Tombstone-Pfade auf Run-Ebene funktionieren.
+- Pro Projekt darf höchstens ein Run den Status `active` haben. Ein neuer gültiger
+  Import überschreibt keinen bestehenden aktiven Run; der bestehende Run wird
+  geöffnet und muss bewusst abgeschlossen werden, bevor ein neuer aktiver Run
+  entsteht.
+- Run-Status sind geschlossen: `active`, `completed`. Fallstatus sind geschlossen:
+  `open`, `reviewed`, `kept-open`, `deferred`, `browser-test-needed`,
+  `dedupe-decision-recorded`, `not-adopted`, `commit-ready`, `applied`.
+  Nächste Aktionen sind geschlossen: `review`, `main-chat-review`,
+  `dedupe-review`, `project-decision`, `browser-test`, `commit`, `none`.
+- Unbekannte lokale Werte werden defensiv zu `open` plus `review` normalisiert;
+  unbekannte Werte werden niemals zu `applied` oder `completed` hochgestuft.
+- Menschliche Reviewentscheidungen bleiben mutationsfrei und werden am Fall
+  gespeichert: `keep-open`, `defer`, `needs-browser-test`,
+  `needs-project-decision`, `reject-analysis-finding`.
+- Validierte Hauptchat-Entscheidungen aus `roadtrip-mainchat-decisions-v1` werden
+  am passenden Fall gespeichert. Nur `update-existing` mit tatsächlichen erlaubten
+  Änderungen an `title`, `description` oder `category` wird `commit-ready`.
+- Validierte Dedupe-Entscheidungen aus `roadtrip-dedupe-decisions-v1` werden
+  mutationsfrei am passenden Paar/Fall gespeichert. Dedupe bleibt ohne Merge-,
+  Archivierungs-, Lösch-, Duplicate-, Status- oder Poolaktion.
+- Der Commit verwendet weiterhin den bestehenden `update-existing`-Preview-/Batch-/
+  Drift-/Confirm-/Commitpfad; nach erfolgreichem Save wird nur der betroffene
+  Run-Fall auf `applied` gesetzt.
+- JSON-, ZIP-, selektiver Merge-, Sync-Vergleich-, Gist-Merge-, Timestamp-,
+  User-Data- und Tombstone-Pfade enthalten `cleanupRuns`. Der Sync-MVP bleibt auf
+  Run-Ebene Last-write-wins anhand `id`/Zeitstempel; parallele Änderungen an
+  unterschiedlichen Fällen desselben Runs können weiterhin kollidieren.
+- Runs speichern nur kleine Feature-Baselines und einen deterministischen,
+  nicht-kryptografischen Textfingerprint der Quelle; Tokens oder Credentials
+  werden nicht gespeichert.
