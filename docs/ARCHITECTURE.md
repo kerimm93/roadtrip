@@ -101,21 +101,26 @@ Der bestehende Commitpfad ist eng begrenzt:
 - Noch offen: natürlicher Browser-Realnachweis für Commit, Driftprüfung,
   Hard-Reload-Persistenz und Batchatomarität.
 
-### Aktuelle Lücke: noch keine persistente Cleanup-Workbench
+### Persistente Cleanup-Workbench — Patch-1-Grundlage
 
-Der heutige Cleanup-Arbeitsstand ist überwiegend temporärer Runtime-/UI-State.
-Importierte Reviewfälle, Hauptchat-/Dedupe-Textareas, lokale Previews, Auswahl und
-Zwischenergebnisse sind noch nicht als dauerhafter Analyse-/Cleanup-Run mit
-Baseline, Herkunft, Fallstatus, menschlicher Entscheidung, nächster Aktion und
-Reload-Wiederaufnahme modelliert.
+Der Cleanup-Arbeitsstand bleibt überwiegend temporärer Runtime-/UI-State; lokale
+Previews, Auswahl, Textareas und Commit-Kandidaten werden weiterhin nicht als
+nach-Reload-commitfähiger Zustand persistiert.
 
-Die geplante Zielarchitektur für den nächsten Produktsprint ist eine persistente
-Cleanup-Workbench. Sie soll Runs und Fallentscheidungen dauerhaft speichern,
-nicht-mutierende Entscheidungen nachvollziehbar abschließen, Filter/Zähler nach
-Fallstatus ermöglichen, Parsefehler von gültigen leeren Ergebnissen trennen und
-validierte `update-existing`-Fälle ausschließlich an den bestehenden Diff-/Confirm-/
-Commitpfad übergeben. Die Workbench darf keinen neuen automatischen Dedupe-Merge
-oder neue Archivierungs-/Löschpfade einführen. Sie ist geplant, nicht implementiert.
+Patch 1 der Cleanup-Workbench speichert gültig importierte Cleanup-Ergebnisse als
+Analyse-Records in `S.analyses` mit `type: 'cleanup-workbench-p1'` und
+`schemaVersion: 'roadtrip-cleanup-workbench-v1'`. Der Record enthält schlanke
+`source`-Metadaten, normalisierte `result`-Daten (`summary`, `proposals`,
+`openQuestions`), stabile lokale `caseId`/`pairId` sowie `reviewState.runStatus`
+und eine Case-Map für spätere Fallentscheidungen. Die bestehende analyses-Schiene
+trägt diese Records dadurch automatisch durch JSON-Export/-Import, ZIP-Backup,
+Gist-Sync/-Merge, Tombstones und projektbezogene Löschung; es gibt keine neue
+Root-Collection.
+
+Noch nicht Teil von Patch 1 sind persistierte menschliche Entscheidungen,
+Filter/Zähler nach Fallstatus, neue Mutationspfade oder eine neue Commit-Engine.
+Validierte `update-existing`-Fälle dürfen weiterhin ausschließlich über den
+bestehenden Diff-/Confirm-/Commitpfad laufen; Dedupe bleibt Preview-only.
 
 ### Weiterhin geschützte, aber nicht aktuelle Hauptpriorität
 
