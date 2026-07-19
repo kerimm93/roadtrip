@@ -155,6 +155,34 @@ Bei Widerspruch zwischen Quellen gilt diese Reihenfolge:
   atomaren Rollover-Commit. Beim Löschen des zugehörigen Projekts wird es mit den
   übrigen projektbezogenen Daten entfernt und per Tombstone gegen Wiederkehr aus
   älteren Import-/Remote-Ständen geschützt.
+- Persistente URL-Fehlt-Marker sind Teil desselben Hauptchat-Rollover-/
+  Persistenzvertrags. Für Projekte gilt: Fehlt die externe Hauptchat-URL
+  ausdrücklich, ist `project.mainChatUrl === ''` und
+  `project.needsMainChatUrl === true`; eine echte nichtleere
+  `project.mainChatUrl` setzt `project.needsMainChatUrl === false`. Der
+  historische Literalwert `project.mainChatUrl === 'needs-url'` ist keine URL,
+  wird beim Normalisieren in leere URL plus `needsMainChatUrl: true` überführt
+  und darf weder als Link gerendert noch erneut als URL persistiert werden.
+  Ältere Projekte ohne `needsMainChatUrl` bleiben mit Default `false`
+  kompatibel.
+- Für Chats gilt analog: Fehlt die externe Chat-URL ausdrücklich, ist
+  `chat.url === ''` und `chat.needsUrl === true`; eine echte nichtleere
+  `chat.url` setzt `chat.needsUrl === false`. Der historische Literalwert
+  `chat.url === 'needs-url'` wird beim Normalisieren in leere URL plus
+  `needsUrl: true` überführt und ist nie eine klickbare oder persistierte reale
+  URL. Ältere Chats ohne `needsUrl` bleiben kompatibel; der Marker ist nur beim
+  expliziten fehlende-URL-Zustand wahr.
+- Im Projektformular ist die ausdrückliche Eingabe `needs-url` der Befehl
+  „Hauptchat-URL fehlt“: Das Projekt erhält leere URL plus
+  `needsMainChatUrl: true`. Nur wenn `project.mainChatId` direkt auf einen
+  gültigen Chat desselben Projekts mit `type: 'project-main'` zeigt, der weder
+  `referenz` noch `archiviert` ist, wird dieser Chat im selben Speichervorgang
+  ebenfalls auf leere URL plus `needsUrl: true` gesetzt. Bei einer echten URL
+  werden Projekt und derselbe direkt referenzierte gültige Hauptchat auf diese
+  URL synchronisiert und beide Marker `false`. In diesem Speicherpfad gibt es
+  keinen Fallback, keine Chat-Erzeugung und keine Reaktivierung von Referenz-/
+  Archivchats; gewöhnliche leere Eingabe ohne expliziten `needs-url`-Marker
+  bleibt nichtdestruktiv und löscht keine bestehende Chat-URL.
 
 ### Hauptchat-Abgleich und Sprint-Dock
 
