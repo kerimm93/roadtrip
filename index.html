@@ -4364,6 +4364,7 @@
           candidateState.chats.push(newChat);
           project.mainChatId = newChatId;
           project.mainChatUrl = url;
+          project.needsMainChatUrl = !url;
           project.summary = p.newMainChat.projectSummary;
           project.currentFocus = p.newMainChat.currentFocus;
           project.nextStep = p.newMainChat.nextStep;
