@@ -336,3 +336,27 @@ flowchart LR
 ---
 
 *Roadtrip · Architektur · Atlas-Skin · Sprint 25*
+
+### Persistente Cleanup-Workbench — Fallentscheidungen, Filter und Abschluss
+
+Der zweite P1-Schritt erweitert die bestehende `S.analyses`-Workbench additiv:
+Cases in `reviewState.cases` tragen jetzt kanonische menschliche Reviewstatus
+`open`, `reviewed`, `rejected` oder `deferred` plus `updatedAt`, ohne Feature-,
+Pool-, Queue-, Papierkorb-, Tombstone- oder Commitpfade zu berühren. Frische
+Modellimporte bleiben untrusted input; Status, Zeitstempel, lokale IDs und
+Runtimeflags werden daraus nicht übernommen.
+
+Die Review-UI leitet bei jedem Render Fallgruppen, Statusfilter, Fortschritts-
+zähler, nächste Aktionen und Abschlussfähigkeit aus dem normalisierten Run ab.
+Gespeichert werden nur die Fallentscheidungen im Analysis-Record sowie
+`run.updatedAt`; JSON-Export/-Merge, ZIP-Backup/-Restore, Gist-Payload/-Merge,
+Tombstonefilterung und projektbezogene Löschung laufen dadurch weiterhin über die
+bestehende analyses-Schiene. Gleichzeitige Bearbeitung desselben Runs bleibt ein
+Whole-Record-Merge-Risiko.
+
+Abschluss ist geschlossen definiert: Kein normalisierter Case darf `open` sein.
+Zurückgestellte Fälle und globale offene Fragen blockieren nicht. Ein gültiger Run
+ohne Proposals ist abschließbar und wird in der UI eindeutig als gültiger leerer
+Cleanup-Run dargestellt. Abgeschlossene Runs sind lesbar, deaktivieren direkte
+Fallentscheidungen und benötigen eine explizite Wiederöffnung, die Case-Zustände
+und Case-Zeitstempel unverändert lässt.

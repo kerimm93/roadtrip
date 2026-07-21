@@ -2005,7 +2005,7 @@
         multiProjectImport: { rawText: '', prompt: '', resultJson: '', summary: '', updates: [], unmatchedNotes: [], visible: false },
         noteReview: { proposals: [], projectId: '', rawText: '', visible: false },
         noteFeaturePipelineByProject: {},
-        cleanupReview: { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', openQuestions: [], clarificationPrompt: '', mainChatReturnJson: '', dedupePrompt: '', dedupeReturnJson: '', visible: false, versionLogged: false },
+        cleanupReview: { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', openQuestions: [], clarificationPrompt: '', mainChatReturnJson: '', dedupePrompt: '', dedupeReturnJson: '', visible: false, versionLogged: false, activeRunId: '', workbenchStatusFilter: 'all' },
         showCompletedSprintsByProject: {},
         projectMomentumCollapsedByProject: {},
         projectMomentumPromptByProject: {},
@@ -3131,6 +3131,10 @@
         if ($('btnCopyCleanupMainChatClarificationPrompt')) $('btnCopyCleanupMainChatClarificationPrompt').addEventListener('click', () => copyPrompt('cleanupMainChatClarificationPromptOutput'));
         if ($('cleanupMainChatReturnJsonInput')) $('cleanupMainChatReturnJsonInput').addEventListener('input', e => { ui.cleanupReview.mainChatReturnJson = e.target.value; invalidateCleanupMainChatDecisionPreview('Textarea wurde nach der Prüfung geändert. Bitte erneut prüfen.'); updateCleanupMainChatDecisionPreviewContainer(); });
         if ($('cleanupDedupeReturnJsonInput')) $('cleanupDedupeReturnJsonInput').addEventListener('input', e => { ui.cleanupReview.dedupeReturnJson = e.target.value; ui.cleanupReview.dedupeDecisionPreview = null; });
+        if ($('cleanupWorkbenchStatusFilter')) $('cleanupWorkbenchStatusFilter').addEventListener('change', e => { ui.cleanupReview.workbenchStatusFilter = CLEANUP_WORKBENCH_STATUS_FILTERS.includes(e.target.value) ? e.target.value : 'all'; renderView(); });
+        if ($('btnCompleteCleanupWorkbenchRun')) $('btnCompleteCleanupWorkbenchRun').addEventListener('click', completeCleanupWorkbenchRun);
+        if ($('btnReopenCleanupWorkbenchRun')) $('btnReopenCleanupWorkbenchRun').addEventListener('click', reopenCleanupWorkbenchRun);
+        qq('[data-cleanup-workbench-case-status]').forEach(input => input.addEventListener('change', () => setCleanupWorkbenchCaseStatus(input.dataset.cleanupWorkbenchCaseStatus || '', input.value)));
         if ($('btnCheckCleanupMainChatReturnJson')) $('btnCheckCleanupMainChatReturnJson').addEventListener('click', checkCleanupMainChatReturnJson);
         bindCleanupMainChatDecisionPreviewControls();
         if ($('btnResetCleanupMainChatReturnJson')) $('btnResetCleanupMainChatReturnJson').addEventListener('click', resetCleanupMainChatReturnJson);
@@ -13103,7 +13107,9 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
 
       const CLEANUP_WORKBENCH_ANALYSIS_TYPE = 'cleanup-workbench-p1';
       const CLEANUP_WORKBENCH_SCHEMA_VERSION = 'roadtrip-cleanup-workbench-v1';
-      const CLEANUP_WORKBENCH_CASE_STATUSES = ['open', 'reviewed', 'keep-open', 'deferred', 'needs-browser-test', 'dedupe-decided', 'rejected', 'commit-ready', 'applied'];
+      const CLEANUP_WORKBENCH_CASE_STATUSES = ['open', 'reviewed', 'rejected', 'deferred'];
+      const CLEANUP_WORKBENCH_CASE_STATUS_ALIASES = { 'keep-open': 'open', 'needs-browser-test': 'deferred', 'dedupe-decided': 'reviewed', 'commit-ready': 'reviewed', 'applied': 'reviewed' };
+      const CLEANUP_WORKBENCH_STATUS_FILTERS = ['all', 'open', 'decided', 'deferred'];
 
       function isCleanupWorkbenchRunRecord(record) {
         return !!(record && record.type === CLEANUP_WORKBENCH_ANALYSIS_TYPE);
@@ -13111,7 +13117,19 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
 
       function normalizeCleanupWorkbenchCaseStatus(status) {
         const value = String(status || '').trim();
+        if (CLEANUP_WORKBENCH_CASE_STATUS_ALIASES[value]) return CLEANUP_WORKBENCH_CASE_STATUS_ALIASES[value];
         return CLEANUP_WORKBENCH_CASE_STATUSES.includes(value) ? value : 'open';
+      }
+
+      function normalizeCleanupWorkbenchCaseUpdatedAt(value) {
+        const text = typeof value === 'string' ? value.trim() : '';
+        if (!text) return '';
+        const time = Date.parse(text);
+        return Number.isFinite(time) ? text : '';
+      }
+
+      function getCleanupWorkbenchCaseStatusLabel(status) {
+        return ({ open: 'Offen', reviewed: 'Bestätigt', rejected: 'Abgelehnt', deferred: 'Zurückgestellt' })[normalizeCleanupWorkbenchCaseStatus(status)] || 'Offen';
       }
 
       function cloneCleanupWorkbenchJson(value, fallback) {
@@ -13180,6 +13198,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           const existing = inputCases[proposal.caseId] && typeof inputCases[proposal.caseId] === 'object' ? inputCases[proposal.caseId] : {};
           cases[proposal.caseId] = {
             status: normalizeCleanupWorkbenchCaseStatus(existing.status || existing.runStatus),
+            updatedAt: normalizeCleanupWorkbenchCaseUpdatedAt(existing.updatedAt),
             mainChatDecision: existing.mainChatDecision || null,
             dedupeDecision: existing.dedupeDecision || null
           };
@@ -13229,6 +13248,152 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         if (idx >= 0) S.analyses[idx] = normalized;
         else S.analyses.push(normalized);
         return normalized;
+      }
+
+      function getActiveCleanupWorkbenchRun() {
+        const activeId = ui.cleanupReview && typeof ui.cleanupReview.activeRunId === 'string' ? ui.cleanupReview.activeRunId.trim() : '';
+        if (!activeId) return null;
+        const run = findCleanupWorkbenchRun(activeId);
+        return run ? normalizeCleanupWorkbenchRunRecord(run) : null;
+      }
+
+      function getCleanupWorkbenchCase(run, caseId) {
+        const id = String(caseId || '').trim();
+        if (!run || !id) return null;
+        const proposals = (run.result && run.result.proposals) || [];
+        if (!proposals.some(p => p && p.caseId === id)) return null;
+        return run.reviewState && run.reviewState.cases ? run.reviewState.cases[id] : null;
+      }
+
+      function getCleanupWorkbenchProposalGroupKey(proposal) {
+        const type = normalizeCleanupProposalType(proposal && proposal.type, ui.cleanupReview && ui.cleanupReview.mode);
+        const confidence = String(proposal && proposal.confidence || '').trim();
+        if (type === 'duplicate-of') return 'duplicates';
+        if (type === 'new-implemented-feature' || type === 'new-feature') return 'new-candidates';
+        if (type === 'probably-stale') return 'probably-stale';
+        if (confidence !== 'hoch' || isCleanupProposalUnclearForMainChat(proposal) || getCleanupProposalLosslessWarningText(proposal, resolveCleanupTargetFeature(proposal))) return 'partial-evidence';
+        if (type === 'match-existing') return 'existing-evidence';
+        if (type === 'update-existing') return 'confirm-candidates';
+        return 'other-review';
+      }
+
+      const CLEANUP_WORKBENCH_GROUPS = [
+        ['existing-evidence', 'Bestätigende Evidenz / bereits vorhanden'],
+        ['partial-evidence', 'Partielle Evidenz'],
+        ['probably-stale', 'Wahrscheinlich veraltet'],
+        ['confirm-candidates', 'Enge Confirm-Kandidaten'],
+        ['new-candidates', 'Neue Codefeature-Kandidaten'],
+        ['duplicates', 'Mögliche Dubletten'],
+        ['other-review', 'Weitere Reviewfälle']
+      ];
+
+      function groupCleanupWorkbenchProposals(proposals) {
+        const groups = CLEANUP_WORKBENCH_GROUPS.reduce((acc, [key]) => { acc[key] = []; return acc; }, {});
+        (Array.isArray(proposals) ? proposals : []).forEach(proposal => {
+          const key = getCleanupWorkbenchProposalGroupKey(proposal);
+          (groups[key] || groups['other-review']).push(proposal);
+        });
+        return groups;
+      }
+
+      function cleanupWorkbenchStatusMatchesFilter(status, filter) {
+        const normalized = normalizeCleanupWorkbenchCaseStatus(status);
+        const selected = CLEANUP_WORKBENCH_STATUS_FILTERS.includes(filter) ? filter : 'all';
+        if (selected === 'open') return normalized === 'open';
+        if (selected === 'decided') return normalized === 'reviewed' || normalized === 'rejected';
+        if (selected === 'deferred') return normalized === 'deferred';
+        return true;
+      }
+
+      function getCleanupWorkbenchProgress(run) {
+        const proposals = (run && run.result && run.result.proposals) || [];
+        const cases = (run && run.reviewState && run.reviewState.cases) || {};
+        const stats = { total: proposals.length, open: 0, reviewed: 0, rejected: 0, deferred: 0, decided: 0, openQuestions: ((run && run.result && run.result.openQuestions) || []).length, openDuplicates: 0, openNewCandidates: 0 };
+        proposals.forEach(proposal => {
+          const status = normalizeCleanupWorkbenchCaseStatus(cases[proposal.caseId] && cases[proposal.caseId].status);
+          if (status === 'open') stats.open += 1;
+          if (status === 'reviewed') stats.reviewed += 1;
+          if (status === 'rejected') stats.rejected += 1;
+          if (status === 'deferred') stats.deferred += 1;
+          if (status === 'reviewed' || status === 'rejected') stats.decided += 1;
+          const group = getCleanupWorkbenchProposalGroupKey(proposal);
+          if (status === 'open' && group === 'duplicates') stats.openDuplicates += 1;
+          if (status === 'open' && group === 'new-candidates') stats.openNewCandidates += 1;
+        });
+        return stats;
+      }
+
+      function canCompleteCleanupWorkbenchRun(run) {
+        return getCleanupWorkbenchProgress(run).open === 0;
+      }
+
+      function getCleanupWorkbenchNextAction(proposal, status) {
+        const normalized = normalizeCleanupWorkbenchCaseStatus(status);
+        if (normalized === 'reviewed' || normalized === 'rejected') return 'Keine weitere Aktion erforderlich.';
+        if (normalized === 'deferred') return 'Später erneut prüfen.';
+        const group = getCleanupWorkbenchProposalGroupKey(proposal);
+        return ({
+          'existing-evidence': 'Evidenz prüfen und bestätigen.',
+          'partial-evidence': 'Teilbefund prüfen, ablehnen oder zurückstellen.',
+          'probably-stale': 'Veraltungshinweis prüfen und entscheiden.',
+          'confirm-candidates': 'Evidenz und vorgeschlagene Einordnung prüfen.',
+          'new-candidates': 'Neuen Kandidaten später mit dem Featurebestand abgleichen.',
+          'duplicates': 'Dedupe-Entscheidung später vorbereiten.',
+          'other-review': 'Fall prüfen und eine Reviewentscheidung treffen.'
+        })[group] || 'Fall prüfen und eine Reviewentscheidung treffen.';
+      }
+
+      function setCleanupWorkbenchCaseStatus(caseId, status) {
+        const requestedStatus = String(status || '').trim();
+        if (!CLEANUP_WORKBENCH_CASE_STATUSES.includes(requestedStatus)) return;
+        const normalizedStatus = requestedStatus;
+        const activeRun = getActiveCleanupWorkbenchRun();
+        if (!activeRun || activeRun.reviewState.runStatus !== 'active') return alert('Nur aktive Cleanup-Workbench-Runs können bearbeitet werden.');
+        const caseState = getCleanupWorkbenchCase(activeRun, caseId);
+        if (!caseState) return alert('Fall im aktiven Workbench-Run nicht gefunden.');
+        const now = new Date().toISOString();
+        caseState.status = normalizedStatus;
+        caseState.updatedAt = now;
+        activeRun.updatedAt = now;
+        const savedRun = upsertCleanupWorkbenchRun(activeRun);
+        hydrateCleanupReviewFromWorkbenchRun(savedRun);
+        save();
+        renderView();
+      }
+
+      function completeCleanupWorkbenchRun() {
+        const activeRun = getActiveCleanupWorkbenchRun();
+        if (!activeRun) return alert('Kein aktiver Cleanup-Workbench-Run geöffnet.');
+        if (activeRun.reviewState.runStatus === 'completed') return alert('Dieser Cleanup-Run ist bereits abgeschlossen.');
+        if (!canCompleteCleanupWorkbenchRun(activeRun)) return alert('Abschluss blockiert: Es gibt noch offene Fälle. Entscheide oder stelle alle offenen Fälle zurück.');
+        if (!confirm('Cleanup-Run wirklich fachlich abschließen? Es werden keine Features verändert.')) return;
+        const liveRun = getActiveCleanupWorkbenchRun();
+        if (!liveRun || liveRun.reviewState.runStatus !== 'active' || !canCompleteCleanupWorkbenchRun(liveRun)) return alert('Abschluss blockiert: Live-Run hat wieder offene Fälle oder ist nicht aktiv.');
+        const now = new Date().toISOString();
+        liveRun.reviewState.runStatus = 'completed';
+        liveRun.completedAt = now;
+        liveRun.updatedAt = now;
+        const savedRun = upsertCleanupWorkbenchRun(liveRun);
+        hydrateCleanupReviewFromWorkbenchRun(savedRun);
+        save();
+        renderView();
+      }
+
+      function reopenCleanupWorkbenchRun() {
+        const activeRun = getActiveCleanupWorkbenchRun();
+        if (!activeRun) return alert('Kein Cleanup-Workbench-Run geöffnet.');
+        if (activeRun.reviewState.runStatus !== 'completed') return alert('Nur abgeschlossene Cleanup-Runs können wieder geöffnet werden.');
+        if (!confirm('Abgeschlossenen Cleanup-Run wieder öffnen? Fallentscheidungen bleiben erhalten.')) return;
+        const liveRun = getActiveCleanupWorkbenchRun();
+        if (!liveRun || liveRun.reviewState.runStatus !== 'completed') return alert('Run kann nicht wieder geöffnet werden.');
+        const now = new Date().toISOString();
+        liveRun.reviewState.runStatus = 'active';
+        liveRun.resumedAt = now;
+        liveRun.updatedAt = now;
+        const savedRun = upsertCleanupWorkbenchRun(liveRun);
+        hydrateCleanupReviewFromWorkbenchRun(savedRun);
+        save();
+        renderView();
       }
 
       function createCleanupWorkbenchRunFromReview(parsed, proposals, openQuestions) {
@@ -13285,6 +13450,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         ui.cleanupReview.visible = true;
         ui.cleanupReview.versionLogged = true;
         ui.cleanupReview.activeRunId = record.id;
+        if (!CLEANUP_WORKBENCH_STATUS_FILTERS.includes(ui.cleanupReview.workbenchStatusFilter)) ui.cleanupReview.workbenchStatusFilter = 'all';
       }
 
       function resumeCleanupWorkbenchRun(id) {
@@ -13305,12 +13471,15 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         if (!projectId) return '';
         const runs = getCleanupWorkbenchRuns(projectId);
         const rows = runs.map(run => {
-          const proposals = (run.result && run.result.proposals) || [];
           const openQuestions = (run.result && run.result.openQuestions) || [];
           const status = run.reviewState && run.reviewState.runStatus === 'completed' ? 'completed' : 'active';
+          const progress = getCleanupWorkbenchProgress(run);
           const title = run.source && run.source.cleanupMode ? run.source.cleanupMode : 'Cleanup-Run';
           const ts = run.updatedAt || run.createdAt || '';
-          return `<div class="item"><div class="row-top"><strong>${escapeHtml(title)}</strong><span class="pill pill-info">${escapeHtml(status)}</span></div><div class="mini">${escapeHtml(ts || 'ohne Zeitpunkt')} · ${proposals.length} Vorschläge · ${openQuestions.length} offene Fragen</div><div class="stack-row" style="margin-top:8px;"><button class="btn btn-secondary" data-resume-cleanup-workbench-run="${escapeAttr(run.id)}">Wieder aufnehmen</button></div></div>`;
+          const statusLabel = status === 'completed' ? 'Abgeschlossen' : 'Aktiv';
+          const buttonLabel = status === 'completed' ? 'Öffnen' : 'Wieder aufnehmen';
+          const completed = status === 'completed' && run.completedAt ? ` · Abschluss: ${escapeHtml(run.completedAt)}` : '';
+          return `<div class="item"><div class="row-top"><strong>${escapeHtml(title)}</strong><span class="pill pill-info">${escapeHtml(statusLabel)}</span></div><div class="mini">${escapeHtml(ts || 'ohne Zeitpunkt')} · ${progress.decided} / ${progress.total} entschieden · ${progress.open} offen · ${openQuestions.length} offene Fragen${completed}</div><div class="stack-row" style="margin-top:8px;"><button class="btn btn-secondary" data-resume-cleanup-workbench-run="${escapeAttr(run.id)}">${buttonLabel}</button></div></div>`;
         }).join('');
         return `<section class="cleanup-review-stage" aria-label="Gespeicherte Cleanup-Runs"><div class="cleanup-review-stage-head"><h3 class="cleanup-review-stage-title">Gespeicherte Cleanup-Runs</h3><span class="pill pill-outline">${runs.length}</span></div>${runs.length ? `<div class="list">${rows}</div>` : '<div class="notice">Noch keine gespeicherten Cleanup-Runs für dieses Projekt.</div>'}</section>`;
       }
@@ -14578,7 +14747,10 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const typeLabel = { 'match-existing': 'Unverändert / bereits vorhanden', 'update-existing': 'Update', 'new-implemented-feature': 'Neu', 'new-feature': 'Neu', 'duplicate-of': 'Dublette / vermutlich bereits vorhanden', 'probably-stale': 'Möglicherweise veraltet' };
         const modeLabel = ui.cleanupReview.mode === 'project-dedupe' ? 'Feature-Bereinigung' : (ui.cleanupReview.mode === 'csv-comparison-transform' ? 'CSV-Transform-Cleanup' : 'Import-Cleanup');
         const csvMode = isCsvComparisonTransformMode(ui.cleanupReview.mode);
-        const workbenchLocked = isActiveCleanupWorkbenchRunReview();
+        const activeRun = getActiveCleanupWorkbenchRun();
+        const workbenchLocked = !!activeRun;
+        const runCompleted = !!(activeRun && activeRun.reviewState && activeRun.reviewState.runStatus === 'completed');
+        const progress = activeRun ? getCleanupWorkbenchProgress(activeRun) : null;
         const cleanupStats = proposals.reduce((acc, proposal) => {
           const normalizedType = normalizeCleanupProposalType(proposal.type, ui.cleanupReview.mode);
           const allowedChanges = getCleanupProposalAllowedChangeKeys(proposal);
@@ -14591,117 +14763,86 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           return acc;
         }, { newCount: 0, updateCount: 0, duplicateCount: 0, acceptedCount: 0, mainChatQueued: 0, dedupeQueued: 0 });
         const directOpenCount = proposals.filter(p => !p._done).length;
-        const reviewCounter = workbenchLocked
-          ? `${proposals.length} Vorschläge · ${(ui.cleanupReview.openQuestions || []).length} offene Fragen · Aktionen gesperrt`
+        const reviewCounter = workbenchLocked && progress
+          ? `${progress.decided} / ${progress.total} entschieden · ${progress.open} offen · ${progress.deferred} zurückgestellt`
           : `${cleanupStats.newCount} echte neue · ${cleanupStats.updateCount} echte Updates · ${cleanupStats.duplicateCount} Dubletten · ${cleanupStats.acceptedCount} übernommen`;
+        const filter = CLEANUP_WORKBENCH_STATUS_FILTERS.includes(ui.cleanupReview.workbenchStatusFilter) ? ui.cleanupReview.workbenchStatusFilter : 'all';
         const renderFeatureMini = (label, feature) => feature ? `
           <div class="mini cleanup-review-note-info">${escapeHtml(label)}: ${escapeHtml(feature.id)} · ${escapeHtml(feature.title || '—')} · Pool ${escapeHtml(feature.pool || '—')} · Status ${escapeHtml(feature.status || '—')}</div>
         ` : '';
+        const renderWorkbenchStatusControl = (proposal) => {
+          const caseState = activeRun && activeRun.reviewState && activeRun.reviewState.cases ? activeRun.reviewState.cases[proposal.caseId] : null;
+          const status = normalizeCleanupWorkbenchCaseStatus(caseState && caseState.status);
+          const disabled = runCompleted ? ' disabled' : '';
+          return `<div class="stack-row cleanup-review-actions"><span class="pill pill-info">${escapeHtml(getCleanupWorkbenchCaseStatusLabel(status))}</span><label class="mini" for="cleanupCaseStatus-${escapeAttr(proposal.caseId)}">Fallentscheidung</label><select id="cleanupCaseStatus-${escapeAttr(proposal.caseId)}" data-cleanup-workbench-case-status="${escapeAttr(proposal.caseId)}"${disabled}><option value="open"${status === 'open' ? ' selected' : ''}>Offen</option><option value="reviewed"${status === 'reviewed' ? ' selected' : ''}>Bestätigt</option><option value="rejected"${status === 'rejected' ? ' selected' : ''}>Abgelehnt</option><option value="deferred"${status === 'deferred' ? ' selected' : ''}>Zurückgestellt</option></select></div>`;
+        };
         const renderCleanupActions = (proposal, normalizedType, hasTarget, duplicateSemantics) => {
-          if (workbenchLocked) return '<div class="notice notice-info">Dieser Run ist persistent gespeichert. Dauerhafte Fallentscheidungen und die geschützte Update-Anbindung folgen im nächsten P1-Patch; direkte Legacy-Aktionen sind hier gesperrt.</div>';
+          if (workbenchLocked) {
+            const caseState = activeRun && activeRun.reviewState && activeRun.reviewState.cases ? activeRun.reviewState.cases[proposal.caseId] : null;
+            const status = normalizeCleanupWorkbenchCaseStatus(caseState && caseState.status);
+            return `<div class="mini cleanup-review-note-info">Nächste Aktion: ${escapeHtml(getCleanupWorkbenchNextAction(proposal, status))}</div>${renderWorkbenchStatusControl(proposal)}`;
+          }
           const disabledAttr = proposal._done ? ' disabled' : '';
           const allowedChanges = getCleanupProposalAllowedChangeKeys(proposal);
           const canUpdate = hasTarget && allowedChanges.length > 0;
           const canNew = canAcceptCleanupProposalAsNewSafely(proposal);
           const unclear = isCleanupProposalUnclearForMainChat(proposal) || duplicateSemantics.kind === 'unclear-duplicate';
           if (csvMode) {
-            if (normalizedType === 'match-existing') {
-              return `<div class="stack-row cleanup-review-actions"><button class="btn btn-primary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als geprüft abhaken</button><button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button></div>`;
-            }
-            if (normalizedType === 'update-existing') {
-              const primary = canUpdate
-                ? `<button class="btn btn-primary" data-cleanup-accept-update="${proposal._idx}"${disabledAttr}>Bestehendes Feature aktualisieren</button>`
-                : (unclear ? `<button class="btn btn-primary" data-cleanup-queue-mainchat="${proposal._idx}"${disabledAttr}>Vormerken für Hauptchat-Abklärung</button>` : `<button class="btn btn-primary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als geprüft abhaken</button>`);
-              return `<div class="stack-row cleanup-review-actions">${primary}<button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button></div>`;
-            }
-            if (normalizedType === 'new-implemented-feature') {
-              const primary = canNew
-                ? `<button class="btn btn-primary" data-cleanup-accept-new="${proposal._idx}"${disabledAttr}>Neues Feature anlegen</button>`
-                : (unclear ? `<button class="btn btn-primary" data-cleanup-queue-mainchat="${proposal._idx}"${disabledAttr}>Vormerken für Hauptchat-Abklärung</button>` : `<button class="btn btn-primary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als geprüft abhaken</button>`);
-              return `<div class="stack-row cleanup-review-actions">${primary}<button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button></div>`;
-            }
-            if (normalizedType === 'probably-stale') {
-              const primary = isCleanupProposalUnclearForMainChat(proposal)
-                ? `<button class="btn btn-primary" data-cleanup-queue-mainchat="${proposal._idx}"${disabledAttr}>Vormerken für Hauptchat-Abklärung</button>`
-                : `<button class="btn btn-primary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als Hinweis geprüft abhaken</button>`;
-              return `<div class="stack-row cleanup-review-actions">${primary}<button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button></div>`;
-            }
-            if (normalizedType === 'duplicate-of') {
-              if (duplicateSemantics.kind === 'existing-db-duplicate') {
-                return `<div class="stack-row cleanup-review-actions"><button class="btn btn-primary" data-cleanup-queue-dedupe="${proposal._idx}"${disabledAttr}>Vormerken für Dedupe-Prompt</button><button class="btn btn-secondary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als Dublette geprüft abhaken</button><button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button></div>`;
-              }
-              if (duplicateSemantics.kind === 'import-duplicate') {
-                const primary = canUpdate
-                  ? `<button class="btn btn-primary" data-cleanup-accept-update="${proposal._idx}"${disabledAttr}>Bestehendes Feature ergänzen</button>`
-                  : `<button class="btn btn-primary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als geprüft abhaken</button>`;
-                return `<div class="stack-row cleanup-review-actions">${primary}<button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button></div>`;
-              }
-              return `<div class="stack-row cleanup-review-actions"><button class="btn btn-primary" data-cleanup-queue-mainchat="${proposal._idx}"${disabledAttr}>Vormerken für Hauptchat-Abklärung</button><button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button></div>`;
-            }
+            if (normalizedType === 'match-existing') return `<div class="stack-row cleanup-review-actions"><button class="btn btn-primary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als geprüft abhaken</button><button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button></div>`;
+            if (normalizedType === 'update-existing') { const primary = canUpdate ? `<button class="btn btn-primary" data-cleanup-accept-update="${proposal._idx}"${disabledAttr}>Bestehendes Feature aktualisieren</button>` : (unclear ? `<button class="btn btn-primary" data-cleanup-queue-mainchat="${proposal._idx}"${disabledAttr}>Vormerken für Hauptchat-Abklärung</button>` : `<button class="btn btn-primary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als geprüft abhaken</button>`); return `<div class="stack-row cleanup-review-actions">${primary}<button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button></div>`; }
+            if (normalizedType === 'new-implemented-feature') { const primary = canNew ? `<button class="btn btn-primary" data-cleanup-accept-new="${proposal._idx}"${disabledAttr}>Neues Feature anlegen</button>` : (unclear ? `<button class="btn btn-primary" data-cleanup-queue-mainchat="${proposal._idx}"${disabledAttr}>Vormerken für Hauptchat-Abklärung</button>` : `<button class="btn btn-primary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als geprüft abhaken</button>`); return `<div class="stack-row cleanup-review-actions">${primary}<button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button></div>`; }
+            if (normalizedType === 'probably-stale') { const primary = isCleanupProposalUnclearForMainChat(proposal) ? `<button class="btn btn-primary" data-cleanup-queue-mainchat="${proposal._idx}"${disabledAttr}>Vormerken für Hauptchat-Abklärung</button>` : `<button class="btn btn-primary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als Hinweis geprüft abhaken</button>`; return `<div class="stack-row cleanup-review-actions">${primary}<button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button></div>`; }
+            if (normalizedType === 'duplicate-of') { if (duplicateSemantics.kind === 'existing-db-duplicate') return `<div class="stack-row cleanup-review-actions"><button class="btn btn-primary" data-cleanup-queue-dedupe="${proposal._idx}"${disabledAttr}>Vormerken für Dedupe-Prompt</button><button class="btn btn-secondary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als Dublette geprüft abhaken</button><button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button></div>`; if (duplicateSemantics.kind === 'import-duplicate') { const primary = canUpdate ? `<button class="btn btn-primary" data-cleanup-accept-update="${proposal._idx}"${disabledAttr}>Bestehendes Feature ergänzen</button>` : `<button class="btn btn-primary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als geprüft abhaken</button>`; return `<div class="stack-row cleanup-review-actions">${primary}<button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button></div>`; } return `<div class="stack-row cleanup-review-actions"><button class="btn btn-primary" data-cleanup-queue-mainchat="${proposal._idx}"${disabledAttr}>Vormerken für Hauptchat-Abklärung</button><button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button></div>`; }
           }
-          const primaryAction = hasTarget
-            ? `<button class="btn btn-primary" data-cleanup-accept-update="${proposal._idx}"${disabledAttr}>Bestehendes Feature aktualisieren</button>`
-            : `<button class="btn btn-primary" data-cleanup-accept-new="${proposal._idx}"${disabledAttr}>Als neues Feature anlegen</button>`;
+          const primaryAction = hasTarget ? `<button class="btn btn-primary" data-cleanup-accept-update="${proposal._idx}"${disabledAttr}>Bestehendes Feature aktualisieren</button>` : `<button class="btn btn-primary" data-cleanup-accept-new="${proposal._idx}"${disabledAttr}>Als neues Feature anlegen</button>`;
           const secondaryAction = hasTarget ? `<button class="btn btn-secondary" data-cleanup-accept-new="${proposal._idx}"${disabledAttr}>Trotzdem als neues Feature anlegen</button>` : '';
           const reviewOnlyAction = (normalizedType === 'match-existing' || normalizedType === 'probably-stale') ? `<button class="btn btn-secondary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als geprüft abhaken</button>` : '';
           const legacyDuplicateFeature = !csvMode && normalizedType === 'duplicate-of' ? findCleanupProjectFeatureById(proposal.duplicateFeatureId) : null;
           const dangerAction = legacyDuplicateFeature ? `<button class="btn btn-danger" data-cleanup-mark-duplicate="${proposal._idx}"${disabledAttr}>Dublette in Papierkorb verschieben</button>` : '';
           return `<div class="stack-row cleanup-review-actions">${primaryAction}${secondaryAction}${reviewOnlyAction}${dangerAction}<button class="btn btn-ghost" data-cleanup-ignore="${proposal._idx}"${disabledAttr}>Nicht übernehmen</button></div>`;
         };
+        const renderProposalCard = p => {
+          const normalizedType = normalizeCleanupProposalType(p.type, ui.cleanupReview.mode);
+          const targetFeature = resolveCleanupTargetFeature(p);
+          const duplicateSemantics = classifyCleanupDuplicateSemantics(p);
+          const hasTarget = !!targetFeature;
+          const losslessWarning = getCleanupProposalLosslessWarningText(p, targetFeature);
+          return `<div class="item cleanup-review-card ${p._done ? 'is-done' : ''}">
+            <div class="row-top"><strong>${escapeHtml(p.resolvedTitle || p.incomingTitle || '—')}</strong><span class="pill pill-outline">${escapeHtml(typeLabel[normalizedType] || p.type)}</span></div>
+            ${normalizedType === 'duplicate-of' && duplicateSemantics.label ? `<div class="mini"><span class="pill pill-info">${escapeHtml(duplicateSemantics.label)}</span></div>` : ''}
+            ${p.incomingTitle ? `<div class="mini">Import: ${escapeHtml(p.incomingTitle)}</div>` : ''}
+            ${p.targetFeatureId ? `<div class="mini">Ziel-ID: ${escapeHtml(p.targetFeatureId)}</div>` : ''}
+            ${p.duplicateFeatureId ? `<div class="mini">Duplikat-ID: ${escapeHtml(p.duplicateFeatureId)}</div>` : ''}
+            ${duplicateSemantics.kind === 'existing-db-duplicate' ? renderFeatureMini('Feature A', duplicateSemantics.target) + renderFeatureMini('Feature B', duplicateSemantics.duplicate) : ''}
+            ${p.resolvedDescription ? `<div class="item-desc">${escapeHtml(p.resolvedDescription)}</div>` : ''}
+            ${losslessWarning ? `<div class="notice notice-warning">${escapeHtml(losslessWarning)}</div>` : ''}
+            <div class="mini">Confidence: ${escapeHtml(p.confidence)}</div>
+            ${p.changeSummary ? `<div class="mini">Änderung: ${escapeHtml(p.changeSummary)}</div>` : ''}
+            ${p.rationale ? `<div class="mini cleanup-review-note-muted">Grund: ${escapeHtml(p.rationale)}</div>` : ''}
+            ${hasTarget ? `<div class="mini">Ziel: ${escapeHtml(targetFeature.title || '—')} · Pool ${escapeHtml(targetFeature.pool || '—')} · Status ${escapeHtml(targetFeature.status || '—')}</div>` : `<div class="mini cleanup-review-note-info">Kein bestehendes Feature als sicheres Ziel erkannt.</div>`}
+            ${renderCleanupActions(p, normalizedType, hasTarget, duplicateSemantics)}
+          </div>`;
+        };
+        const renderWorkbenchReview = () => {
+          if (!activeRun) return '';
+          if (!proposals.length) return '<div class="notice">Gültiger Cleanup-Run ohne Reviewfälle.</div>';
+          const groups = groupCleanupWorkbenchProposals(proposals);
+          const cases = activeRun.reviewState && activeRun.reviewState.cases || {};
+          return CLEANUP_WORKBENCH_GROUPS.map(([key, label]) => {
+            const items = (groups[key] || []).filter(proposal => cleanupWorkbenchStatusMatchesFilter(cases[proposal.caseId] && cases[proposal.caseId].status, filter));
+            if (!items.length) return '';
+            const openAttr = key === 'existing-evidence' ? '' : ' open';
+            return `<details class="cleanup-review-stage"${openAttr}><summary>${escapeHtml(label)} · ${items.length}</summary><div class="list cleanup-review-list">${items.map(renderProposalCard).join('')}</div></details>`;
+          }).join('') || '<div class="notice">Keine Fälle im aktuellen Filter.</div>';
+        };
+        const completionSummary = progress ? `<section class="cleanup-review-stage" aria-label="Abschluss"><div class="cleanup-review-stage-head"><h3 class="cleanup-review-stage-title">Abschluss</h3><span class="pill ${canCompleteCleanupWorkbenchRun(activeRun) ? 'pill-success' : 'pill-outline'}">fachlich abschließbar: ${canCompleteCleanupWorkbenchRun(activeRun) ? 'ja' : 'nein'}</span></div><div class="stack-row"><span class="pill pill-outline">${progress.total} gesamt</span><span class="pill pill-success">${progress.reviewed} bestätigt</span><span class="pill pill-outline">${progress.rejected} abgelehnt</span><span class="pill pill-info">${progress.deferred} zurückgestellt</span><span class="pill pill-outline">${progress.open} weiterhin offen</span><span class="pill pill-outline">${progress.openQuestions} offene Fragen</span><span class="pill pill-outline">${progress.openDuplicates} offene Dubletten</span><span class="pill pill-outline">${progress.openNewCandidates} offene neue Kandidaten</span></div><div class="stack-row" style="margin-top:8px;">${runCompleted ? `<button class="btn btn-secondary" id="btnReopenCleanupWorkbenchRun">Run wieder öffnen</button>` : `<button class="btn btn-primary" id="btnCompleteCleanupWorkbenchRun"${canCompleteCleanupWorkbenchRun(activeRun) ? '' : ' disabled'}>Run abschließen</button>`}</div></section>` : '';
         return `
           <details class="cleanup-review-shell" open>
-            <summary class="cleanup-review-summary">Cleanup-Review (${modeLabel}) · ${workbenchLocked ? 'persistenter Workbench-Run · Aktionen gesperrt' : (directOpenCount + ' direkte Fälle offen')}</summary>
-            <section class="cleanup-review-stage" aria-label="Quelle">
-              <div class="cleanup-review-stage-head"><h3 class="cleanup-review-stage-title">Quelle</h3><span class="section-label">Cleanup-JSON</span></div>
-              <div class="field"><label for="cleanupReviewJsonInput">Cleanup-JSON einfügen</label><textarea id="cleanupReviewJsonInput" class="cleanup-review-textarea" placeholder='{"proposals":[...]}'></textarea></div>
-            </section>
-            <section class="cleanup-review-stage" aria-label="Prompt und Import">
-              <div class="cleanup-review-stage-head"><h3 class="cleanup-review-stage-title">Prompt+Import</h3><span class="section-label">Prüfen & übernehmen</span></div>
-              <div class="stack-row cleanup-review-prompt">
-                <button class="btn btn-primary" id="btnLoadCleanupReview">Cleanup-Vorschläge laden</button>
-                ${csvMode && !workbenchLocked ? '<button class="btn btn-secondary" id="btnBuildCleanupMainChatClarificationPrompt">Hauptchat-Klärungsprompt erzeugen</button><button class="btn btn-secondary" id="btnBuildCleanupDedupePrompt">Dedupe-Prompt erzeugen</button>' : ''}
-                <button class="btn" id="btnClearCleanupReview">Cleanup schließen</button>
-              </div>
-              ${ui.cleanupReview.summary ? `<div class="mini cleanup-review-summary-text">Summary: ${escapeHtml(ui.cleanupReview.summary)}</div>` : ''}
-              ${ui.cleanupReview.openQuestions && ui.cleanupReview.openQuestions.length ? `<div class="mini cleanup-review-note-muted">Open Questions: ${escapeHtml(ui.cleanupReview.openQuestions.length)}</div>` : ''}
-              ${workbenchLocked ? '<div class="notice notice-info">Persistenter Workbench-Run: Die Vorschläge sind wieder geöffnet und lesbar. Direkte Legacy-Aktionen, Queueing und Mutationen sind bis zum nächsten P1-Patch gesperrt.</div>' : ''}
-              ${csvMode && !workbenchLocked ? `
-                <div class="notice notice-info">Direkte Aktionen bearbeiten nur sichere Fälle. Hauptchat- und Dedupe-Queues sind bewusst zurückgestellte Folgearbeit. Vollständig eingeordnet ist das Review erst, wenn direkte Fälle bearbeitet und Queues bewusst behandelt oder zurückgestellt wurden.</div>
-                <div class="stack-row"><span class="pill pill-outline">${directOpenCount} offene direkte Review-Fälle</span><span class="pill pill-info">${cleanupStats.mainChatQueued} Hauptchat vorgemerkt</span><span class="pill pill-info">${cleanupStats.dedupeQueued} Dedupe vorgemerkt</span></div>
-                <div class="field"><label for="cleanupMainChatClarificationPromptOutput">Hauptchat-Klärungsprompt</label><textarea id="cleanupMainChatClarificationPromptOutput" class="cleanup-review-textarea" placeholder="Prompt aus explizit vorgemerkten Hauptchat-Fällen">${escapeHtml(ui.cleanupReview.clarificationPrompt || '')}</textarea><button class="btn btn-secondary" id="btnCopyCleanupMainChatClarificationPrompt">Klärungsprompt kopieren</button></div>
-                <div class="field"><label for="cleanupMainChatReturnJsonInput">Hauptchat-Rückgabe-JSON</label><textarea id="cleanupMainChatReturnJsonInput" class="cleanup-review-textarea" placeholder='{"schemaVersion":"roadtrip-mainchat-decisions-v1","decisions":[]}' >${escapeHtml(ui.cleanupReview.mainChatReturnJson || '')}</textarea><div class="stack-row"><button class="btn btn-primary" id="btnCheckCleanupMainChatReturnJson">Hauptchat-Rückgabe prüfen</button><button class="btn btn-ghost" id="btnResetCleanupMainChatReturnJson">Hauptchat-Rückgabe zurücksetzen</button></div><div id="cleanupMainChatDecisionPreviewResult">${renderCleanupDecisionResult(ui.cleanupReview.mainChatDecisionPreview, 'main')}</div></div>
-                <div class="field"><label for="cleanupDedupePromptOutput">Dedupe-Prompt</label><textarea id="cleanupDedupePromptOutput" class="cleanup-review-textarea" placeholder="Prompt aus explizit vorgemerkten bestehenden Datenbank-Dubletten">${escapeHtml(ui.cleanupReview.dedupePrompt || '')}</textarea><button class="btn btn-secondary" id="btnCopyCleanupDedupePrompt">Dedupe-Prompt kopieren</button></div>
-                <div class="field"><label for="cleanupDedupeReturnJsonInput">Dedupe-Rückgabe-JSON</label><textarea id="cleanupDedupeReturnJsonInput" class="cleanup-review-textarea" placeholder='{"schemaVersion":"roadtrip-dedupe-decisions-v1","dedupeDecisions":[]}' >${escapeHtml(ui.cleanupReview.dedupeReturnJson || '')}</textarea><div class="stack-row"><button class="btn btn-primary" id="btnCheckCleanupDedupeReturnJson">Dedupe-Rückgabe prüfen</button><button class="btn btn-ghost" id="btnResetCleanupDedupeReturnJson">Dedupe-Rückgabe zurücksetzen</button></div>${renderCleanupDecisionResult(ui.cleanupReview.dedupeDecisionPreview, 'dedupe')}</div>
-              ` : ''}
-            </section>
-            <section class="cleanup-review-stage" aria-label="Review">
-              <div class="cleanup-review-stage-head"><h3 class="cleanup-review-stage-title">Review</h3><span class="pill pill-outline cleanup-review-counter">${reviewCounter}</span></div>
-              ${proposals.length ? `<div class="list cleanup-review-list">${proposals.map(p => {
-                const normalizedType = normalizeCleanupProposalType(p.type, ui.cleanupReview.mode);
-                const targetFeature = resolveCleanupTargetFeature(p);
-                const duplicateSemantics = classifyCleanupDuplicateSemantics(p);
-                const hasTarget = !!targetFeature;
-                const statusLabel = p._ignored ? 'ignoriert' : (p._queuedMainChat ? 'für Hauptchat vorgemerkt' : (p._queuedDedupe ? 'für Dedupe vorgemerkt' : (p._reviewedOnly ? 'geprüft' : 'übernommen')));
-                const losslessWarning = getCleanupProposalLosslessWarningText(p, targetFeature);
-                const statusClass = p._ignored ? 'pill-outline' : (p._reviewedOnly ? 'pill-info' : 'pill-success');
-                return `<div class="item cleanup-review-card ${p._done ? 'is-done' : ''}">
-                  <div class="row-top"><strong>${escapeHtml(p.resolvedTitle || p.incomingTitle || '—')}</strong><span class="pill pill-outline">${escapeHtml(typeLabel[normalizedType] || p.type)}</span></div>
-                  ${normalizedType === 'duplicate-of' && duplicateSemantics.label ? `<div class="mini"><span class="pill pill-info">${escapeHtml(duplicateSemantics.label)}</span></div>` : ''}
-                  ${p.incomingTitle ? `<div class="mini">Import: ${escapeHtml(p.incomingTitle)}</div>` : ''}
-                  ${p.targetFeatureId ? `<div class="mini">Ziel-ID: ${escapeHtml(p.targetFeatureId)}</div>` : ''}
-                  ${p.duplicateFeatureId ? `<div class="mini">Duplikat-ID: ${escapeHtml(p.duplicateFeatureId)}</div>` : ''}
-                  ${duplicateSemantics.kind === 'existing-db-duplicate' ? renderFeatureMini('Feature A', duplicateSemantics.target) + renderFeatureMini('Feature B', duplicateSemantics.duplicate) : ''}
-                  ${p.resolvedDescription ? `<div class="item-desc">${escapeHtml(p.resolvedDescription)}</div>` : ''}
-                  ${losslessWarning ? `<div class="notice notice-warning">${escapeHtml(losslessWarning)}</div>` : ''}
-                  <div class="mini">Confidence: ${escapeHtml(p.confidence)}</div>
-                  ${p.changeSummary ? `<div class="mini">Änderung: ${escapeHtml(p.changeSummary)}</div>` : ''}
-                  ${p.rationale ? `<div class="mini cleanup-review-note-muted">Grund: ${escapeHtml(p.rationale)}</div>` : ''}
-                  ${hasTarget ? `<div class="mini">Ziel: ${escapeHtml(targetFeature.title || '—')} · Pool ${escapeHtml(targetFeature.pool || '—')} · Status ${escapeHtml(targetFeature.status || '—')}</div>` : `<div class="mini cleanup-review-note-info">Kein bestehendes Feature als sicheres Ziel erkannt.</div>`}
-                  ${p._done ? `<div class="mini"><span class="pill ${statusClass}">${statusLabel}</span></div>` : ''}
-                  ${renderCleanupActions(p, normalizedType, hasTarget, duplicateSemantics)}
-                </div>`;
-              }).join('')}</div>` : '<div class="notice">Keine Vorschläge geladen. Erzeuge den Cleanup-Prompt und füge das KI-JSON oben ein.</div>'}
-            </section>
+            <summary class="cleanup-review-summary">Cleanup-Review (${modeLabel}) · ${workbenchLocked ? (runCompleted ? 'abgeschlossener Workbench-Run' : 'persistenter Workbench-Run') : (directOpenCount + ' direkte Fälle offen')}</summary>
+            <section class="cleanup-review-stage" aria-label="Quelle"><div class="cleanup-review-stage-head"><h3 class="cleanup-review-stage-title">Quelle</h3><span class="section-label">Cleanup-JSON</span></div><div class="field"><label for="cleanupReviewJsonInput">Cleanup-JSON einfügen</label><textarea id="cleanupReviewJsonInput" class="cleanup-review-textarea" placeholder='{"proposals":[...]}'></textarea></div></section>
+            <section class="cleanup-review-stage" aria-label="Prompt und Import"><div class="cleanup-review-stage-head"><h3 class="cleanup-review-stage-title">Prompt+Import</h3><span class="section-label">Prüfen & übernehmen</span></div><div class="stack-row cleanup-review-prompt"><button class="btn btn-primary" id="btnLoadCleanupReview">Cleanup-Vorschläge laden</button>${csvMode && !workbenchLocked ? '<button class="btn btn-secondary" id="btnBuildCleanupMainChatClarificationPrompt">Hauptchat-Klärungsprompt erzeugen</button><button class="btn btn-secondary" id="btnBuildCleanupDedupePrompt">Dedupe-Prompt erzeugen</button>' : ''}<button class="btn" id="btnClearCleanupReview">Cleanup schließen</button></div>${ui.cleanupReview.summary ? `<div class="mini cleanup-review-summary-text">Summary: ${escapeHtml(ui.cleanupReview.summary)}</div>` : ''}${ui.cleanupReview.openQuestions && ui.cleanupReview.openQuestions.length ? `<div class="mini cleanup-review-note-muted">Open Questions: ${escapeHtml(ui.cleanupReview.openQuestions.length)} · bleiben sichtbar und blockieren den Abschluss nicht.</div>` : ''}${workbenchLocked && progress ? `<div class="notice notice-info">Persistenter Workbench-Run: Direkte Legacy-Aktionen, Queueing und Mutationen sind gesperrt. Fallentscheidungen schreiben ausschließlich diesen Analysis-Record.</div><div class="stack-row"><span class="pill pill-outline">${progress.total} Fälle</span><span class="pill pill-info">${progress.decided} entschieden</span><span class="pill pill-outline">${progress.open} offen</span><span class="pill pill-info">${progress.deferred} zurückgestellt</span></div><div class="field"><label for="cleanupWorkbenchStatusFilter">Statusfilter</label><select id="cleanupWorkbenchStatusFilter"><option value="all"${filter === 'all' ? ' selected' : ''}>Alle</option><option value="open"${filter === 'open' ? ' selected' : ''}>Offen</option><option value="decided"${filter === 'decided' ? ' selected' : ''}>Entschieden</option><option value="deferred"${filter === 'deferred' ? ' selected' : ''}>Zurückgestellt</option></select></div>` : ''}${csvMode && !workbenchLocked ? `<div class="notice notice-info">Direkte Aktionen bearbeiten nur sichere Fälle. Hauptchat- und Dedupe-Queues sind bewusst zurückgestellte Folgearbeit.</div><div class="stack-row"><span class="pill pill-outline">${directOpenCount} offene direkte Review-Fälle</span><span class="pill pill-info">${cleanupStats.mainChatQueued} Hauptchat vorgemerkt</span><span class="pill pill-info">${cleanupStats.dedupeQueued} Dedupe vorgemerkt</span></div><div class="field"><label for="cleanupMainChatClarificationPromptOutput">Hauptchat-Klärungsprompt</label><textarea id="cleanupMainChatClarificationPromptOutput" class="cleanup-review-textarea">${escapeHtml(ui.cleanupReview.clarificationPrompt || '')}</textarea><button class="btn btn-secondary" id="btnCopyCleanupMainChatClarificationPrompt">Klärungsprompt kopieren</button></div><div class="field"><label for="cleanupMainChatReturnJsonInput">Hauptchat-Rückgabe-JSON</label><textarea id="cleanupMainChatReturnJsonInput" class="cleanup-review-textarea">${escapeHtml(ui.cleanupReview.mainChatReturnJson || '')}</textarea><div class="stack-row"><button class="btn btn-primary" id="btnCheckCleanupMainChatReturnJson">Hauptchat-Rückgabe prüfen</button><button class="btn btn-ghost" id="btnResetCleanupMainChatReturnJson">Hauptchat-Rückgabe zurücksetzen</button></div><div id="cleanupMainChatDecisionPreviewResult">${renderCleanupDecisionResult(ui.cleanupReview.mainChatDecisionPreview, 'main')}</div></div><div class="field"><label for="cleanupDedupePromptOutput">Dedupe-Prompt</label><textarea id="cleanupDedupePromptOutput" class="cleanup-review-textarea">${escapeHtml(ui.cleanupReview.dedupePrompt || '')}</textarea><button class="btn btn-secondary" id="btnCopyCleanupDedupePrompt">Dedupe-Prompt kopieren</button></div><div class="field"><label for="cleanupDedupeReturnJsonInput">Dedupe-Rückgabe-JSON</label><textarea id="cleanupDedupeReturnJsonInput" class="cleanup-review-textarea">${escapeHtml(ui.cleanupReview.dedupeReturnJson || '')}</textarea><div class="stack-row"><button class="btn btn-primary" id="btnCheckCleanupDedupeReturnJson">Dedupe-Rückgabe prüfen</button><button class="btn btn-ghost" id="btnResetCleanupDedupeReturnJson">Dedupe-Rückgabe zurücksetzen</button></div>${renderCleanupDecisionResult(ui.cleanupReview.dedupeDecisionPreview, 'dedupe')}</div>` : ''}</section>
+            <section class="cleanup-review-stage" aria-label="Review"><div class="cleanup-review-stage-head"><h3 class="cleanup-review-stage-title">Review</h3><span class="pill pill-outline cleanup-review-counter">${reviewCounter}</span></div>${workbenchLocked ? renderWorkbenchReview() : (proposals.length ? `<div class="list cleanup-review-list">${proposals.map(renderProposalCard).join('')}</div>` : '<div class="notice">Keine Vorschläge geladen. Erzeuge den Cleanup-Prompt und füge das KI-JSON oben ein.</div>')}</section>
+            ${completionSummary}
           </details>
         `;
       }
