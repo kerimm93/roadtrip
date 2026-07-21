@@ -288,3 +288,36 @@ Der Bedarf soll nach Art der Änderung eingeschätzt werden:
   und Review-Aktionen.
 - Relationship Map / Project Graph.
 - Weitergehende Sync-Safety-Härtung in eigenen engen Sprints.
+
+### Cleanup-Workbench P1: Fallentscheidungen, Filter und Abschluss (2026-07-21)
+
+- Persistente Cleanup-Workbench-Runs bleiben Analyse-Records in `S.analyses` mit
+  `type: 'cleanup-workbench-p1'` und Schema
+  `roadtrip-cleanup-workbench-v1`; es gibt weiterhin keine neue Root-Collection
+  und keinen neuen Apply-, Create-, Promotion-, Dedupe-, Papierkorb- oder
+  Commitpfad.
+- Jeder normalisierte Workbench-Case besitzt additiv `status`, `updatedAt`,
+  `mainChatDecision` und `dedupeDecision`. Kanonische Status sind `open`,
+  `reviewed` (UI: „Bestätigt“), `rejected` und `deferred`; historische Aliaswerte
+  werden beim Normalisieren auf diese Werte abgebildet.
+- Das Öffnen beziehungsweise Wiederaufnehmen gespeicherter Workbench-Runs ist
+  read-only: Es hydriert nur die UI und schreibt weder `resumedAt` noch
+  `updatedAt`. Persistente Zeitstempeländerungen entstehen nur durch echte
+  Fallentscheidungen, Abschluss oder explizite Wiederöffnung.
+- Menschliche Fallentscheidungen ändern ausschließlich den betroffenen
+  Analysis-Record samt normalen Save-Metadaten. `run.updatedAt` wird bei jeder
+  Entscheidung aktualisiert, damit bestehende Whole-Record-Merge-/Syncpfade den
+  jüngeren Run erkennen.
+- Gruppen, Filter, Zähler, nächste Aktionen und Abschlussfähigkeit sind reine
+  Render-/Ableitungsdaten und werden nicht redundant gespeichert.
+- Ein Run ist fachlich abschließbar, wenn kein normalisierter Case mehr `open`
+  ist. `deferred` und globale `openQuestions` blockieren den Abschluss nicht;
+  offene Fragen werden global dargestellt, nicht als Cases gespeichert und nicht
+  als erledigt bezeichnet.
+- Abgeschlossene Runs deaktivieren direkte Fallentscheidungen und können nur über
+  eine explizite Wiederöffnung wieder aktiv werden. Case-Zustände bleiben dabei
+  unverändert; `completedAt` bleibt als letzter Abschlusszeitpunkt erhalten, bis
+  ein späterer Abschluss ihn überschreibt.
+- Bekanntes Risiko: Gleichzeitige Bearbeitung desselben Workbench-Runs auf mehreren
+  Geräten wird weiterhin über den bestehenden Analysis-Whole-Record-Vergleich
+  gemergt, nicht pro Case.
