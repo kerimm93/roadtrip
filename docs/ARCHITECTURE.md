@@ -363,3 +363,17 @@ Ein gültiger Run ohne Proposals ist abschließbar und wird in der UI eindeutig 
 gültiger leerer Cleanup-Run dargestellt. Abgeschlossene Runs sind lesbar,
 deaktivieren direkte Fallentscheidungen und benötigen eine explizite Wiederöffnung,
 die Case-Zustände und Case-Zeitstempel unverändert lässt.
+
+## Cleanup-Workbench `update-existing`-Bridge
+
+Die Cleanup-Workbench erweitert weiterhin ausschließlich Analysis-Records in `S.analyses` (`type: cleanup-workbench-p1`, `schemaVersion: roadtrip-cleanup-workbench-v1`). Pro Case liegen menschlicher Status, optionale `mainChatDecision`, optionale `mainChatApplication` und Dedupe-Previewdaten unter `reviewState.cases[caseId]`; es gibt keine neue Root-Collection, Queue oder zweite Commit-Engine.
+
+Hauptchat-Rückgaben bleiben untrusted input. Der Ablauf ist parse → validate → normalize → persistierte Preview → Diff → Confirm → Drift → Kandidaten-State → Protected-State-Allowlist → genau ein `saveAsync()`. Der Entscheidungsimport speichert nur normalisierte `roadtrip-mainchat-decisions-v1`-Einträge am passenden Case und rollt bei Persistenzfehlern den vollständigen State zurück. Ein identischer Reimport ist ein No-op ohne Save und ohne neue Zeitstempel.
+
+Die Workbench-Bindung ist geschlossen: Für Commit und Prompt-Scope zählt nur eine explizite, eindeutige, bestehende Feature-ID aus dem Proposal im selben Projekt. Titelmatching, Fuzzy-Matching, automatische Reparatur und Auswahl zwischen widersprüchlichen IDs sind verboten. Eligibility verlangt einen aktiven Run, Case-Status `reviewed`, keine Application, eine gespeicherte normalisierte `update-existing`-Entscheidung, geschlossene Projekt-/Case-/Feature-ID-Übereinstimmung, echte Änderungen nur an `title`, `description` oder `category` sowie bestandene CSV-/Lossless-Guards. Gemischte Vorschläge mit zusätzlich geänderten preview-only oder verbotenen Feldern werden vollständig blockiert.
+
+Beim Öffnen des Diffs friert der bestehende Batch zusätzlich die Workbench-Herkunft ein: Run-ID, Projekt-ID, Runstatus, `run.updatedAt` und pro Entry Case-ID, Case-Status, `case.updatedAt`, Feature-ID, tiefer `mainChatDecision`-Snapshot und `mainChatApplication`-Baseline. Mehrere Cases für dieselbe Feature-ID blockieren den ganzen Batch. Der finale Confirm liest ausschließlich den eingefrorenen `pendingBatch`, nicht Textarea oder aktuelle Checkbox-Auswahl.
+
+Der gemeinsame Commit mutiert Featurefelder und Workbench-Anwendungsnachweis im selben Kandidaten-State. Er setzt `feature.updatedAt`, `case.mainChatApplication`, `case.updatedAt` und `run.updatedAt` mit demselben lokalen Commitzeitpunkt, lässt Case-Status und gespeicherte Entscheidung unverändert und erlaubt in der Protected-State-Prüfung zusätzlich nur `mainChatApplication`/`updatedAt` des betroffenen Case sowie `updatedAt` des betroffenen Run. Jeder Fehler restauriert Feature- und Workbench-State vollständig.
+
+Abgeschlossene Runs sind read-only; bloßes Öffnen erzeugt keinen Save und keinen Zeitstempel. Wiederöffnung ist explizit, erhält Entscheidungen und Applications, sperrt bereits angewendete Cases weiter und invalidiert alte Previews. JSON-Export, ZIP-Backup/Restore über `analyses.json`, selektiver Merge, Gist-Whole-Record-Merge, Tombstones und Projektlöschung behalten ihre bestehende Architektur; die neuen Felder reisen als Teil des Analysis-Records mit. Whole-Record-Konflikte zwischen Geräten bleiben eine bekannte Grenze.
