@@ -2005,7 +2005,7 @@
         multiProjectImport: { rawText: '', prompt: '', resultJson: '', summary: '', updates: [], unmatchedNotes: [], visible: false },
         noteReview: { proposals: [], projectId: '', rawText: '', visible: false },
         noteFeaturePipelineByProject: {},
-        cleanupReview: { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', openQuestions: [], clarificationPrompt: '', mainChatReturnJson: '', dedupePrompt: '', dedupeReturnJson: '', visible: false, versionLogged: false, activeRunId: '', workbenchStatusFilter: 'all' },
+        cleanupReview: { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', openQuestions: [], clarificationPrompt: '', mainChatReturnJson: '', statusPoolReturnJson: '', dedupePrompt: '', dedupeReturnJson: '', visible: false, versionLogged: false, activeRunId: '', workbenchStatusFilter: 'all', workbenchSelectedCaseIds: [], statusPoolSelectedCaseIds: [], statusPoolDecisionPreview: null },
         showCompletedSprintsByProject: {},
         projectMomentumCollapsedByProject: {},
         projectMomentumPromptByProject: {},
@@ -3131,10 +3131,21 @@
         if ($('btnCopyCleanupMainChatClarificationPrompt')) $('btnCopyCleanupMainChatClarificationPrompt').addEventListener('click', () => copyPrompt('cleanupMainChatClarificationPromptOutput'));
         if ($('cleanupMainChatReturnJsonInput')) $('cleanupMainChatReturnJsonInput').addEventListener('input', e => { ui.cleanupReview.mainChatReturnJson = e.target.value; invalidateCleanupMainChatDecisionPreview('Textarea wurde nach der Prüfung geändert. Bitte erneut prüfen.'); updateCleanupMainChatDecisionPreviewContainer(); });
         if ($('cleanupDedupeReturnJsonInput')) $('cleanupDedupeReturnJsonInput').addEventListener('input', e => { ui.cleanupReview.dedupeReturnJson = e.target.value; ui.cleanupReview.dedupeDecisionPreview = null; });
-        if ($('cleanupWorkbenchStatusFilter')) $('cleanupWorkbenchStatusFilter').addEventListener('change', e => { ui.cleanupReview.workbenchStatusFilter = CLEANUP_WORKBENCH_STATUS_FILTERS.includes(e.target.value) ? e.target.value : 'all'; renderView(); });
+        if ($('cleanupWorkbenchStatusFilter')) $('cleanupWorkbenchStatusFilter').addEventListener('change', e => { ui.cleanupReview.workbenchStatusFilter = CLEANUP_WORKBENCH_STATUS_FILTERS.includes(e.target.value) ? e.target.value : 'all'; clearCleanupWorkbenchReviewSelection(); renderView(); });
         if ($('btnCompleteCleanupWorkbenchRun')) $('btnCompleteCleanupWorkbenchRun').addEventListener('click', completeCleanupWorkbenchRun);
         if ($('btnReopenCleanupWorkbenchRun')) $('btnReopenCleanupWorkbenchRun').addEventListener('click', reopenCleanupWorkbenchRun);
         qq('[data-cleanup-workbench-case-status]').forEach(input => input.addEventListener('change', () => setCleanupWorkbenchCaseStatus(input.dataset.cleanupWorkbenchCaseStatus || '', input.value)));
+        qq('[data-cleanup-workbench-select]').forEach(input => input.addEventListener('change', () => toggleCleanupWorkbenchReviewSelection(input.dataset.cleanupWorkbenchSelect || '', input.checked)));
+        qq('[data-cleanup-workbench-direct-status]').forEach(btn => btn.addEventListener('click', () => applyCleanupWorkbenchReviewStatusBatch([btn.dataset.cleanupWorkbenchDirectStatus || ''], btn.dataset.cleanupWorkbenchTargetStatus || '')));
+        if ($('btnCleanupWorkbenchSelectVisible')) $('btnCleanupWorkbenchSelectVisible').addEventListener('click', selectVisibleCleanupWorkbenchCases);
+        if ($('btnCleanupWorkbenchClearSelection')) $('btnCleanupWorkbenchClearSelection').addEventListener('click', () => { clearCleanupWorkbenchReviewSelection(); renderView(); });
+        qq('[data-cleanup-workbench-bulk-status]').forEach(btn => btn.addEventListener('click', () => applyCleanupWorkbenchReviewStatusBatch((ui.cleanupReview.workbenchSelectedCaseIds || []).slice(), btn.dataset.cleanupWorkbenchBulkStatus || '')));
+        if ($('cleanupStatusPoolReturnJsonInput')) $('cleanupStatusPoolReturnJsonInput').addEventListener('input', e => { ui.cleanupReview.statusPoolReturnJson = e.target.value; ui.cleanupReview.statusPoolDecisionPreview = null; });
+        if ($('btnCheckCleanupStatusPoolReturnJson')) $('btnCheckCleanupStatusPoolReturnJson').addEventListener('click', checkCleanupStatusPoolReturnJson);
+        qq('[data-cleanup-status-pool-select]').forEach(input => input.addEventListener('change', () => toggleCleanupStatusPoolSelection(input.dataset.cleanupStatusPoolSelect || '', input.checked)));
+        if ($('btnReviewCleanupStatusPoolSelection')) $('btnReviewCleanupStatusPoolSelection').addEventListener('click', reviewCleanupStatusPoolSelection);
+        if ($('btnConfirmCleanupStatusPoolBatch')) $('btnConfirmCleanupStatusPoolBatch').addEventListener('click', confirmCleanupStatusPoolBatch);
+        if ($('btnCancelCleanupStatusPoolBatch')) $('btnCancelCleanupStatusPoolBatch').addEventListener('click', () => { if (ui.cleanupReview.statusPoolDecisionPreview) ui.cleanupReview.statusPoolDecisionPreview.pendingBatch = null; renderView(); });
         if ($('btnCheckCleanupMainChatReturnJson')) $('btnCheckCleanupMainChatReturnJson').addEventListener('click', () => checkCleanupMainChatReturnJson());
         bindCleanupMainChatDecisionPreviewControls();
         if ($('btnResetCleanupMainChatReturnJson')) $('btnResetCleanupMainChatReturnJson').addEventListener('click', resetCleanupMainChatReturnJson);
@@ -12965,6 +12976,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           : buildCleanupPrompt(projectId, incomingFeatures, mode);
         ui.cleanupReview.activeRunId = '';
         ui.cleanupReview.workbenchStatusFilter = 'all';
+        clearCleanupWorkbenchReviewSelection();
+        ui.cleanupReview.statusPoolSelectedCaseIds = [];
         ui.cleanupReview.projectId = projectId;
         ui.cleanupReview.incomingFeatures = incomingFeatures.slice();
         ui.cleanupReview.rawAnalysisJson = rawAnalysisJson || '';
@@ -13114,6 +13127,9 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       const CLEANUP_WORKBENCH_STATUS_FILTERS = ['all', 'open', 'decided', 'deferred'];
 
       const CLEANUP_WORKBENCH_APPLICATION_FIELDS = ['title', 'description', 'category'];
+      const CLEANUP_STATUS_POOL_DECISION_SCHEMA_VERSION = 'roadtrip-status-pool-decisions-v1';
+      const CLEANUP_STATUS_POOL_PROPOSAL_TYPES = ['match-existing', 'update-existing'];
+      const CLEANUP_APPLICATION_TYPES = ['update-existing', 'status-pool-transition'];
 
       function stableCleanupJson(value) { return JSON.stringify(value == null ? null : value); }
       function cleanupDeepEqual(a, b) { return stableCleanupJson(a) === stableCleanupJson(b); }
@@ -13190,30 +13206,44 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
 
       function normalizeCleanupWorkbenchMainChatApplication(value, caseId, featureId) {
         if (value == null) return null;
-        const invalid = { status: 'invalid', caseId: normalizeStringField(caseId), featureId: '', appliedAt: '', batchId: '', changedFields: [] };
-        if (!value || typeof value !== 'object' || Array.isArray(value)) return invalid;
-        if (value.status !== 'applied') return invalid;
-        if (!cleanupWorkbenchHasOnlyStringOrEmptyFields(value, ['caseId', 'featureId', 'appliedAt', 'batchId'])) return invalid;
-        if (!Array.isArray(value.changedFields)) return invalid;
+        const invalid = { status: 'invalid', applicationType: '', caseId: normalizeStringField(caseId), featureId: '', appliedAt: '', batchId: '', changedFields: [] };
+        if (!value || typeof value !== 'object' || Array.isArray(value) || value.status !== 'applied') return invalid;
+        if (!cleanupWorkbenchHasOnlyStringOrEmptyFields(value, ['applicationType', 'caseId', 'featureId', 'appliedAt', 'batchId']) || !Array.isArray(value.changedFields)) return invalid;
         if (!value.changedFields.every(change => change && typeof change === 'object' && !Array.isArray(change) && cleanupWorkbenchHasOnlyStringOrEmptyFields(change, ['field', 'oldValue', 'newValue']))) return invalid;
-        const app = {
-          status: 'applied',
-          caseId: normalizeStringField(value.caseId),
-          featureId: normalizeStringField(value.featureId),
-          appliedAt: normalizeStringField(value.appliedAt),
-          batchId: normalizeStringField(value.batchId),
-          changedFields: Array.isArray(value.changedFields) ? value.changedFields.map(change => ({ field: normalizeStringField(change && change.field), oldValue: normalizeStringField(change && change.oldValue), newValue: normalizeStringField(change && change.newValue) })) : []
-        };
+        const rawType = normalizeStringField(value.applicationType);
+        const rawFields = value.changedFields.map(change => normalizeStringField(change && change.field));
+        const applicationType = rawType || (rawFields.length && rawFields.every(field => CLEANUP_WORKBENCH_APPLICATION_FIELDS.includes(field)) ? 'update-existing' : '');
+        const allowedFields = applicationType === 'status-pool-transition' ? ['pool', 'status'] : CLEANUP_WORKBENCH_APPLICATION_FIELDS;
+        const app = { status: 'applied', applicationType, caseId: normalizeStringField(value.caseId), featureId: normalizeStringField(value.featureId), appliedAt: normalizeStringField(value.appliedAt), batchId: normalizeStringField(value.batchId), changedFields: value.changedFields.map(change => ({ field: normalizeStringField(change.field), oldValue: normalizeStringField(change.oldValue), newValue: normalizeStringField(change.newValue) })) };
         const seen = new Set();
-        if (app.caseId !== normalizeStringField(caseId)) return invalid;
-        if (!normalizeStringField(featureId) || app.featureId !== normalizeStringField(featureId)) return invalid;
-        if (!app.featureId || !app.batchId || !app.appliedAt || !Number.isFinite(Date.parse(app.appliedAt))) return invalid;
-        if (!app.changedFields.length) return invalid;
+        if (!CLEANUP_APPLICATION_TYPES.includes(app.applicationType) || app.caseId !== normalizeStringField(caseId)) return invalid;
+        if (!normalizeStringField(featureId) || app.featureId !== normalizeStringField(featureId) || !app.batchId || !app.appliedAt || !Number.isFinite(Date.parse(app.appliedAt)) || !app.changedFields.length) return invalid;
         for (const change of app.changedFields) {
-          if (!CLEANUP_WORKBENCH_APPLICATION_FIELDS.includes(change.field) || seen.has(change.field) || change.oldValue === change.newValue) return invalid;
+          if (!allowedFields.includes(change.field) || seen.has(change.field) || change.oldValue === change.newValue) return invalid;
           seen.add(change.field);
         }
+        if (app.applicationType === 'status-pool-transition') {
+          if (app.changedFields.length !== 2 || seen.size !== 2 || !seen.has('pool') || !seen.has('status')) return invalid;
+          const poolChange = app.changedFields.find(change => change.field === 'pool');
+          const statusChange = app.changedFields.find(change => change.field === 'status');
+          if (!poolChange || poolChange.oldValue !== 'planned' || poolChange.newValue !== 'implemented') return invalid;
+          if (!statusChange || !['planned', 'selected-for-sprint'].includes(statusChange.oldValue) || statusChange.newValue !== 'confirmed') return invalid;
+        }
         return app;
+      }
+
+      function normalizeCleanupWorkbenchStatusPoolDecision(value, run, caseId, featureId) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+        const fields = ['schemaVersion','projectId','runId','caseId','featureId','decision','fromPool','fromStatus','toPool','toStatus','summary','validatedAt'];
+        if (!cleanupWorkbenchHasOnlyStringOrEmptyFields(value, fields)) return null;
+        const d = {}; fields.forEach(field => { d[field] = normalizeStringField(value[field]); });
+        if (d.schemaVersion !== CLEANUP_STATUS_POOL_DECISION_SCHEMA_VERSION || !run || d.projectId !== run.projectId || d.runId !== run.id || d.caseId !== normalizeStringField(caseId) || d.featureId !== normalizeStringField(featureId) || d.decision !== 'confirm-implemented' || !d.validatedAt || !Number.isFinite(Date.parse(d.validatedAt))) return null;
+        if (!isAllowedCleanupStatusPoolTransition(d.fromPool, d.fromStatus, d.toPool, d.toStatus)) return null;
+        return d;
+      }
+
+      function isAllowedCleanupStatusPoolTransition(fromPool, fromStatus, toPool, toStatus) {
+        return fromPool === 'planned' && ['planned', 'selected-for-sprint'].includes(fromStatus) && toPool === 'implemented' && toStatus === 'confirmed';
       }
 
       function isCleanupWorkbenchRunRecord(record) {
@@ -13303,11 +13333,13 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           const existing = inputCases[proposal.caseId] && typeof inputCases[proposal.caseId] === 'object' ? inputCases[proposal.caseId] : {};
           const strictFeatureId = getCleanupWorkbenchProposalStrictFeatureId(proposal);
           const mainChatDecision = normalizeCleanupWorkbenchMainChatDecision(existing.mainChatDecision, { projectId: String(record.projectId || source.projectId || '').trim() }, proposal.caseId, strictFeatureId || '');
+          const statusPoolDecision = normalizeCleanupWorkbenchStatusPoolDecision(existing.statusPoolDecision, { id: String(record.id || ''), projectId: String(record.projectId || source.projectId || '').trim() }, proposal.caseId, strictFeatureId || '');
           cases[proposal.caseId] = {
             status: normalizeCleanupWorkbenchCaseStatus(existing.status || existing.runStatus),
             updatedAt: normalizeCleanupWorkbenchCaseUpdatedAt(existing.updatedAt),
             mainChatDecision,
-            mainChatApplication: normalizeCleanupWorkbenchMainChatApplication(existing.mainChatApplication, proposal.caseId, (mainChatDecision && mainChatDecision.featureId) || strictFeatureId || ''),
+            statusPoolDecision,
+            mainChatApplication: normalizeCleanupWorkbenchMainChatApplication(existing.mainChatApplication, proposal.caseId, (statusPoolDecision && statusPoolDecision.featureId) || (mainChatDecision && mainChatDecision.featureId) || strictFeatureId || ''),
             dedupeDecision: existing.dedupeDecision || null
           };
         });
@@ -13523,21 +13555,98 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         })[group] || 'Fall prüfen und eine Reviewentscheidung treffen.';
       }
 
-      function setCleanupWorkbenchCaseStatus(caseId, status) {
-        const requestedStatus = String(status || '').trim();
-        if (!CLEANUP_WORKBENCH_CASE_STATUSES.includes(requestedStatus)) return;
-        const normalizedStatus = requestedStatus;
-        const activeRun = getActiveCleanupWorkbenchRun();
-        if (!activeRun || activeRun.reviewState.runStatus !== 'active') return alert('Nur aktive Cleanup-Workbench-Runs können bearbeitet werden.');
-        const caseState = getCleanupWorkbenchCase(activeRun, caseId);
-        if (!caseState) return alert('Fall im aktiven Workbench-Run nicht gefunden.');
+      function clearCleanupWorkbenchReviewSelection() {
+        if (ui.cleanupReview) ui.cleanupReview.workbenchSelectedCaseIds = [];
+      }
+
+      function isCleanupWorkbenchCaseReviewMutable(run, caseId, targetStatus) {
+        if (!run || run.id !== (ui.cleanupReview && ui.cleanupReview.activeRunId) || run.projectId !== (ui.cleanupReview && ui.cleanupReview.projectId) || run.reviewState.runStatus !== 'active') return { valid: false, reason: 'Nur der aktive, projektgebundene Workbench-Run ist bearbeitbar.' };
+        if (!CLEANUP_WORKBENCH_CASE_STATUSES.includes(targetStatus)) return { valid: false, reason: 'Unbekannter Reviewstatus.' };
+        const caseState = getCleanupWorkbenchCase(run, caseId);
+        if (!caseState) return { valid: false, reason: 'Case fehlt im aktiven Run.' };
+        const binding = getCleanupWorkbenchStrictFeatureBinding(run, caseId);
+        const app = normalizeCleanupWorkbenchMainChatApplication(caseState.mainChatApplication, caseId, binding.featureId || '');
+        if (caseState.mainChatApplication !== null) return { valid: false, reason: app && app.status === 'applied' ? 'Bereits angewendete Cases sind review-gesperrt.' : 'Unklarer Anwendungsnachweis sperrt das Review.' };
+        return { valid: true, caseState };
+      }
+
+      function canonicalizeCleanupWorkbenchRunForProtectedComparison(record) {
+        const copy = cloneCleanupWorkbenchJson(record, {});
+        if (!copy.createdAt) copy.createdAt = '__legacy-createdAt__';
+        if (!copy.updatedAt) copy.updatedAt = '__legacy-updatedAt__';
+        return normalizeCleanupWorkbenchRunRecord(copy);
+      }
+
+      function getCleanupWorkbenchReviewProtectedStateDiffs(beforeState, afterState, runId, caseIds) {
+        const before = cloneCleanupWorkbenchJson(beforeState, {}), after = cloneCleanupWorkbenchJson(afterState, {});
+        const scrub = state => {
+          const runIndex = (state.analyses || []).findIndex(record => record && record.id === runId);
+          if (runIndex >= 0) {
+            state.analyses[runIndex] = canonicalizeCleanupWorkbenchRunForProtectedComparison(state.analyses[runIndex]);
+          }
+          const run = runIndex >= 0 ? state.analyses[runIndex] : null;
+          if (run) {
+            run.updatedAt = '';
+            caseIds.forEach(caseId => { const c = run.reviewState && run.reviewState.cases && run.reviewState.cases[caseId]; if (c) { c.status = ''; c.updatedAt = ''; } });
+          }
+          return state;
+        };
+        return cleanupDeepEqual(scrub(before), scrub(after)) ? [] : ['Review-Batch würde geschützten State verändern.'];
+      }
+
+      async function applyCleanupWorkbenchReviewStatusBatch(caseIds, targetStatus) {
+        const ids = Array.isArray(caseIds) ? caseIds.map(normalizeStringField) : [];
+        if (!ids.length || ids.some(id => !id) || new Set(ids).size !== ids.length) return alert('Review-Batch ungültig: Case-IDs fehlen oder sind doppelt.');
+        const run = getActiveCleanupWorkbenchRun();
+        const invalid = ids.map(id => ({ id, guard: isCleanupWorkbenchCaseReviewMutable(run, id, targetStatus) })).find(item => !item.guard.valid);
+        if (invalid) return alert('Review-Batch abgebrochen: ' + invalid.id + ': ' + invalid.guard.reason);
+        const previousState = cloneCleanupWorkbenchJson(S, {});
+        const candidateState = cloneCleanupWorkbenchJson(S, {});
+        const candidateRunIndex = (candidateState.analyses || []).findIndex(record => record && record.id === run.id);
+        if (candidateRunIndex < 0) return alert('Review-Batch abgebrochen: Run fehlt in Zustandskopie.');
+        const candidateRun = normalizeCleanupWorkbenchRunRecord(candidateState.analyses[candidateRunIndex]);
+        candidateState.analyses[candidateRunIndex] = candidateRun;
         const now = new Date().toISOString();
-        caseState.status = normalizedStatus;
-        caseState.updatedAt = now;
-        activeRun.updatedAt = now;
-        const savedRun = upsertCleanupWorkbenchRun(activeRun);
-        hydrateCleanupReviewFromWorkbenchRun(savedRun);
-        save();
+        ids.forEach(id => { candidateRun.reviewState.cases[id].status = targetStatus; candidateRun.reviewState.cases[id].updatedAt = now; });
+        candidateRun.updatedAt = now;
+        const protectedDiffs = getCleanupWorkbenchReviewProtectedStateDiffs(previousState, candidateState, run.id, ids);
+        if (protectedDiffs.length) return alert('Review-Batch abgebrochen: ' + protectedDiffs.join(' '));
+        try {
+          S = candidateState;
+          await saveAsync();
+          const savedRun = normalizeCleanupWorkbenchRunRecord(findCleanupWorkbenchRun(run.id));
+          clearCleanupWorkbenchReviewSelection();
+          hydrateCleanupReviewFromWorkbenchRun(savedRun);
+          renderView();
+          return true;
+        } catch (err) {
+          S = previousState;
+          hydrateCleanupReviewFromWorkbenchRun(normalizeCleanupWorkbenchRunRecord(findCleanupWorkbenchRun(run.id)));
+          renderView();
+          alert('Review-Batch nicht gespeichert; vollständig zurückgesetzt: ' + (err && err.message ? err.message : err));
+          return false;
+        }
+      }
+
+      function setCleanupWorkbenchCaseStatus(caseId, status) {
+        return applyCleanupWorkbenchReviewStatusBatch([caseId], status);
+      }
+
+      function toggleCleanupWorkbenchReviewSelection(caseId, selected) {
+        const ids = new Set((ui.cleanupReview.workbenchSelectedCaseIds || []).map(normalizeStringField).filter(Boolean));
+        if (selected) ids.add(normalizeStringField(caseId)); else ids.delete(normalizeStringField(caseId));
+        ui.cleanupReview.workbenchSelectedCaseIds = Array.from(ids);
+        renderView();
+      }
+
+      function getVisibleMutableCleanupWorkbenchCaseIds() {
+        const run = getActiveCleanupWorkbenchRun();
+        const filter = CLEANUP_WORKBENCH_STATUS_FILTERS.includes(ui.cleanupReview.workbenchStatusFilter) ? ui.cleanupReview.workbenchStatusFilter : 'all';
+        return ((run && run.result && run.result.proposals) || []).filter(p => cleanupWorkbenchStatusMatchesFilter(run.reviewState.cases[p.caseId].status, filter) && isCleanupWorkbenchCaseReviewMutable(run, p.caseId, run.reviewState.cases[p.caseId].status).valid).map(p => p.caseId);
+      }
+
+      function selectVisibleCleanupWorkbenchCases() {
+        ui.cleanupReview.workbenchSelectedCaseIds = getVisibleMutableCleanupWorkbenchCaseIds();
         renderView();
       }
 
@@ -13623,12 +13732,16 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         });
         ui.cleanupReview.clarificationPrompt = '';
         ui.cleanupReview.mainChatReturnJson = '';
+        ui.cleanupReview.statusPoolReturnJson = '';
         ui.cleanupReview.dedupePrompt = '';
         ui.cleanupReview.dedupeReturnJson = '';
         ui.cleanupReview.mainChatDecisionPreview = buildCleanupWorkbenchPersistedMainChatPreview(record);
+        ui.cleanupReview.statusPoolDecisionPreview = buildCleanupStatusPoolPreview(record);
         ui.cleanupReview.dedupeDecisionPreview = null;
         ui.cleanupReview.visible = true;
         ui.cleanupReview.versionLogged = true;
+        clearCleanupWorkbenchReviewSelection();
+        ui.cleanupReview.statusPoolSelectedCaseIds = [];
         ui.cleanupReview.activeRunId = record.id;
         if (!CLEANUP_WORKBENCH_STATUS_FILTERS.includes(ui.cleanupReview.workbenchStatusFilter)) ui.cleanupReview.workbenchStatusFilter = 'all';
       }
@@ -13694,6 +13807,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         ui.cleanupReview.versionLogged = legacyVersionLogged;
         ui.cleanupReview.clarificationPrompt = '';
         ui.cleanupReview.mainChatReturnJson = '';
+        ui.cleanupReview.statusPoolReturnJson = '';
         ui.cleanupReview.dedupePrompt = '';
         ui.cleanupReview.dedupeReturnJson = '';
         ui.cleanupReview.mainChatDecisionPreview = null;
@@ -14618,7 +14732,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         (batch.entries || []).forEach(entry => {
           const feature = S.features.find(f => f && f.id === entry.featureId && f.projectId === ui.cleanupReview.projectId);
           if (!feature) { driftErrors.push(entry.featureId + ': Feature wurde entfernt.'); return; }
-          ['title','description','category'].forEach(field => {
+          const baselineFields = batch.mutationClass === 'status-pool-transition' ? ['pool','status','reviewStatus'] : ['title','description','category'];
+          baselineFields.forEach(field => {
             if (String(feature[field] || '') !== String(entry.baseline[field] || '')) driftErrors.push(entry.featureId + ': Drift bei ' + field + '.');
           });
           if (Object.prototype.hasOwnProperty.call(feature, 'updatedAt') && String(feature.updatedAt || '') !== String(entry.baseline.updatedAt || '')) driftErrors.push(entry.featureId + ': Drift bei updatedAt.');
@@ -14639,6 +14754,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
               if (caseState.status !== base.caseStatus || caseState.status !== 'reviewed') driftErrors.push(entry.caseId + ': Fallstatus-Drift.');
               if (String(caseState.updatedAt || '') !== String(base.caseUpdatedAt || '')) driftErrors.push(entry.caseId + ': case.updatedAt-Drift.');
               if (!cleanupDeepEqual(caseState.mainChatDecision, base.mainChatDecision)) driftErrors.push(entry.caseId + ': Hauptchat-Entscheidungs-Drift.');
+              if (batch.mutationClass === 'status-pool-transition' && !cleanupDeepEqual(caseState.statusPoolDecision, base.statusPoolDecision)) driftErrors.push(entry.caseId + ': Status-/Pool-Entscheidungs-Drift.');
               if (caseState.mainChatApplication !== null) driftErrors.push(entry.caseId + ': Anwendungsnachweis ist nicht mehr null.');
               const binding = getCleanupWorkbenchStrictFeatureBinding(normalizedRun, entry.caseId);
               if (!binding.valid || binding.featureId !== entry.featureId) driftErrors.push(entry.caseId + ': Featurebindung-Drift.');
@@ -14698,32 +14814,45 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
               if (JSON.stringify(beforeRun) !== JSON.stringify(afterRun)) diffs.push('Fremder Analysis-Record wurde verändert: ' + ((beforeRun && beforeRun.id) || idx) + '.');
               return;
             }
-            const expectedRun = JSON.parse(JSON.stringify(beforeRun));
-            expectedRun.updatedAt = afterRun && afterRun.updatedAt;
+            const canonicalBeforeRun = canonicalizeCleanupWorkbenchRunForProtectedComparison(beforeRun);
+            const canonicalAfterRun = canonicalizeCleanupWorkbenchRunForProtectedComparison(afterRun);
+            const expectedRun = JSON.parse(JSON.stringify(canonicalBeforeRun));
+            expectedRun.updatedAt = canonicalAfterRun && canonicalAfterRun.updatedAt;
             const expectedCases = expectedRun.reviewState && expectedRun.reviewState.cases || {};
             (batch.entries || []).forEach(entry => {
               if (expectedCases[entry.caseId]) {
-                expectedCases[entry.caseId].updatedAt = afterRun && afterRun.reviewState && afterRun.reviewState.cases && afterRun.reviewState.cases[entry.caseId] && afterRun.reviewState.cases[entry.caseId].updatedAt;
-                expectedCases[entry.caseId].mainChatApplication = afterRun && afterRun.reviewState && afterRun.reviewState.cases && afterRun.reviewState.cases[entry.caseId] && afterRun.reviewState.cases[entry.caseId].mainChatApplication;
+                expectedCases[entry.caseId].updatedAt = canonicalAfterRun && canonicalAfterRun.reviewState && canonicalAfterRun.reviewState.cases && canonicalAfterRun.reviewState.cases[entry.caseId] && canonicalAfterRun.reviewState.cases[entry.caseId].updatedAt;
+                expectedCases[entry.caseId].mainChatApplication = canonicalAfterRun && canonicalAfterRun.reviewState && canonicalAfterRun.reviewState.cases && canonicalAfterRun.reviewState.cases[entry.caseId] && canonicalAfterRun.reviewState.cases[entry.caseId].mainChatApplication;
               }
             });
             Object.keys(expectedCases).forEach(caseId => {
               if (!allowedCases.has(caseId)) return;
-              const beforeCase = beforeRun.reviewState && beforeRun.reviewState.cases && beforeRun.reviewState.cases[caseId];
-              const afterCase = afterRun && afterRun.reviewState && afterRun.reviewState.cases && afterRun.reviewState.cases[caseId];
+              const beforeCase = canonicalBeforeRun.reviewState && canonicalBeforeRun.reviewState.cases && canonicalBeforeRun.reviewState.cases[caseId];
+              const afterCase = canonicalAfterRun && canonicalAfterRun.reviewState && canonicalAfterRun.reviewState.cases && canonicalAfterRun.reviewState.cases[caseId];
               if (!beforeCase || !afterCase) return;
               if (beforeCase.status !== afterCase.status) diffs.push('Workbench-Case-Status unerlaubt verändert: ' + caseId + '.');
               if (!cleanupDeepEqual(beforeCase.mainChatDecision, afterCase.mainChatDecision)) diffs.push('Workbench-Case-mainChatDecision unerlaubt verändert: ' + caseId + '.');
               if (!cleanupDeepEqual(beforeCase.dedupeDecision, afterCase.dedupeDecision)) diffs.push('Workbench-Case-dedupeDecision unerlaubt verändert: ' + caseId + '.');
             });
-            if (JSON.stringify(expectedRun) !== JSON.stringify(afterRun)) diffs.push('Ziel-Analysis-Record enthält unerlaubte Änderungen.');
+            if (JSON.stringify(expectedRun) !== JSON.stringify(canonicalAfterRun)) diffs.push('Ziel-Analysis-Record enthält unerlaubte Änderungen.');
           });
         }
         return diffs;
       }
 
       async function commitCleanupMainChatUpdateBatch(preview, batch) {
-        const forbiddenCsvDescription = isCsvComparisonTransformMode(ui.cleanupReview.mode) && (batch.entries || []).some(entry => (entry.changes || []).some(change => change.field === 'description'));
+        const mutationClass = batch && batch.mutationClass === 'status-pool-transition' ? 'status-pool-transition' : 'update-existing';
+        if (!batch || !batch.valid || !Array.isArray(batch.entries) || !batch.entries.length) throw new Error('Ungültiger oder leerer Commit-Batch.');
+        if (mutationClass === 'status-pool-transition') {
+          const liveRun = getActiveCleanupWorkbenchRun();
+          batch.entries.forEach(entry => {
+            const eligibility = getCleanupStatusPoolEligibility(liveRun, entry.caseId);
+            if (!eligibility.eligible || !eligibility.binding || eligibility.binding.featureId !== entry.featureId) throw new Error(entry.caseId + ': Status-/Pool-Eligibility ist nicht mehr erfüllt. ' + (eligibility.reason || 'Featurebindung weicht ab.'));
+            const shape = (entry.changes || []).map(change => [change.field, change.oldValue, change.newValue]);
+            if (!cleanupDeepEqual(shape, [['pool', eligibility.binding.feature.pool, 'implemented'], ['status', eligibility.binding.feature.status, 'confirmed']])) throw new Error(entry.caseId + ': Status-/Pool-Batch entspricht nicht der geschlossenen Allowlist.');
+          });
+        }
+        const forbiddenCsvDescription = mutationClass === 'update-existing' && isCsvComparisonTransformMode(ui.cleanupReview.mode) && (batch.entries || []).some(entry => (entry.changes || []).some(change => change.field === 'description'));
         if (forbiddenCsvDescription) throw new Error('Description-Änderungen sind im CSV-Transform nur Preview-only und dürfen nicht committed werden.');
         const driftErrors = checkCleanupMainChatBatchDrift(batch);
         if (driftErrors.length) throw new Error('Driftprüfung fehlgeschlagen: ' + driftErrors.join(' '));
@@ -14731,13 +14860,14 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const candidateState = JSON.parse(JSON.stringify(S || {}));
         const now = new Date().toISOString();
         (batch.entries || []).forEach(entry => {
-          if (entry.workbenchBaseline && entry.workbenchBaseline.mainChatDecision) {
+          if (mutationClass === 'update-existing' && entry.workbenchBaseline && entry.workbenchBaseline.mainChatDecision) {
             assertNoCleanupWorkbenchUnsupportedUpdateIntent(entry.workbenchBaseline.mainChatDecision, entry.caseId);
             const liveFeature = (S.features || []).find(f => f && f.id === entry.featureId && f.projectId === ui.cleanupReview.projectId);
             assertCleanupWorkbenchApplicableDecisionFields(entry.workbenchBaseline.mainChatDecision, liveFeature, entry.caseId);
           }
           entry.changes.forEach(change => {
-            if (!CLEANUP_WORKBENCH_APPLICATION_FIELDS.includes(change.field)) throw new Error(entry.caseId + ': verbotenes Commit-Feld ' + change.field + '.');
+            const allowedCommitFields = mutationClass === 'status-pool-transition' ? ['pool', 'status'] : CLEANUP_WORKBENCH_APPLICATION_FIELDS;
+            if (!allowedCommitFields.includes(change.field)) throw new Error(entry.caseId + ': verbotenes Commit-Feld ' + change.field + '.');
             if (change.field === 'category' && !FEATURE_CATEGORIES.includes(change.newValue)) throw new Error(entry.caseId + ': ungültige Kategorie im Commit-Batch.');
           });
           const feature = (candidateState.features || []).find(f => f && f.id === entry.featureId && f.projectId === ui.cleanupReview.projectId);
@@ -14752,7 +14882,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           (batch.entries || []).forEach(entry => {
             const caseState = getCleanupWorkbenchCase(normalizedRun, entry.caseId);
             if (!caseState) throw new Error(entry.caseId + ': Workbench-Case fehlt in Zustandskopie.');
-            caseState.mainChatApplication = { status: 'applied', caseId: entry.caseId, featureId: entry.featureId, appliedAt: now, batchId: batch.batchId || uid('cleanup-batch'), changedFields: entry.changes.map(change => ({ field: change.field, oldValue: change.oldValue, newValue: change.newValue })) };
+            caseState.mainChatApplication = { status: 'applied', applicationType: mutationClass, caseId: entry.caseId, featureId: entry.featureId, appliedAt: now, batchId: batch.batchId || uid('cleanup-batch'), changedFields: entry.changes.map(change => ({ field: change.field, oldValue: change.oldValue, newValue: change.newValue })) };
             caseState.updatedAt = now;
           });
           normalizedRun.updatedAt = now;
@@ -14810,6 +14940,150 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           alert('Batch abgebrochen, keine Teiländerung angewendet: ' + (err && err.message ? err.message : err));
           renderView();
         }
+      }
+
+      function getCleanupStatusPoolEligibility(run, caseId) {
+        if (!run || run.reviewState.runStatus !== 'active') return { eligible: false, reason: 'Kein aktiver Workbench-Run.' };
+        const caseState = getCleanupWorkbenchCase(run, caseId);
+        const binding = getCleanupWorkbenchStrictFeatureBinding(run, caseId);
+        if (!caseState || caseState.status !== 'reviewed') return { eligible: false, reason: 'Case muss menschlich bestätigt sein.' };
+        if (!binding.valid || !CLEANUP_STATUS_POOL_PROPOSAL_TYPES.includes(binding.proposal.type)) return { eligible: false, reason: 'Proposaltyp oder Featurebindung ist nicht zulässig.' };
+        if (isFeatureTrashed(binding.feature)) return { eligible: false, reason: 'Feature liegt im Papierkorb und darf nicht als Status-/Pool-Ziel verwendet werden.' };
+        if (caseState.mainChatApplication !== null) return { eligible: false, reason: 'Application vorhanden oder ungültig.' };
+        if (caseState.mainChatDecision && !CLEANUP_MAINCHAT_MUTATION_FREE_DECISIONS.includes(caseState.mainChatDecision.decision)) return { eligible: false, reason: 'Konkurrierender mutierender Hauptchat-Intent: ' + caseState.mainChatDecision.decision + '.' };
+        const decision = normalizeCleanupWorkbenchStatusPoolDecision(caseState.statusPoolDecision, run, caseId, binding.featureId);
+        if (!decision) return { eligible: false, reason: 'Validierte Status-/Pool-Entscheidung fehlt.' };
+        const feature = binding.feature;
+        if (feature.pool !== decision.fromPool || feature.status !== decision.fromStatus || !isAllowedCleanupStatusPoolTransition(feature.pool, feature.status, decision.toPool, decision.toStatus)) return { eligible: false, reason: 'Ausgangszustand oder Übergang ist nicht erlaubt.' };
+        return { eligible: true, reason: '', binding, decision, caseState };
+      }
+
+      function validateCleanupStatusPoolDecisionPayload(payload) {
+        const errors = [], run = getActiveCleanupWorkbenchRun(), seenCases = new Set(), seenFeatures = new Set();
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return { valid: false, errors: ['Rückgabe muss ein Objekt sein.'], run: null, decisions: [] };
+        if (payload.schemaVersion !== CLEANUP_STATUS_POOL_DECISION_SCHEMA_VERSION) errors.push('schemaVersion muss exakt ' + CLEANUP_STATUS_POOL_DECISION_SCHEMA_VERSION + ' sein.');
+        if (!run || payload.projectId !== run.projectId || payload.runId !== run.id) errors.push('projectId/runId passen nicht zum aktiven Workbench-Run.');
+        if (!Array.isArray(payload.decisions)) errors.push('decisions muss ein Array sein.');
+        const decisions = [];
+        (Array.isArray(payload.decisions) ? payload.decisions : []).forEach((raw, index) => {
+          const prefix = 'decisions[' + index + ']: ';
+          if (!raw || typeof raw !== 'object' || Array.isArray(raw)) { errors.push(prefix + 'Objekt erwartet.'); return; }
+          const caseId = normalizeStringField(raw.caseId), featureId = normalizeStringField(raw.featureId);
+          if (!caseId || seenCases.has(caseId)) errors.push(prefix + 'caseId fehlt oder ist doppelt.'); else seenCases.add(caseId);
+          if (!featureId || seenFeatures.has(featureId)) errors.push(prefix + 'featureId fehlt oder ist doppelt.'); else seenFeatures.add(featureId);
+          const binding = run && getCleanupWorkbenchStrictFeatureBinding(run, caseId), caseState = run && getCleanupWorkbenchCase(run, caseId);
+          if (!binding || !binding.valid || binding.featureId !== featureId) errors.push(prefix + 'Featurebindung ungültig.');
+          if (binding && binding.feature && isFeatureTrashed(binding.feature)) errors.push(prefix + 'Feature liegt im Papierkorb und ist als Status-/Pool-Ziel gesperrt.');
+          if (!caseState || caseState.status !== 'reviewed' || caseState.mainChatApplication !== null) errors.push(prefix + 'Case ist nicht bestätigt oder bereits angewendet.');
+          if (!binding || !binding.proposal || !CLEANUP_STATUS_POOL_PROPOSAL_TYPES.includes(binding.proposal.type)) errors.push(prefix + 'Proposaltyp nicht erlaubt.');
+          if (caseState && caseState.mainChatDecision && !CLEANUP_MAINCHAT_MUTATION_FREE_DECISIONS.includes(caseState.mainChatDecision.decision)) errors.push(prefix + 'konkurrierender mutierender Hauptchat-Intent: ' + caseState.mainChatDecision.decision + '.');
+          if (!binding || !binding.feature || raw.fromPool !== binding.feature.pool || raw.fromStatus !== binding.feature.status) errors.push(prefix + 'fromPool/fromStatus weichen vom Live-Feature ab.');
+          if (raw.decision !== 'confirm-implemented' || !isAllowedCleanupStatusPoolTransition(raw.fromPool, raw.fromStatus, raw.toPool, raw.toStatus)) errors.push(prefix + 'Entscheidung oder Übergang nicht erlaubt.');
+          decisions.push({ schemaVersion: CLEANUP_STATUS_POOL_DECISION_SCHEMA_VERSION, projectId: payload.projectId, runId: payload.runId, caseId, featureId, decision: normalizeStringField(raw.decision), fromPool: normalizeStringField(raw.fromPool), fromStatus: normalizeStringField(raw.fromStatus), toPool: normalizeStringField(raw.toPool), toStatus: normalizeStringField(raw.toStatus), summary: normalizeStringField(raw.summary) });
+        });
+        return { valid: !errors.length, errors, run, decisions };
+      }
+
+      async function persistCleanupStatusPoolDecisions(payload) {
+        const validation = validateCleanupStatusPoolDecisionPayload(payload);
+        if (!validation.valid) throw new Error(validation.errors.join(' '));
+        const liveRun = normalizeCleanupWorkbenchRunRecord(findCleanupWorkbenchRun(validation.run.id));
+        const withoutValidatedAt = decision => { const copy = cloneCleanupWorkbenchJson(decision, null); if (copy) delete copy.validatedAt; return copy; };
+        const changedDecisions = validation.decisions.filter(decision => {
+          const existing = getCleanupWorkbenchCase(liveRun, decision.caseId);
+          return !existing || !cleanupDeepEqual(withoutValidatedAt(existing.statusPoolDecision), decision);
+        });
+        if (!changedDecisions.length) return buildCleanupStatusPoolPreview(liveRun);
+        const previousState = cloneCleanupWorkbenchJson(S, {}), candidateState = cloneCleanupWorkbenchJson(S, {}), now = new Date().toISOString();
+        const run = (candidateState.analyses || []).find(r => r && r.id === validation.run.id);
+        changedDecisions.forEach(decision => { run.reviewState.cases[decision.caseId].statusPoolDecision = Object.assign({}, decision, { validatedAt: now }); run.reviewState.cases[decision.caseId].updatedAt = now; });
+        run.updatedAt = now;
+        try { S = candidateState; await saveAsync(); } catch (err) { S = previousState; throw err; }
+        hydrateCleanupReviewFromWorkbenchRun(normalizeCleanupWorkbenchRunRecord(findCleanupWorkbenchRun(run.id)));
+        return buildCleanupStatusPoolPreview(getActiveCleanupWorkbenchRun());
+      }
+
+      function buildCleanupStatusPoolPreview(run) {
+        const items = ((run && run.result && run.result.proposals) || []).map(proposal => {
+          const eligibility = getCleanupStatusPoolEligibility(run, proposal.caseId), binding = getCleanupWorkbenchStrictFeatureBinding(run, proposal.caseId);
+          return { caseId: proposal.caseId, featureId: binding.featureId || '', featureTitle: binding.feature && binding.feature.title || '', selectable: eligibility.eligible, reason: eligibility.reason, decision: eligibility.decision || null, existing: binding.feature ? { pool: binding.feature.pool, status: binding.feature.status, reviewStatus: binding.feature.reviewStatus || '', updatedAt: binding.feature.updatedAt || '' } : null };
+        });
+        return { valid: !!run, mutationClass: 'status-pool-transition', origin: run ? { runId: run.id, projectId: run.projectId, runStatus: run.reviewState.runStatus, runUpdatedAt: run.updatedAt || '' } : null, items, selectedCaseIds: [], pendingBatch: null };
+      }
+
+      function buildCleanupStatusPoolTransitionBatch(preview) {
+        const errors = [], run = getActiveCleanupWorkbenchRun(), entries = [], seenCases = new Set(), seenFeatures = new Set();
+        if (!preview || preview.mutationClass !== 'status-pool-transition' || !run || !cleanupDeepEqual(preview.origin, { runId: run.id, projectId: run.projectId, runStatus: run.reviewState.runStatus, runUpdatedAt: run.updatedAt || '' })) errors.push('Preview-Origin ist veraltet.');
+        const selected = preview && Array.isArray(preview.selectedCaseIds) ? preview.selectedCaseIds : [];
+        if (!selected.length) errors.push('Keine Status-/Pool-Entscheidung ausgewählt.');
+        selected.forEach(caseId => {
+          if (seenCases.has(caseId)) { errors.push('Doppelte caseId: ' + caseId); return; } seenCases.add(caseId);
+          const eligibility = getCleanupStatusPoolEligibility(run, caseId);
+          if (!eligibility.eligible) { errors.push(caseId + ': ' + eligibility.reason); return; }
+          const featureId = eligibility.binding.featureId;
+          if (seenFeatures.has(featureId)) { errors.push('Doppelte Ziel-Feature-ID: ' + featureId); return; } seenFeatures.add(featureId);
+          const f = eligibility.binding.feature, c = eligibility.caseState;
+          entries.push({ caseId, featureId, featureTitle: f.title || '', baseline: { pool: f.pool, status: f.status, reviewStatus: f.reviewStatus || '', updatedAt: f.updatedAt || '' }, changes: [{ field: 'pool', oldValue: f.pool, newValue: 'implemented' }, { field: 'status', oldValue: f.status, newValue: 'confirmed' }], workbenchBaseline: { caseId, caseStatus: c.status, caseUpdatedAt: c.updatedAt || '', featureId, statusPoolDecision: cloneCleanupWorkbenchJson(c.statusPoolDecision, null), mainChatDecision: cloneCleanupWorkbenchJson(c.mainChatDecision, null), mainChatApplication: cloneCleanupWorkbenchJson(c.mainChatApplication, null) } });
+        });
+        const batch = { mutationClass: 'status-pool-transition', valid: !errors.length, errors, entries, selectedCount: selected.length, featureCount: entries.length, fieldCount: entries.length * 2, fieldCounts: { pool: entries.length, status: entries.length }, origin: preview && preview.origin, batchId: uid('cleanup-batch') };
+        const frozen = cloneCleanupWorkbenchJson(batch, null);
+        const deepFreeze = value => { if (value && typeof value === 'object' && !Object.isFrozen(value)) { Object.freeze(value); Object.keys(value).forEach(key => deepFreeze(value[key])); } return value; };
+        return deepFreeze(frozen);
+      }
+
+      async function checkCleanupStatusPoolReturnJson() {
+        try {
+          const payload = JSON.parse(extractJsonObjectFromText(ui.cleanupReview.statusPoolReturnJson || ''));
+          ui.cleanupReview.statusPoolDecisionPreview = await persistCleanupStatusPoolDecisions(payload);
+          ui.cleanupReview.statusPoolSelectedCaseIds = [];
+          renderView();
+        } catch (err) { alert('Status-/Pool-Rückgabe abgelehnt: ' + (err && err.message ? err.message : err)); }
+      }
+
+      function toggleCleanupStatusPoolSelection(caseId, selected) {
+        const preview = ui.cleanupReview.statusPoolDecisionPreview || buildCleanupStatusPoolPreview(getActiveCleanupWorkbenchRun());
+        const ids = new Set((preview.selectedCaseIds || []).map(normalizeStringField));
+        const id = normalizeStringField(caseId);
+        const wasSelected = ids.has(id);
+        if (selected) ids.add(id); else ids.delete(id);
+        if (wasSelected !== ids.has(id)) preview.pendingBatch = null;
+        preview.selectedCaseIds = Array.from(ids).filter(Boolean);
+        ui.cleanupReview.statusPoolSelectedCaseIds = preview.selectedCaseIds.slice();
+        ui.cleanupReview.statusPoolDecisionPreview = preview;
+        renderView();
+      }
+
+      function reviewCleanupStatusPoolSelection() {
+        const preview = ui.cleanupReview.statusPoolDecisionPreview;
+        const batch = buildCleanupStatusPoolTransitionBatch(preview);
+        if (!batch.valid) return alert('Status-/Pool-Batch ungültig:\n- ' + batch.errors.join('\n- '));
+        preview.pendingBatch = batch;
+        renderView();
+      }
+
+      async function confirmCleanupStatusPoolBatch() {
+        const preview = ui.cleanupReview.statusPoolDecisionPreview, batch = preview && preview.pendingBatch;
+        if (!batch || !batch.valid || batch.mutationClass !== 'status-pool-transition') return alert('Kein eingefrorener Status-/Pool-Batch vorhanden.');
+        if (!window.confirm(formatCleanupMainChatBatchDiff(batch) + '\n\nStatus und Pool atomar anwenden?')) return;
+        try {
+          await commitCleanupMainChatUpdateBatch(preview, batch);
+          const run = normalizeCleanupWorkbenchRunRecord(findCleanupWorkbenchRun(batch.origin.runId));
+          ui.cleanupReview.statusPoolDecisionPreview = buildCleanupStatusPoolPreview(run);
+          ui.cleanupReview.statusPoolSelectedCaseIds = [];
+          ui.cleanupReview.mainChatDecisionPreview = buildCleanupWorkbenchPersistedMainChatPreview(run);
+          ui.cleanupReview.mainChatDecisionPreview.selectedCaseIds = [];
+          ui.cleanupReview.mainChatDecisionPreview.pendingBatch = null;
+          renderView();
+        } catch (err) { alert('Status-/Pool-Batch abgebrochen, keine Teiländerung: ' + (err && err.message ? err.message : err)); renderView(); }
+      }
+
+      function renderCleanupStatusPoolDecisionPanel(run, completed) {
+        if (!run) return '';
+        const preview = ui.cleanupReview.statusPoolDecisionPreview || buildCleanupStatusPoolPreview(run);
+        const selected = new Set(preview.selectedCaseIds || []);
+        const rows = (preview.items || []).filter(item => item.decision || item.selectable).map(item => `<div class="item"><div class="row-top"><strong>${escapeHtml(item.featureTitle || item.featureId)}</strong><span class="pill pill-outline">${escapeHtml(item.caseId)}</span></div><div class="mini">Feature-ID: ${escapeHtml(item.featureId)} · Pool ${escapeHtml(item.existing && item.existing.pool || '—')} → implemented · Status ${escapeHtml(item.existing && item.existing.status || '—')} → confirmed</div><div class="mini">${escapeHtml(item.selectable ? 'Validiert und auswählbar' : item.reason || 'Nicht anwendbar')}</div>${item.selectable ? `<label class="mini"><input type="checkbox" data-cleanup-status-pool-select="${escapeAttr(item.caseId)}"${selected.has(item.caseId) ? ' checked' : ''}${completed ? ' disabled' : ''}> für Status-/Pool-Apply auswählen</label>` : ''}</div>`).join('');
+        const batch = preview.pendingBatch;
+        return `<section class="cleanup-review-stage" aria-label="Status-/Pool-Apply"><div class="cleanup-review-stage-head"><h3 class="cleanup-review-stage-title">Status-/Pool-Apply</h3><span class="pill pill-outline">eigener Confirm-Pfad</span></div><div class="notice notice-warning">Getrennt vom Review: Nur validierte Übergänge planned/planned oder planned/selected-for-sprint → implemented/confirmed.</div>${completed ? '' : `<div class="field"><label for="cleanupStatusPoolReturnJsonInput">Strukturierte Rückgabe (${CLEANUP_STATUS_POOL_DECISION_SCHEMA_VERSION})</label><textarea id="cleanupStatusPoolReturnJsonInput" class="cleanup-review-textarea">${escapeHtml(ui.cleanupReview.statusPoolReturnJson || '')}</textarea><button class="btn btn-secondary" id="btnCheckCleanupStatusPoolReturnJson">Rückgabe prüfen und lokal speichern</button></div>`}<div class="list">${rows || '<div class="notice">Keine validierte Status-/Pool-Entscheidung.</div>'}</div>${completed ? '' : `<div class="stack-row"><button class="btn btn-primary" id="btnReviewCleanupStatusPoolSelection"${selected.size ? '' : ' disabled'}>Vollständigen Diff prüfen</button>${batch ? `<button class="btn btn-primary" id="btnConfirmCleanupStatusPoolBatch">Final bestätigen</button><button class="btn btn-ghost" id="btnCancelCleanupStatusPoolBatch">Diff abbrechen</button>` : ''}</div>`}</section>`;
       }
 
       function validateDedupeDecisionPayload(payload) {
@@ -15125,7 +15399,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       }
 
       function clearCleanupReview() {
-        ui.cleanupReview = { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', openQuestions: [], clarificationPrompt: '', mainChatReturnJson: '', mainChatDecisionPreview: null, dedupePrompt: '', dedupeReturnJson: '', dedupeDecisionPreview: null, visible: false, versionLogged: false, activeRunId: '', workbenchStatusFilter: 'all' };
+        ui.cleanupReview = { proposals: [], projectId: '', incomingFeatures: [], rawAnalysisJson: '', mode: '', summary: '', openQuestions: [], clarificationPrompt: '', mainChatReturnJson: '', mainChatDecisionPreview: null, dedupePrompt: '', dedupeReturnJson: '', dedupeDecisionPreview: null, visible: false, versionLogged: false, activeRunId: '', workbenchStatusFilter: 'all', workbenchSelectedCaseIds: [], statusPoolSelectedCaseIds: [], statusPoolDecisionPreview: null };
         renderView();
       }
 
@@ -15165,8 +15439,13 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const renderWorkbenchStatusControl = (proposal) => {
           const caseState = activeRun && activeRun.reviewState && activeRun.reviewState.cases ? activeRun.reviewState.cases[proposal.caseId] : null;
           const status = normalizeCleanupWorkbenchCaseStatus(caseState && caseState.status);
-          const disabled = runCompleted ? ' disabled' : '';
-          return `<div class="stack-row cleanup-review-actions"><span class="pill pill-info">${escapeHtml(getCleanupWorkbenchCaseStatusLabel(status))}</span><label class="mini" for="cleanupCaseStatus-${escapeAttr(proposal.caseId)}">Fallentscheidung</label><select id="cleanupCaseStatus-${escapeAttr(proposal.caseId)}" data-cleanup-workbench-case-status="${escapeAttr(proposal.caseId)}"${disabled}><option value="open"${status === 'open' ? ' selected' : ''}>Offen</option><option value="reviewed"${status === 'reviewed' ? ' selected' : ''}>Bestätigt</option><option value="rejected"${status === 'rejected' ? ' selected' : ''}>Abgelehnt</option><option value="deferred"${status === 'deferred' ? ' selected' : ''}>Zurückgestellt</option></select></div>`;
+          const guard = isCleanupWorkbenchCaseReviewMutable(activeRun, proposal.caseId, status);
+          const disabled = runCompleted || !guard.valid ? ' disabled' : '';
+          const checked = (ui.cleanupReview.workbenchSelectedCaseIds || []).includes(proposal.caseId) ? ' checked' : '';
+          const direct = status === 'open'
+            ? `<button class="btn btn-primary" data-cleanup-workbench-direct-status="${escapeAttr(proposal.caseId)}" data-cleanup-workbench-target-status="reviewed"${disabled}>Bestätigen</button><button class="btn btn-secondary" data-cleanup-workbench-direct-status="${escapeAttr(proposal.caseId)}" data-cleanup-workbench-target-status="rejected"${disabled}>Ablehnen</button><button class="btn btn-ghost" data-cleanup-workbench-direct-status="${escapeAttr(proposal.caseId)}" data-cleanup-workbench-target-status="deferred"${disabled}>Später</button>`
+            : `<button class="btn btn-ghost" data-cleanup-workbench-direct-status="${escapeAttr(proposal.caseId)}" data-cleanup-workbench-target-status="open"${disabled}>Wieder öffnen</button>`;
+          return `<div class="stack-row cleanup-review-actions"><label class="mini"><input type="checkbox" data-cleanup-workbench-select="${escapeAttr(proposal.caseId)}"${checked}${disabled}> auswählen</label><span class="pill pill-info">${escapeHtml(getCleanupWorkbenchCaseStatusLabel(status))}</span>${direct}</div>`;
         };
         const renderCleanupActions = (proposal, normalizedType, hasTarget, duplicateSemantics) => {
           if (workbenchLocked) {
@@ -15244,14 +15523,18 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           if (!questions.length) return '';
           return `<details class="cleanup-review-stage" open><summary>Offene Fragen · ${questions.length}</summary><div class="list">${questions.map(question => `<div class="item"><div class="mini">${escapeHtml(question)}</div></div>`).join('')}</div><div class="mini cleanup-review-note-muted">Globale offene Fragen bleiben sichtbar, werden nicht als Fälle gespeichert und blockieren den Abschluss nicht.</div></details>`;
         };
+        const selectedReviewCount = (ui.cleanupReview.workbenchSelectedCaseIds || []).length;
+        const reviewBulkBar = workbenchLocked ? `<section class="cleanup-review-stage" aria-label="Bulk-Review"><div class="cleanup-review-stage-head"><h3 class="cleanup-review-stage-title">Bulk-Review · nur Fallstatus</h3><span class="pill pill-outline">${selectedReviewCount} ausgewählt</span></div><div class="stack-row"><button class="btn btn-secondary" id="btnCleanupWorkbenchSelectVisible"${runCompleted ? ' disabled' : ''}>Alle sichtbaren auswählen</button><button class="btn btn-ghost" id="btnCleanupWorkbenchClearSelection"${selectedReviewCount ? '' : ' disabled'}>Auswahl aufheben</button><button class="btn btn-primary" data-cleanup-workbench-bulk-status="reviewed"${selectedReviewCount && !runCompleted ? '' : ' disabled'}>Bestätigen</button><button class="btn btn-secondary" data-cleanup-workbench-bulk-status="rejected"${selectedReviewCount && !runCompleted ? '' : ' disabled'}>Ablehnen</button><button class="btn btn-ghost" data-cleanup-workbench-bulk-status="deferred"${selectedReviewCount && !runCompleted ? '' : ' disabled'}>Später</button></div><div class="mini cleanup-review-note-muted">Diese Auswahl ist UI-lokal und erzeugt keinen Apply-Batch.</div></section>` : '';
         const completionSummary = progress ? `<section class="cleanup-review-stage" aria-label="Abschluss"><div class="cleanup-review-stage-head"><h3 class="cleanup-review-stage-title">Abschluss</h3><span class="pill ${canCompleteCleanupWorkbenchRun(activeRun) ? 'pill-success' : 'pill-outline'}">fachlich abschließbar: ${canCompleteCleanupWorkbenchRun(activeRun) ? 'ja' : 'nein'}</span></div><div class="stack-row"><span class="pill pill-outline">${progress.total} gesamt</span><span class="pill pill-success">${progress.reviewed} bestätigt</span><span class="pill pill-outline">${progress.rejected} abgelehnt</span><span class="pill pill-info">${progress.deferred} zurückgestellt</span><span class="pill pill-outline">${progress.open} weiterhin offen</span><span class="pill pill-outline">${progress.openQuestions} offene Fragen</span><span class="pill pill-outline">${progress.openDuplicates} offene Dubletten</span><span class="pill pill-outline">${progress.openNewCandidates} offene neue Kandidaten</span></div><div class="stack-row" style="margin-top:8px;">${runCompleted ? `<button class="btn btn-secondary" id="btnReopenCleanupWorkbenchRun">Run wieder öffnen</button>` : `<button class="btn btn-primary" id="btnCompleteCleanupWorkbenchRun"${canCompleteCleanupWorkbenchRun(activeRun) ? '' : ' disabled'}>Run abschließen</button>`}</div></section>` : '';
         return `
           <details class="cleanup-review-shell" open>
             <summary class="cleanup-review-summary">Cleanup-Review (${modeLabel}) · ${workbenchLocked ? (runCompleted ? 'abgeschlossener Workbench-Run' : 'persistenter Workbench-Run') : (directOpenCount + ' direkte Fälle offen')}</summary>
             <section class="cleanup-review-stage" aria-label="Quelle"><div class="cleanup-review-stage-head"><h3 class="cleanup-review-stage-title">Quelle</h3><span class="section-label">Cleanup-JSON</span></div><div class="field"><label for="cleanupReviewJsonInput">Cleanup-JSON einfügen</label><textarea id="cleanupReviewJsonInput" class="cleanup-review-textarea" placeholder='{"proposals":[...]}'></textarea></div></section>
             <section class="cleanup-review-stage" aria-label="Prompt und Import"><div class="cleanup-review-stage-head"><h3 class="cleanup-review-stage-title">Prompt+Import</h3><span class="section-label">Prüfen & übernehmen</span></div><div class="stack-row cleanup-review-prompt">${!workbenchLocked ? '<button class="btn btn-primary" id="btnLoadCleanupReview">Cleanup-Vorschläge laden</button>' : ''}${showMainChatControls ? '<button class="btn btn-secondary" id="btnBuildCleanupMainChatClarificationPrompt">Hauptchat-Klärungsprompt erzeugen</button>' + (showLegacyDedupeControls ? '<button class="btn btn-secondary" id="btnBuildCleanupDedupePrompt">Dedupe-Prompt erzeugen</button>' : '') : ''}<button class="btn" id="btnClearCleanupReview">Cleanup schließen</button></div>${ui.cleanupReview.summary ? `<div class="mini cleanup-review-summary-text">Summary: ${escapeHtml(ui.cleanupReview.summary)}</div>` : ''}${ui.cleanupReview.openQuestions && ui.cleanupReview.openQuestions.length ? `<div class="mini cleanup-review-note-muted">Open Questions: ${escapeHtml(ui.cleanupReview.openQuestions.length)} · bleiben sichtbar und blockieren den Abschluss nicht.</div>` : ''}${workbenchLocked && progress ? `<div class="notice notice-info">Persistenter Workbench-Run: Direkte Legacy-Aktionen, Queueing und Mutationen sind gesperrt. Fallentscheidungen schreiben ausschließlich diesen Analysis-Record.</div><div class="stack-row"><span class="pill pill-outline">${progress.total} Fälle</span><span class="pill pill-info">${progress.decided} entschieden</span><span class="pill pill-outline">${progress.open} offen</span><span class="pill pill-info">${progress.deferred} zurückgestellt</span></div><div class="field"><label for="cleanupWorkbenchStatusFilter">Statusfilter</label><select id="cleanupWorkbenchStatusFilter"><option value="all"${filter === 'all' ? ' selected' : ''}>Alle</option><option value="open"${filter === 'open' ? ' selected' : ''}>Offen</option><option value="decided"${filter === 'decided' ? ' selected' : ''}>Entschieden</option><option value="deferred"${filter === 'deferred' ? ' selected' : ''}>Zurückgestellt</option></select></div>` : ''}${showMainChatControls ? `<div class="notice notice-info">Direkte Aktionen bearbeiten nur sichere Fälle. Hauptchat- und Dedupe-Queues sind bewusst zurückgestellte Folgearbeit.</div>${showLegacyCsvMainChatControls ? `<div class="stack-row"><span class="pill pill-outline">${directOpenCount} offene direkte Review-Fälle</span><span class="pill pill-info">${cleanupStats.mainChatQueued} Hauptchat vorgemerkt</span><span class="pill pill-info">${cleanupStats.dedupeQueued} Dedupe vorgemerkt</span></div>` : ''}<div class="field"><label for="cleanupMainChatClarificationPromptOutput">Hauptchat-Klärungsprompt</label><textarea id="cleanupMainChatClarificationPromptOutput" class="cleanup-review-textarea">${escapeHtml(ui.cleanupReview.clarificationPrompt || '')}</textarea><button class="btn btn-secondary" id="btnCopyCleanupMainChatClarificationPrompt">Klärungsprompt kopieren</button></div><div class="field"><label for="cleanupMainChatReturnJsonInput">Hauptchat-Rückgabe-JSON</label><textarea id="cleanupMainChatReturnJsonInput" class="cleanup-review-textarea">${escapeHtml(ui.cleanupReview.mainChatReturnJson || '')}</textarea><div class="stack-row"><button class="btn btn-primary" id="btnCheckCleanupMainChatReturnJson">Hauptchat-Rückgabe prüfen</button><button class="btn btn-ghost" id="btnResetCleanupMainChatReturnJson">Hauptchat-Rückgabe zurücksetzen</button></div><div id="cleanupMainChatDecisionPreviewResult">${renderCleanupDecisionResult(ui.cleanupReview.mainChatDecisionPreview, 'main')}</div></div>${showLegacyDedupeControls ? `<div class="field"><label for="cleanupDedupePromptOutput">Dedupe-Prompt</label><textarea id="cleanupDedupePromptOutput" class="cleanup-review-textarea">${escapeHtml(ui.cleanupReview.dedupePrompt || '')}</textarea><button class="btn btn-secondary" id="btnCopyCleanupDedupePrompt">Dedupe-Prompt kopieren</button></div><div class="field"><label for="cleanupDedupeReturnJsonInput">Dedupe-Rückgabe-JSON</label><textarea id="cleanupDedupeReturnJsonInput" class="cleanup-review-textarea">${escapeHtml(ui.cleanupReview.dedupeReturnJson || '')}</textarea><div class="stack-row"><button class="btn btn-primary" id="btnCheckCleanupDedupeReturnJson">Dedupe-Rückgabe prüfen</button><button class="btn btn-ghost" id="btnResetCleanupDedupeReturnJson">Dedupe-Rückgabe zurücksetzen</button></div>${renderCleanupDecisionResult(ui.cleanupReview.dedupeDecisionPreview, 'dedupe')}</div>` : ''}` : ''}</section>
+            ${reviewBulkBar}
             <section class="cleanup-review-stage" aria-label="Review"><div class="cleanup-review-stage-head"><h3 class="cleanup-review-stage-title">Review</h3><span class="pill pill-outline cleanup-review-counter">${reviewCounter}</span></div>${workbenchLocked ? renderWorkbenchReview() : (proposals.length ? `<div class="list cleanup-review-list">${proposals.map(renderProposalCard).join('')}</div>` : '<div class="notice">Keine Vorschläge geladen. Erzeuge den Cleanup-Prompt und füge das KI-JSON oben ein.</div>')}</section>
             ${workbenchLocked ? renderWorkbenchOpenQuestions() : ''}
+            ${workbenchLocked ? renderCleanupStatusPoolDecisionPanel(activeRun, runCompleted) : ''}
             ${completionSummary}
           </details>
         `;
