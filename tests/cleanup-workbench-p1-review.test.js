@@ -12,7 +12,7 @@ const testCode = `
 (function(){
   S = defaultState();
   let saveCalls = 0;
-  save = function(){ saveCalls += 1; }; renderView = function(){};
+  save = function(){ saveCalls += 1; }; saveAsync = async function(){ saveCalls += 1; }; renderView = function(){};
   ui.cleanupReview = { proposals: [], projectId: 'p1', incomingFeatures: [], rawAnalysisJson: '', mode: 'csv-comparison-transform', summary: '', openQuestions: [], visible: true, activeRunId: '', workbenchStatusFilter: 'all' };
   S.projects.push({ id: 'p1', title: 'P', status: 'aktiv', updatedAt: '' });
   S.projects.push({ id: 'p2', title: 'P2', status: 'aktiv', updatedAt: '' });
@@ -194,7 +194,7 @@ const testCode = `
   ui.cleanupReview.proposals[0]._queuedMainChat = true;
   ui.cleanupReview.proposals[0]._queuedDedupe = true;
   const workbenchHtml = renderCleanupReviewSection();
-  assert(workbenchHtml.includes('Bestätigt'), 'workbench card shows canonical status');
+  assert(workbenchHtml.includes('1 bestätigt'), 'workbench summary shows canonical status');
   assert(!workbenchHtml.includes('<span class="pill pill-success">übernommen</span>'));
   assert(!workbenchHtml.includes('<span class="pill pill-outline">ignoriert</span>'));
   assert(!workbenchHtml.includes('für Hauptchat vorgemerkt'));
